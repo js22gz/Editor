@@ -284,6 +284,8 @@
         const statusEl = document.getElementById('status');
         const editorStatusEl = document.getElementById('editor-status');
 
+        const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs)$/i;
+
         // ─────────────────────────────────────────────────────────────
         // Toast notifications for errors
         // ─────────────────────────────────────────────────────────────
@@ -541,7 +543,7 @@
         async function openFileFromNode(node) {
             try {
                 const file = await node.handle.getFile();
-                if (!file.type.startsWith('text/') && !/\.(txt|md|js|ts|html|css|json|py|go|rs)$/i.test(file.name)) {
+                if (!file.type.startsWith('text/') && !TEXT_FILE_EXTENSIONS.test(file.name)) {
                     if (!confirm('This looks like a binary file. Open anyway?')) return;
                 }
                 const content = await file.text();
