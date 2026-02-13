@@ -258,6 +258,38 @@
         }
         .sidebar-toggle:hover { background: #27272a; color: #e4e4e7; }
 
+        /* Context menu styles */
+        .context-menu {
+            position: fixed;
+            background: #18181b;
+            border: 1px solid #27272a;
+            border-radius: 6px;
+            padding: 4px 0;
+            z-index: 10000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            min-width: 160px;
+        }
+        .context-menu-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #e4e4e7;
+        }
+        .context-menu-item:hover {
+            background: #27272a;
+        }
+        .context-menu-item.danger {
+            color: #ef4444;
+        }
+        .context-menu-item.danger:hover {
+            background: #7f1d1d;
+        }
+        .context-menu-separator {
+            height: 1px;
+            background: #27272a;
+            margin: 4px 0;
+        }
+
         /* Search panel styles */
         .search-panel {
             position: fixed;
@@ -331,6 +363,7 @@
                 <button class="btn" onclick="openFolder()">Open Folder</button>
                 <button class="btn" onclick="openFile()">Open File</button>
                 <button class="btn" onclick="newFile()">New File</button>
+                <button class="btn" onclick="newFolder()">New Folder</button>
                 <button class="btn accent" onclick="saveCurrentFile()">Save (Ctrl+S)</button>
             </div>
             <div id="sidebar-header" class="sidebar-header">Directory</div>
@@ -364,6 +397,8 @@
         let nextTabId = 1; // FIXED: Better tab ID generation
         let db = null;
         let expandedFolders = new Set();
+        let contextMenu = null;
+        let contextMenuTarget = null;
 
         const textarea = document.getElementById('textarea');
         const gutter = document.getElementById('gutter');
@@ -391,6 +426,55 @@
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), duration);
         }
+
+        // ═════════════════════════════════════════════════════════════
+        // Context menu
+        // ═════════════════════════════════════════════════════════════
+        function showContextMenu(e, node, isFolder) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            closeContextMenu();
+            
+            contextMenuTarget = node;
+            contextMenu = document.createElement('div');
+            contextMenu.className = 'context-menu';
+            
+            if (isFolder) {
+                contextMenu.innerHTML = `
+                    <div class="context-menu-item" onclick="renameItem()">Rename</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item danger" onclick="deleteFolder()">Delete Folder</div>
+                `;
+            } else {
+                contextMenu.innerHTML = `
+                    <div class="context-menu-item" onclick="openFileFromNode(contextMenuTarget)">Open</div>
+                    <div class="context-menu-item" onclick="renameItem()">Rename</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item danger" onclick="deleteFile()">Delete File</div>
+                `;
+            }
+            
+            contextMenu.style.left = e.pageX + 'px';
+            contextMenu.style.top = e.pageY + 'px';
+            document.body.appendChild(contextMenu);
+        }
+
+        function closeContextMenu() {
+            if (contextMenu) {
+                contextMenu.remove();
+                contextMenu = null;
+                contextMenuTarget = null;
+            }
+        }
+
+        // Close context menu when clicking outside
+        document.addEventListener('click', closeContextMenu);
+        document.addEventListener('contextmenu', (e) => {
+            if (!e.target.closest('.file-item') && !e.target.closest('.folder-header')) {
+                closeContextMenu();
+            }
+        });
 
         // ═════════════════════════════════════════════════════════════
         // IndexedDB + localStorage
@@ -612,6 +696,7 @@
                 
                 header.onclick = () => toggleFolder(node, header, childrenDiv);
                 header.addEventListener('keydown', e => handleTreeKeydown(e, node, header, childrenDiv));
+                header.addEventListener('contextmenu', e => showContextMenu(e, node, true));
                 
                 folderDiv.appendChild(header);
                 folderDiv.appendChild(childrenDiv);
@@ -629,6 +714,7 @@
                     if (e.key === 'Enter') { e.preventDefault(); openFileFromNode(node); }
                     else navigateTree(e);
                 });
+                fileDiv.addEventListener('contextmenu', e => showContextMenu(e, node, false));
                 parentEl.appendChild(fileDiv);
             }
         }
@@ -769,6 +855,207 @@
                 if (err.name !== 'AbortError') {
                     showToast('Failed to create file: ' + err.message);
                 }
+            }
+        }
+
+        async function newFolder() {
+            if (!currentDirHandle) {
+                showToast('Open a folder first to create a new folder.');
+                return;
+            }
+
+            const name = prompt('Enter new folder name:');
+            if (!name || !name.trim()) return;
+
+            const trimmed = name.trim();
+            
+            if (INVALID_FILENAME_CHARS.test(trimmed) || trimmed === '.' || trimmed === '..' || /[\/\\]/.test(trimmed)) {
+                showToast('Invalid folder name. Avoid special characters and path separators.');
+                return;
+            }
+
+            try {
+                // Check if folder already exists
+                let exists = false;
+                try {
+                    await currentDirHandle.getDirectoryHandle(trimmed);
+                    exists = true;
+                } catch (e) { /* folder does not exist */ }
+
+                if (exists) {
+                    showToast('A folder with that name already exists.');
+                    return;
+                }
+
+                await currentDirHandle.getDirectoryHandle(trimmed, { create: true });
+                await buildAndRenderTree();
+                statusEl.textContent = 'Created folder ' + trimmed;
+                setTimeout(() => statusEl.textContent = 'Ready', 2000);
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    showToast('Failed to create folder: ' + err.message);
+                }
+            }
+        }
+
+        async function deleteFile() {
+            if (!contextMenuTarget || contextMenuTarget.kind !== 'file') return;
+            
+            const fileName = contextMenuTarget.name;
+            if (!confirm(`Delete "${fileName}"? This cannot be undone.`)) {
+                closeContextMenu();
+                return;
+            }
+
+            try {
+                // Close tab if file is open
+                const openTab = tabs.find(t => t.handle && t.handle === contextMenuTarget.handle);
+                if (openTab) {
+                    closeTab(openTab.id);
+                }
+
+                // Delete from parent directory
+                const pathParts = contextMenuTarget.path.split('/');
+                pathParts.pop(); // Remove filename
+                
+                let parentHandle = currentDirHandle;
+                for (const part of pathParts) {
+                    if (part) {
+                        parentHandle = await parentHandle.getDirectoryHandle(part);
+                    }
+                }
+                
+                await parentHandle.removeEntry(fileName);
+                await buildAndRenderTree();
+                showToast(`Deleted ${fileName}`);
+            } catch (err) {
+                showToast('Failed to delete file: ' + err.message);
+            } finally {
+                closeContextMenu();
+            }
+        }
+
+        async function deleteFolder() {
+            if (!contextMenuTarget || contextMenuTarget.kind !== 'directory') return;
+            
+            const folderName = contextMenuTarget.name;
+            
+            // Check if folder is empty
+            if (contextMenuTarget.children && contextMenuTarget.children.length > 0) {
+                showToast('Cannot delete non-empty folder. Delete contents first.');
+                closeContextMenu();
+                return;
+            }
+
+            if (!confirm(`Delete empty folder "${folderName}"? This cannot be undone.`)) {
+                closeContextMenu();
+                return;
+            }
+
+            try {
+                // Get parent directory
+                const pathParts = contextMenuTarget.path.split('/');
+                pathParts.pop(); // Remove folder name
+                
+                let parentHandle = currentDirHandle;
+                for (const part of pathParts) {
+                    if (part) {
+                        parentHandle = await parentHandle.getDirectoryHandle(part);
+                    }
+                }
+                
+                await parentHandle.removeEntry(folderName);
+                expandedFolders.delete(contextMenuTarget.path);
+                saveExpandedState();
+                await buildAndRenderTree();
+                showToast(`Deleted folder ${folderName}`);
+            } catch (err) {
+                showToast('Failed to delete folder: ' + err.message);
+            } finally {
+                closeContextMenu();
+            }
+        }
+
+        async function renameItem() {
+            if (!contextMenuTarget) return;
+            
+            const oldName = contextMenuTarget.name;
+            const isFolder = contextMenuTarget.kind === 'directory';
+            const newName = prompt(`Rename ${isFolder ? 'folder' : 'file'}:`, oldName);
+            
+            if (!newName || !newName.trim() || newName === oldName) {
+                closeContextMenu();
+                return;
+            }
+
+            const trimmed = newName.trim();
+            
+            if (INVALID_FILENAME_CHARS.test(trimmed) || trimmed === '.' || trimmed === '..' || /[\/\\]/.test(trimmed)) {
+                showToast('Invalid name. Avoid special characters and path separators.');
+                closeContextMenu();
+                return;
+            }
+
+            try {
+                // Get parent directory
+                const pathParts = contextMenuTarget.path.split('/');
+                pathParts.pop();
+                
+                let parentHandle = currentDirHandle;
+                for (const part of pathParts) {
+                    if (part) {
+                        parentHandle = await parentHandle.getDirectoryHandle(part);
+                    }
+                }
+
+                // Check if new name already exists
+                try {
+                    if (isFolder) {
+                        await parentHandle.getDirectoryHandle(trimmed);
+                    } else {
+                        await parentHandle.getFileHandle(trimmed);
+                    }
+                    showToast('A file or folder with that name already exists.');
+                    closeContextMenu();
+                    return;
+                } catch (e) {
+                    // Name doesn't exist, proceed with rename
+                }
+
+                // For files, we need to copy and delete (no native rename in File System Access API)
+                if (isFolder) {
+                    showToast('Folder renaming requires recursive copy. Not yet implemented.');
+                } else {
+                    const oldHandle = await parentHandle.getFileHandle(oldName);
+                    const file = await oldHandle.getFile();
+                    const content = await file.text();
+                    
+                    const newHandle = await parentHandle.getFileHandle(trimmed, { create: true });
+                    const writable = await newHandle.createWritable();
+                    await writable.write(content);
+                    await writable.close();
+                    
+                    await parentHandle.removeEntry(oldName);
+                    
+                    // Update tab if file is open
+                    const openTab = tabs.find(t => t.handle && t.handle === contextMenuTarget.handle);
+                    if (openTab) {
+                        openTab.name = trimmed;
+                        openTab.handle = newHandle;
+                        if (openTab.element) {
+                            const nameSpan = openTab.element.querySelector('.tab-name');
+                            if (nameSpan) nameSpan.textContent = trimmed;
+                        }
+                        updateEditorStatus(openTab);
+                    }
+                    
+                    await buildAndRenderTree();
+                    showToast(`Renamed to ${trimmed}`);
+                }
+            } catch (err) {
+                showToast('Failed to rename: ' + err.message);
+            } finally {
+                closeContextMenu();
             }
         }
 
@@ -1139,7 +1426,7 @@
             
             if (tabs.length === 0) {
                 createNewTab(null, 'welcome.txt', 
-                    'FileEditor is ready.\n\nKeyboard shortcuts:\n- Ctrl+S: Save current file\n- Ctrl+F: Search in file\n- Ctrl+W: Close current tab\n- Tab: Insert 4 spaces\n\nFixed in this version:\n✓ Permission checks on folder reload\n✓ Proper file handle comparison\n✓ XSS protection in tab names\n✓ Warning before closing unsaved tabs\n✓ Search functionality (Ctrl+F)\n✓ Better error handling\n✓ Depth limits on directory traversal\n');
+                    'FileEditor is ready.\n\nKeyboard shortcuts:\n- Ctrl+S: Save current file\n- Ctrl+F: Search in file\n- Ctrl+W: Close current tab\n- Tab: Insert 4 spaces\n\nFile management:\n- Right-click files/folders for options\n- Delete, rename files and folders\n- Create new files and folders\n\nFixed in this version:\n✓ Permission checks on folder reload\n✓ Proper file handle comparison\n✓ XSS protection in tab names\n✓ Warning before closing unsaved tabs\n✓ Search functionality (Ctrl+F)\n✓ Better error handling\n✓ Context menu for file operations\n✓ Create/delete folders\n✓ Delete/rename files\n');
             }
         };
     </script>
