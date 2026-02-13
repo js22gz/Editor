@@ -1,5 +1,5 @@
 # Editor
-A **single-file** HTML-based file-editor that runs ocally in the browser.  
+A **single-file** HTML-based file-editor that runs locally in the browser.  
 
 No server. No tracking. No bullshit.
 
