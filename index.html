@@ -343,40 +343,119 @@
             slider.addEventListener('input', () => {
                 maxCharsPerLine = parseInt(slider.value);
                 valueEl.textContent = maxCharsPerLine;
+                reflowAllText();
             });
         }
 
         function enforceLineBreaks(e) {
             if (!maxCharsPerLine) return;
             
-            const start = textarea.selectionStart;
-            const text = textarea.value;
+            const cursor = textarea.selectionStart;
+            let text = textarea.value;
             
             // Find current line boundaries
-            const lineStart = text.lastIndexOf('\n', start - 1) + 1;
-            let lineEnd = text.indexOf('\n', start);
+            let lineStart = text.lastIndexOf('\n', cursor - 1) + 1;
+            let lineEnd = text.indexOf('\n', cursor);
             if (lineEnd === -1) lineEnd = text.length;
             
-            const currentLine = text.substring(lineStart, lineEnd);
+            let currentLine = text.substring(lineStart, lineEnd);
+            let changed = false;
+            let newCursor = cursor;
             
-            if (currentLine.length <= maxCharsPerLine) return;
+            // ── Merge: pull words from next line if current line is short ──
+            while (currentLine.length < maxCharsPerLine) {
+                let nextLineEnd = text.indexOf('\n', lineEnd + 1);
+                if (nextLineEnd === -1) nextLineEnd = text.length;
+                if (lineEnd >= text.length) break;
+                
+                const nextLine = text.substring(lineEnd + 1, nextLineEnd);
+                if (nextLine.length === 0) break; // preserve blank lines
+                
+                const space = currentLine.length === 0 ? '' : ' ';
+                const remaining = maxCharsPerLine - currentLine.length - space.length;
+                if (remaining <= 0) break;
+                
+                // Find how much of the next line fits
+                const spaceIdx = nextLine.indexOf(' ');
+                const firstWord = spaceIdx === -1 ? nextLine : nextLine.substring(0, spaceIdx);
+                if (firstWord.length > remaining) break;
+                
+                // Pull first word (or entire next line) up
+                if (spaceIdx === -1) {
+                    // Entire next line fits — merge and remove the line break
+                    currentLine = currentLine + space + nextLine;
+                    text = text.substring(0, lineEnd) + space + nextLine + text.substring(nextLineEnd);
+                } else {
+                    currentLine = currentLine + space + firstWord;
+                    const rest = nextLine.substring(spaceIdx + 1);
+                    text = text.substring(0, lineEnd) + space + firstWord + '\n' + rest + text.substring(nextLineEnd);
+                }
+                changed = true;
+                // Recalculate lineEnd after merge
+                lineEnd = text.indexOf('\n', lineStart + currentLine.length);
+                if (lineEnd === -1) lineEnd = text.length;
+            }
             
-            // Find best break point (last space before limit)
-            let breakPos = currentLine.lastIndexOf(' ', maxCharsPerLine);
-            if (breakPos === -1 || breakPos < 10) breakPos = maxCharsPerLine;
+            // ── Split: break line if it exceeds the limit ──
+            if (currentLine.length > maxCharsPerLine) {
+                let breakPos = currentLine.lastIndexOf(' ', maxCharsPerLine);
+                if (breakPos === -1 || breakPos < 10) breakPos = maxCharsPerLine;
+                
+                const before = currentLine.substring(0, breakPos);
+                let after = currentLine.substring(breakPos).trimStart();
+                
+                const newLine = before + '\n' + after;
+                text = text.substring(0, lineStart) + newLine + text.substring(lineEnd);
+                
+                // Adjust cursor: if cursor was past the break, move it to the new line
+                if (newCursor > lineStart + breakPos) {
+                    const offsetIntoAfter = newCursor - lineStart - breakPos;
+                    const trimmed = currentLine.substring(breakPos).length - after.length;
+                    newCursor = lineStart + before.length + 1 + Math.max(0, offsetIntoAfter - trimmed);
+                }
+                changed = true;
+            }
             
-            const before = currentLine.substring(0, breakPos);
-            let after = currentLine.substring(breakPos).trimStart();
+            if (changed) {
+                textarea.value = text;
+                textarea.selectionStart = textarea.selectionEnd = newCursor;
+                updateLineNumbers();
+            }
+        }
+        
+        function reflowAllText() {
+            if (!maxCharsPerLine) return;
+            const cursor = textarea.selectionStart;
+            const lines = textarea.value.split('\n');
+            const reflowed = [];
+            let i = 0;
             
-            const newLine = before + '\n' + after;
-            const newText = text.substring(0, lineStart) + newLine + text.substring(lineEnd);
+            while (i < lines.length) {
+                // Preserve blank lines as paragraph separators
+                if (lines[i].trim() === '') {
+                    reflowed.push(lines[i]);
+                    i++;
+                    continue;
+                }
+                // Gather consecutive non-blank lines into a paragraph
+                let para = lines[i];
+                i++;
+                while (i < lines.length && lines[i].trim() !== '') {
+                    para += ' ' + lines[i];
+                    i++;
+                }
+                // Re-wrap the paragraph
+                while (para.length > maxCharsPerLine) {
+                    let breakPos = para.lastIndexOf(' ', maxCharsPerLine);
+                    if (breakPos === -1 || breakPos < 10) breakPos = maxCharsPerLine;
+                    reflowed.push(para.substring(0, breakPos));
+                    para = para.substring(breakPos).trimStart();
+                }
+                reflowed.push(para);
+            }
             
-            textarea.value = newText;
-            
-            // Place cursor at start of new line
-            const newCursor = lineStart + before.length + 1;
-            textarea.selectionStart = textarea.selectionEnd = newCursor;
-            
+            textarea.value = reflowed.join('\n');
+            textarea.selectionStart = textarea.selectionEnd = Math.min(cursor, textarea.value.length);
             updateLineNumbers();
         }
         
