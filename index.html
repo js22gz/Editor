@@ -236,6 +236,7 @@
         
         <button class="btn" onclick="openFolder()">Open Folder</button>
         <button class="btn" onclick="openFile()">Open File</button>
+        <button class="btn" onclick="newFile()">New File</button>
         <button class="btn accent" onclick="saveCurrentFile()">Save (Ctrl+S)</button>
         
         <div style="flex:1"></div>
@@ -384,13 +385,7 @@
             fileTree = await buildTree(currentDirHandle);
             sidebarHeader.textContent = `Project: ${fileTree.name}`;
             
-            // Default: expand all top-level folders on first load
-            if (expandedFolders.size === 0) {
-                fileTree.children.forEach(child => {
-                    if (child.kind === 'directory') expandedFolders.add(child.path);
-                });
-                saveExpandedState();
-            }
+            // Start with all folders collapsed until the user expands them
             
             renderTree();
         }
@@ -537,6 +532,48 @@
                 createNewTab(handle, file.name, content);
             } catch (err) {
                 if (err.name !== 'AbortError') showToast('Failed to open file: ' + err.message);
+            }
+        }
+
+        async function newFile() {
+            if (!currentDirHandle) {
+                showToast('Open a folder first to create a new file.');
+                return;
+            }
+
+            const name = prompt('Enter new file name:');
+            if (!name || !name.trim()) return;
+
+            const trimmed = name.trim();
+            if (/[\/\\]/.test(trimmed)) {
+                showToast('File name cannot contain path separators.');
+                return;
+            }
+
+            try {
+                // Check if file already exists
+                let exists = false;
+                try {
+                    await currentDirHandle.getFileHandle(trimmed);
+                    exists = true;
+                } catch (e) { /* file does not exist */ }
+
+                if (exists) {
+                    showToast('A file with that name already exists.');
+                    return;
+                }
+
+                const fileHandle = await currentDirHandle.getFileHandle(trimmed, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write('');
+                await writable.close();
+
+                createNewTab(fileHandle, trimmed, '');
+                await buildAndRenderTree();
+                statusEl.textContent = 'Created ' + trimmed;
+                setTimeout(() => statusEl.textContent = 'Ready', 2000);
+            } catch (err) {
+                if (err.name !== 'AbortError') showToast('Failed to create file: ' + err.message);
             }
         }
 
