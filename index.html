@@ -379,13 +379,12 @@
             
             updateLineNumbers();
         }
+        
+        function toggleSidebar() {
+            sidebarEl.classList.toggle('hidden');
+        }
 
-        // ─────────────────────────────────────────────────────────────
-        // Rest of the code (unchanged except minor cleanups)
-        // ─────────────────────────────────────────────────────────────
-        function toggleSidebar() { sidebarEl.classList.toggle('hidden'); }
-
-        function showToast(message, duration = 4000) {
+        function showToast(message, duration = 3000) {
             const toast = document.createElement('div');
             toast.className = 'toast';
             toast.textContent = message;
@@ -393,460 +392,44 @@
             setTimeout(() => toast.remove(), duration);
         }
 
-        // ─────────────────────────────────────────────────────────────
-        // IndexedDB for persisting folder handle
-        // ─────────────────────────────────────────────────────────────
-        function initDB() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open('EditorDB', 1);
-                request.onupgradeneeded = e => {
-                    const d = e.target.result;
-                    if (!d.objectStoreNames.contains('state')) {
-                        d.createObjectStore('state');
-                    }
-                };
-                request.onsuccess = e => { db = e.target.result; resolve(); };
-                request.onerror = e => { console.error('Failed to open IndexedDB', e); resolve(); };
-            });
-        }
-
-        function dbPut(key, value) {
-            if (!db) return;
-            const tx = db.transaction('state', 'readwrite');
-            tx.objectStore('state').put(value, key);
-        }
-
-        function dbGet(key) {
-            return new Promise(resolve => {
-                if (!db) return resolve(undefined);
-                const tx = db.transaction('state', 'readonly');
-                const req = tx.objectStore('state').get(key);
-                req.onsuccess = () => resolve(req.result);
-                req.onerror = () => resolve(undefined);
-            });
-        }
-
-        function dbDelete(key) {
-            if (!db) return;
-            const tx = db.transaction('state', 'readwrite');
-            tx.objectStore('state').delete(key);
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // Line numbers
-        // ─────────────────────────────────────────────────────────────
-        function updateLineNumbers() {
-            const lines = textarea.value.split('\n');
-            gutter.innerHTML = lines.map((_, i) => i + 1).join('<br>');
-            gutter.scrollTop = textarea.scrollTop;
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // Tab management
-        // ─────────────────────────────────────────────────────────────
-        function createNewTab(handle, name, content) {
-            const id = nextTabId++;
-            tabs.push({ id, handle, name, content, dirty: false });
-            switchTab(id);
-            renderTabs();
-            return id;
-        }
-
-        function switchTab(id) {
-            const tab = tabs.find(t => t.id === id);
-            if (!tab) return;
-            // Save current tab content
-            if (currentTabId !== null) {
-                const cur = tabs.find(t => t.id === currentTabId);
-                if (cur) cur.content = textarea.value;
-            }
-            currentTabId = id;
-            textarea.value = tab.content || '';
-            updateLineNumbers();
-            renderTabs();
-            updateEditorStatus();
-        }
-
-        function closeTab(id) {
-            const idx = tabs.findIndex(t => t.id === id);
-            if (idx === -1) return;
-            const tab = tabs[idx];
-            if (tab.dirty) {
-                if (!confirm(`"${tab.name}" has unsaved changes. Close anyway?`)) return;
-            }
-            tabs.splice(idx, 1);
-            if (tabs.length === 0) {
-                currentTabId = null;
-                textarea.value = '';
-                updateLineNumbers();
-            } else if (currentTabId === id) {
-                const next = tabs[Math.min(idx, tabs.length - 1)];
-                switchTab(next.id);
-            }
-            renderTabs();
-            updateEditorStatus();
-        }
-
-        function renderTabs() {
-            tabsContainer.innerHTML = '';
-            tabs.forEach(tab => {
-                const el = document.createElement('div');
-                el.className = 'tab' + (tab.id === currentTabId ? ' active' : '');
-                el.innerHTML = `
-                    <span>${tab.name}</span>
-                    ${tab.dirty ? '<span class="dirty-indicator">●</span>' : ''}
-                    <span class="close" data-id="${tab.id}">&times;</span>
-                `;
-                el.addEventListener('click', e => {
-                    if (e.target.classList.contains('close')) {
-                        closeTab(parseInt(e.target.dataset.id));
-                    } else {
-                        switchTab(tab.id);
-                    }
-                });
-                tabsContainer.appendChild(el);
-            });
-        }
-
-        function markDirty() {
-            if (currentTabId === null) return;
-            const tab = tabs.find(t => t.id === currentTabId);
-            if (tab && !tab.dirty) {
-                tab.dirty = true;
-                renderTabs();
-            }
-        }
-
-        function updateEditorStatus() {
-            if (currentTabId === null) {
-                editorStatusEl.textContent = 'No file open';
-            } else {
-                const tab = tabs.find(t => t.id === currentTabId);
-                if (tab) {
-                    const lines = textarea.value.split('\n').length;
-                    editorStatusEl.textContent = `${tab.name} — ${lines} line${lines !== 1 ? 's' : ''}`;
-                }
-            }
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // File operations
-        // ─────────────────────────────────────────────────────────────
-        async function openFolder() {
-            try {
-                currentDirHandle = await window.showDirectoryPicker();
-                dbPut('dirHandle', currentDirHandle);
-                await buildTree();
-            } catch (e) {
-                if (e.name !== 'AbortError') console.error(e);
-            }
-        }
-
-        async function openFile() {
-            try {
-                const [handle] = await window.showOpenFilePicker({
-                    multiple: false,
-                    types: [{ description: 'Text Files', accept: { 'text/*': ['.txt', '.md', '.js', '.ts', '.html', '.css', '.json', '.py', '.go', '.rs'] } }]
-                });
-                const file = await handle.getFile();
-                const content = await file.text();
-                createNewTab(handle, file.name, content);
-            } catch (e) {
-                if (e.name !== 'AbortError') console.error(e);
-            }
-        }
-
-        function newFile() {
-            const name = prompt('File name:');
-            if (!name) return;
-            if (INVALID_FILENAME_CHARS.test(name)) {
-                showToast('Invalid file name');
-                return;
-            }
-            createNewTab(null, name, '');
-        }
-
-        async function newFolder() {
-            if (!currentDirHandle) {
-                showToast('Open a folder first');
-                return;
-            }
-            const name = prompt('Folder name:');
-            if (!name) return;
-            if (INVALID_FILENAME_CHARS.test(name)) {
-                showToast('Invalid folder name');
-                return;
-            }
-            try {
-                await currentDirHandle.getDirectoryHandle(name, { create: true });
-                await buildTree();
-                showToast(`Folder "${name}" created`);
-            } catch (e) {
-                showToast('Failed to create folder');
-                console.error(e);
-            }
-        }
-
-        async function saveCurrentFile() {
-            if (currentTabId === null) return;
-            const tab = tabs.find(t => t.id === currentTabId);
-            if (!tab) return;
-            tab.content = textarea.value;
-
-            if (tab.handle) {
-                try {
-                    const writable = await tab.handle.createWritable();
-                    await writable.write(tab.content);
-                    await writable.close();
-                    tab.dirty = false;
-                    renderTabs();
-                    showToast(`Saved ${tab.name}`);
-                } catch (e) {
-                    showToast('Failed to save');
-                    console.error(e);
-                }
-            } else {
-                try {
-                    const handle = await window.showSaveFilePicker({
-                        suggestedName: tab.name,
-                        types: [{ description: 'Text Files', accept: { 'text/plain': ['.txt'] } }]
-                    });
-                    const writable = await handle.createWritable();
-                    await writable.write(tab.content);
-                    await writable.close();
-                    tab.handle = handle;
-                    tab.name = handle.name;
-                    tab.dirty = false;
-                    renderTabs();
-                    showToast(`Saved ${tab.name}`);
-                } catch (e) {
-                    if (e.name !== 'AbortError') {
-                        showToast('Failed to save');
-                        console.error(e);
-                    }
-                }
-            }
-            updateEditorStatus();
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // File tree
-        // ─────────────────────────────────────────────────────────────
-        async function buildTree() {
-            if (!currentDirHandle) return;
-            sidebarHeader.textContent = currentDirHandle.name;
-            fileTree = await readDir(currentDirHandle, '');
-            renderTree();
-        }
-
-        async function readDir(dirHandle, path) {
-            const entries = [];
-            for await (const entry of dirHandle.values()) {
-                const entryPath = path ? path + '/' + entry.name : entry.name;
-                if (entry.kind === 'file') {
-                    entries.push({ kind: 'file', name: entry.name, handle: entry, path: entryPath });
-                } else if (entry.kind === 'directory') {
-                    const children = await readDir(entry, entryPath);
-                    entries.push({ kind: 'directory', name: entry.name, handle: entry, path: entryPath, children });
-                }
-            }
-            entries.sort((a, b) => {
-                if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
-                return a.name.localeCompare(b.name);
-            });
-            return entries;
-        }
-
-        function renderTree() {
-            treeContainer.innerHTML = '';
-            if (fileTree) {
-                treeContainer.appendChild(renderTreeLevel(fileTree));
-            }
-        }
-
-        function renderTreeLevel(entries) {
-            const fragment = document.createDocumentFragment();
-            entries.forEach(entry => {
-                if (entry.kind === 'directory') {
-                    const div = document.createElement('div');
-                    const expanded = expandedFolders.has(entry.path);
-                    const header = document.createElement('div');
-                    header.className = 'folder-header';
-                    header.innerHTML = `<span class="toggle">${expanded ? '▾' : '▸'}</span>${entry.name}`;
-                    header.addEventListener('click', () => {
-                        if (expandedFolders.has(entry.path)) {
-                            expandedFolders.delete(entry.path);
-                        } else {
-                            expandedFolders.add(entry.path);
-                        }
-                        saveExpandedState();
-                        renderTree();
-                    });
-                    header.addEventListener('contextmenu', e => {
-                        e.preventDefault();
-                        showContextMenu(e.clientX, e.clientY, entry);
-                    });
-                    div.appendChild(header);
-                    if (expanded && entry.children) {
-                        const childDiv = document.createElement('div');
-                        childDiv.className = 'tree-children';
-                        childDiv.appendChild(renderTreeLevel(entry.children));
-                        div.appendChild(childDiv);
-                    }
-                    fragment.appendChild(div);
-                } else {
-                    const item = document.createElement('div');
-                    item.className = 'file-item';
-                    item.textContent = entry.name;
-                    item.tabIndex = 0;
-                    item.addEventListener('click', () => openTreeFile(entry));
-                    item.addEventListener('keydown', e => { if (e.key === 'Enter') openTreeFile(entry); });
-                    item.addEventListener('contextmenu', e => {
-                        e.preventDefault();
-                        showContextMenu(e.clientX, e.clientY, entry);
-                    });
-                    fragment.appendChild(item);
-                }
-            });
-            return fragment;
-        }
-
-        async function openTreeFile(entry) {
-            // Check if already open
-            const existing = tabs.find(t => t.handle === entry.handle);
-            if (existing) {
-                switchTab(existing.id);
-                return;
-            }
-            try {
-                const file = await entry.handle.getFile();
-                if (!TEXT_FILE_EXTENSIONS.test(file.name)) {
-                    showToast('Not a supported text file');
-                    return;
-                }
-                const content = await file.text();
-                createNewTab(entry.handle, file.name, content);
-            } catch (e) {
-                showToast('Failed to open file');
-                console.error(e);
-            }
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // Expanded state persistence
-        // ─────────────────────────────────────────────────────────────
-        function saveExpandedState() {
-            try {
-                localStorage.setItem('editor-expanded', JSON.stringify([...expandedFolders]));
-            } catch (e) { console.warn('localStorage unavailable', e); }
-        }
-
-        function loadExpandedState() {
-            try {
-                const saved = localStorage.getItem('editor-expanded');
-                if (saved) expandedFolders = new Set(JSON.parse(saved));
-            } catch (e) { console.warn('localStorage unavailable', e); }
-        }
-
-        async function loadSavedFolder() {
-            try {
-                const handle = await dbGet('dirHandle');
-                if (handle) {
-                    const permission = await handle.queryPermission({ mode: 'readwrite' });
-                    if (permission === 'granted') {
-                        currentDirHandle = handle;
-                        await buildTree();
-                    } else {
-                        const req = await handle.requestPermission({ mode: 'readwrite' });
-                        if (req === 'granted') {
-                            currentDirHandle = handle;
-                            await buildTree();
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error('Failed to load saved folder', e);
-            }
-        }
-
-        function clearSavedFolder() {
-            dbDelete('dirHandle');
-            currentDirHandle = null;
-            fileTree = null;
-            treeContainer.innerHTML = '';
-            sidebarHeader.textContent = 'Directory';
-            showToast('Saved folder cleared');
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // Context menu
-        // ─────────────────────────────────────────────────────────────
-        function showContextMenu(x, y, entry) {
-            hideContextMenu();
-            contextMenuTarget = entry;
+        function showContextMenu(e, node, isFolder) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeContextMenu();
+            
+            contextMenuTarget = node;
             contextMenu = document.createElement('div');
             contextMenu.className = 'context-menu';
-            contextMenu.style.left = x + 'px';
-            contextMenu.style.top = y + 'px';
-
-            if (entry.kind === 'file') {
-                addContextMenuItem('Open', () => openTreeFile(entry));
-                addContextMenuSeparator();
-                addContextMenuItem('Delete', async () => {
-                    if (!confirm(`Delete "${entry.name}"?`)) return;
-                    try {
-                        const parent = currentDirHandle;
-                        await parent.removeEntry(entry.name);
-                        await buildTree();
-                        showToast(`Deleted "${entry.name}"`);
-                    } catch (e) {
-                        showToast('Failed to delete');
-                        console.error(e);
-                    }
-                }, true);
+            
+            if (isFolder) {
+                contextMenu.innerHTML = `
+                    <div class="context-menu-item" onclick="renameItem()">Rename</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item danger" onclick="deleteFolder()">Delete Folder</div>
+                `;
             } else {
-                addContextMenuItem('New File Here', async () => {
-                    const name = prompt('File name:');
-                    if (!name || INVALID_FILENAME_CHARS.test(name)) return;
-                    try {
-                        await entry.handle.getFileHandle(name, { create: true });
-                        await buildTree();
-                    } catch (e) {
-                        showToast('Failed to create file');
-                        console.error(e);
-                    }
-                });
-                addContextMenuItem('New Subfolder', async () => {
-                    const name = prompt('Folder name:');
-                    if (!name || INVALID_FILENAME_CHARS.test(name)) return;
-                    try {
-                        await entry.handle.getDirectoryHandle(name, { create: true });
-                        await buildTree();
-                    } catch (e) {
-                        showToast('Failed to create folder');
-                        console.error(e);
-                    }
-                });
+                contextMenu.innerHTML = `
+                    <div class="context-menu-item" onclick="openFileFromNode(contextMenuTarget)">Open</div>
+                    <div class="context-menu-item" onclick="renameItem()">Rename</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item danger" onclick="deleteFile()">Delete File</div>
+                `;
             }
-
+            
+            contextMenu.style.left = e.pageX + 'px';
+            contextMenu.style.top = e.pageY + 'px';
             document.body.appendChild(contextMenu);
+            
+            const rect = contextMenu.getBoundingClientRect();
+            if (rect.right > window.innerWidth) {
+                contextMenu.style.left = (window.innerWidth - rect.width - 4) + 'px';
+            }
+            if (rect.bottom > window.innerHeight) {
+                contextMenu.style.top = (window.innerHeight - rect.height - 4) + 'px';
+            }
         }
 
-        function addContextMenuItem(label, onClick, danger) {
-            const item = document.createElement('div');
-            item.className = 'context-menu-item' + (danger ? ' danger' : '');
-            item.textContent = label;
-            item.addEventListener('click', () => { hideContextMenu(); onClick(); });
-            contextMenu.appendChild(item);
-        }
-
-        function addContextMenuSeparator() {
-            const sep = document.createElement('div');
-            sep.className = 'context-menu-separator';
-            contextMenu.appendChild(sep);
-        }
-
-        function hideContextMenu() {
+        function closeContextMenu() {
             if (contextMenu) {
                 contextMenu.remove();
                 contextMenu = null;
@@ -854,34 +437,861 @@
             }
         }
 
-        document.addEventListener('click', () => hideContextMenu());
+        document.addEventListener('click', closeContextMenu);
+        document.addEventListener('contextmenu', (e) => {
+            if (!e.target.closest('.file-item') && !e.target.closest('.folder-header')) {
+                closeContextMenu();
+            }
+        });
 
-        // ─────────────────────────────────────────────────────────────
-        // Search panel (minimal find in editor)
-        // ─────────────────────────────────────────────────────────────
-        function showSearchPanel() {
-            const query = prompt('Find:');
-            if (!query) return;
-            const text = textarea.value;
-            const idx = text.indexOf(query, textarea.selectionEnd);
-            if (idx !== -1) {
-                textarea.focus();
-                textarea.selectionStart = idx;
-                textarea.selectionEnd = idx + query.length;
+        async function initDB() {
+            return new Promise(resolve => {
+                const req = indexedDB.open('FileEditor', 1);
+                req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
+                req.onsuccess = e => { db = e.target.result; resolve(); };
+                req.onerror = e => { console.error('IndexedDB error:', e); resolve(); };
+            });
+        }
+
+        async function saveFolderHandle(handle) {
+            if (!db) await initDB();
+            try {
+                const tx = db.transaction('handles', 'readwrite');
+                tx.objectStore('handles').put(handle, 'main');
+            } catch (e) {
+                console.error('Failed to save folder handle:', e);
+            }
+        }
+
+        async function loadSavedFolder() {
+            if (!db) await initDB();
+            try {
+                const tx = db.transaction('handles');
+                const store = tx.objectStore('handles');
+                const request = store.get('main');
+                
+                request.onsuccess = async () => {
+                    if (!request.result) return;
+                    
+                    const handle = request.result;
+                    try {
+                        let permission = await handle.queryPermission({ mode: 'readwrite' });
+                        if (permission !== 'granted') {
+                            permission = await handle.requestPermission({ mode: 'readwrite' });
+                        }
+                        if (permission === 'granted') {
+                            currentDirHandle = handle;
+                            await buildAndRenderTree();
+                        } else {
+                            showToast('Permission denied for saved folder');
+                            await clearSavedFolder();
+                        }
+                    } catch (err) {
+                        showToast('Saved folder no longer accessible');
+                        await clearSavedFolder();
+                    }
+                };
+            } catch (e) {
+                console.error('Error in loadSavedFolder:', e);
+            }
+        }
+
+        function loadExpandedState() {
+            try {
+                const saved = localStorage.getItem('expandedFolders');
+                if (saved) expandedFolders = new Set(JSON.parse(saved));
+            } catch (e) {
+                console.error('Failed to load expanded state:', e);
+            }
+        }
+
+        function saveExpandedState() {
+            try {
+                localStorage.setItem('expandedFolders', JSON.stringify([...expandedFolders]));
+            } catch (e) {
+                console.error('Failed to save expanded state:', e);
+            }
+        }
+
+        async function isSameEntry(h1, h2) {
+            if (!h1 || !h2) return false;
+            if (h1.isSameEntry) {
+                try {
+                    return await h1.isSameEntry(h2);
+                } catch (e) {
+                    console.error('isSameEntry failed:', e);
+                }
+            }
+            try {
+                if (h1.kind === 'file' && h2.kind === 'file') {
+                    const file1 = await h1.getFile();
+                    const file2 = await h2.getFile();
+                    return file1.name === file2.name && 
+                           file1.size === file2.size && 
+                           file1.lastModified === file2.lastModified;
+                }
+                return h1.name === h2.name && h1.kind === h2.kind;
+            } catch {
+                return false;
+            }
+        }
+
+        async function buildTree(dirHandle, basePath = '', maxDepth = 10, currentDepth = 0) {
+            const node = {
+                name: dirHandle.name,
+                kind: 'directory',
+                handle: dirHandle,
+                path: basePath,
+                children: [],
+                truncated: false
+            };
+
+            if (currentDepth >= maxDepth) {
+                node.truncated = true;
+                return node;
+            }
+
+            try {
+                for await (const [name, handle] of dirHandle.entries()) {
+                    if (name.startsWith('.') || name === 'node_modules' || name === '__pycache__') {
+                        continue;
+                    }
+
+                    const childPath = basePath ? `${basePath}/${name}` : name;
+                    
+                    if (handle.kind === 'directory') {
+                        const childNode = await buildTree(handle, childPath, maxDepth, currentDepth + 1);
+                        node.children.push(childNode);
+                    } else {
+                        node.children.push({
+                            name: name,
+                            kind: 'file',
+                            handle: handle,
+                            path: childPath,
+                            ext: name.split('.').pop().toLowerCase()
+                        });
+                    }
+                }
+
+                node.children.sort((a, b) => {
+                    if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+                    return a.name.localeCompare(b.name, undefined, { numeric: true });
+                });
+            } catch (err) {
+                console.error('Error building tree:', err);
+                showToast('Error reading directory: ' + dirHandle.name);
+            }
+
+            return node;
+        }
+
+        async function buildAndRenderTree() {
+            if (!currentDirHandle) return;
+            try {
+                fileTree = await buildTree(currentDirHandle);
+                sidebarHeader.textContent = `Directory: ${fileTree.name}`;
+                renderTree();
+            } catch (err) {
+                showToast('Failed to build directory tree: ' + err.message);
+            }
+        }
+
+        function renderTree() {
+            treeContainer.innerHTML = '';
+            if (!fileTree) return;
+            fileTree.children.forEach(child => {
+                renderTreeItem(child, treeContainer, 0);
+            });
+        }
+
+        function renderTreeItem(node, parentEl, level) {
+            if (node.kind === 'directory') {
+                const folderDiv = document.createElement('div');
+                folderDiv.className = 'tree-folder';
+                
+                const header = document.createElement('div');
+                header.className = 'folder-header';
+                header.style.paddingLeft = `${level * 14}px`;
+                header.tabIndex = 0;
+                
+                const toggle = document.createElement('span');
+                toggle.className = 'toggle';
+                toggle.textContent = expandedFolders.has(node.path) ? '▼' : '▶';
+                
+                header.appendChild(toggle);
+                header.appendChild(document.createTextNode(' ' + node.name));
+                
+                const childrenDiv = document.createElement('div');
+                childrenDiv.className = 'tree-children';
+                childrenDiv.style.display = expandedFolders.has(node.path) ? 'block' : 'none';
+                
+                header.onclick = () => toggleFolder(node, header, childrenDiv);
+                header.addEventListener('keydown', e => handleTreeKeydown(e, node, header, childrenDiv));
+                header.addEventListener('contextmenu', e => showContextMenu(e, node, true));
+                
+                folderDiv.appendChild(header);
+                folderDiv.appendChild(childrenDiv);
+                parentEl.appendChild(folderDiv);
+                
+                node.children.forEach(child => renderTreeItem(child, childrenDiv, level + 1));
             } else {
-                // Wrap around from start
-                const idx2 = text.indexOf(query);
-                if (idx2 !== -1) {
-                    textarea.focus();
-                    textarea.selectionStart = idx2;
-                    textarea.selectionEnd = idx2 + query.length;
+                const fileDiv = document.createElement('div');
+                fileDiv.className = 'file-item';
+                fileDiv.style.paddingLeft = `${level * 14 + 26}px`;
+                fileDiv.textContent = node.name;
+                fileDiv.tabIndex = 0;
+                fileDiv.onclick = () => openFileFromNode(node);
+                fileDiv.addEventListener('keydown', e => {
+                    if (e.key === 'Enter') { e.preventDefault(); openFileFromNode(node); }
+                    else navigateTree(e);
+                });
+                fileDiv.addEventListener('contextmenu', e => showContextMenu(e, node, false));
+                parentEl.appendChild(fileDiv);
+            }
+        }
+
+        function toggleFolder(node, header, childrenDiv) {
+            const isOpen = childrenDiv.style.display !== 'none';
+            childrenDiv.style.display = isOpen ? 'none' : 'block';
+            
+            const toggle = header.querySelector('.toggle');
+            toggle.textContent = isOpen ? '▶' : '▼';
+            
+            if (isOpen) {
+                expandedFolders.delete(node.path);
+            } else {
+                expandedFolders.add(node.path);
+            }
+            saveExpandedState();
+        }
+
+        function getVisibleTreeItems() {
+            return Array.from(treeContainer.querySelectorAll('.folder-header, .file-item'))
+                .filter(el => el.offsetParent !== null);
+        }
+
+        function navigateTree(e) {
+            const items = getVisibleTreeItems();
+            const idx = items.indexOf(e.target);
+            if (idx === -1) return;
+            if (e.key === 'ArrowDown' && idx < items.length - 1) {
+                e.preventDefault();
+                items[idx + 1].focus();
+            } else if (e.key === 'ArrowUp' && idx > 0) {
+                e.preventDefault();
+                items[idx - 1].focus();
+            }
+        }
+
+        function handleTreeKeydown(e, node, header, childrenDiv) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleFolder(node, header, childrenDiv);
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                if (childrenDiv.style.display === 'none') {
+                    toggleFolder(node, header, childrenDiv);
                 } else {
-                    showToast('Not found');
+                    const firstChild = childrenDiv.querySelector('.folder-header, .file-item');
+                    if (firstChild) firstChild.focus();
+                }
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                if (childrenDiv.style.display !== 'none') {
+                    toggleFolder(node, header, childrenDiv);
+                } else {
+                    const parentChildren = header.closest('.tree-children');
+                    if (parentChildren) {
+                        const parentHeader = parentChildren.previousElementSibling;
+                        if (parentHeader) parentHeader.focus();
+                    }
+                }
+            } else {
+                navigateTree(e);
+            }
+        }
+
+        async function openFolder() {
+            try {
+                currentDirHandle = await window.showDirectoryPicker();
+                await saveFolderHandle(currentDirHandle);
+                expandedFolders.clear();
+                await buildAndRenderTree();
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    showToast('Failed to open folder: ' + err.message);
                 }
             }
         }
 
-        // Global keyboard shortcuts
+        async function openFile() {
+            try {
+                const [handle] = await window.showOpenFilePicker();
+                const file = await handle.getFile();
+                const content = await file.text();
+                createNewTab(handle, file.name, content);
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    showToast('Failed to open file: ' + err.message);
+                }
+            }
+        }
+
+        async function newFile() {
+            if (!currentDirHandle) {
+                showToast('Open a folder first to create a new file');
+                return;
+            }
+
+            const name = prompt('Enter new file name:');
+            if (!name || !name.trim()) return;
+
+            const trimmed = name.trim();
+            if (INVALID_FILENAME_CHARS.test(trimmed) || trimmed === '.' || trimmed === '..' || /[\/\\]/.test(trimmed)) {
+                showToast('Invalid filename');
+                return;
+            }
+
+            try {
+                let exists = false;
+                try {
+                    await currentDirHandle.getFileHandle(trimmed);
+                    exists = true;
+                } catch (e) { }
+
+                if (exists) {
+                    showToast('File already exists');
+                    return;
+                }
+
+                const fileHandle = await currentDirHandle.getFileHandle(trimmed, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write('');
+                await writable.close();
+
+                createNewTab(fileHandle, trimmed, '');
+                await buildAndRenderTree();
+                statusEl.textContent = 'Created ' + trimmed;
+                setTimeout(() => statusEl.textContent = 'Ready', 2000);
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    showToast('Failed to create file: ' + err.message);
+                }
+            }
+        }
+
+        async function newFolder() {
+            if (!currentDirHandle) {
+                showToast('Open a folder first to create a new folder');
+                return;
+            }
+
+            const name = prompt('Enter new folder name:');
+            if (!name || !name.trim()) return;
+
+            const trimmed = name.trim();
+            if (INVALID_FILENAME_CHARS.test(trimmed) || trimmed === '.' || trimmed === '..' || /[\/\\]/.test(trimmed)) {
+                showToast('Invalid folder name');
+                return;
+            }
+
+            try {
+                let exists = false;
+                try {
+                    await currentDirHandle.getDirectoryHandle(trimmed);
+                    exists = true;
+                } catch (e) { }
+
+                if (exists) {
+                    showToast('Folder already exists');
+                    return;
+                }
+
+                await currentDirHandle.getDirectoryHandle(trimmed, { create: true });
+                await buildAndRenderTree();
+                statusEl.textContent = 'Created folder ' + trimmed;
+                setTimeout(() => statusEl.textContent = 'Ready', 2000);
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    showToast('Failed to create folder: ' + err.message);
+                }
+            }
+        }
+
+        async function deleteFile() {
+            if (!contextMenuTarget || contextMenuTarget.kind !== 'file') return;
+            
+            const fileName = contextMenuTarget.name;
+            if (!confirm(`Delete "${fileName}"? This cannot be undone.`)) {
+                closeContextMenu();
+                return;
+            }
+
+            try {
+                for (const t of tabs) {
+                    if (t.handle && await isSameEntry(t.handle, contextMenuTarget.handle)) {
+                        closeTab(t.id);
+                        break;
+                    }
+                }
+
+                const pathParts = contextMenuTarget.path.split('/');
+                pathParts.pop();
+                
+                let parentHandle = currentDirHandle;
+                for (const part of pathParts) {
+                    if (part) {
+                        parentHandle = await parentHandle.getDirectoryHandle(part);
+                    }
+                }
+                
+                await parentHandle.removeEntry(fileName);
+                await buildAndRenderTree();
+                showToast(`Deleted ${fileName}`);
+            } catch (err) {
+                showToast('Failed to delete file: ' + err.message);
+            } finally {
+                closeContextMenu();
+            }
+        }
+
+        async function deleteFolder() {
+            if (!contextMenuTarget || contextMenuTarget.kind !== 'directory') return;
+            
+            const folderName = contextMenuTarget.name;
+            if (contextMenuTarget.children && contextMenuTarget.children.length > 0) {
+                showToast('Cannot delete non-empty folder');
+                closeContextMenu();
+                return;
+            }
+
+            if (!confirm(`Delete empty folder "${folderName}"?`)) {
+                closeContextMenu();
+                return;
+            }
+
+            try {
+                const pathParts = contextMenuTarget.path.split('/');
+                pathParts.pop();
+                
+                let parentHandle = currentDirHandle;
+                for (const part of pathParts) {
+                    if (part) {
+                        parentHandle = await parentHandle.getDirectoryHandle(part);
+                    }
+                }
+                
+                await parentHandle.removeEntry(folderName);
+                expandedFolders.delete(contextMenuTarget.path);
+                saveExpandedState();
+                await buildAndRenderTree();
+                showToast(`Deleted folder ${folderName}`);
+            } catch (err) {
+                showToast('Failed to delete folder: ' + err.message);
+            } finally {
+                closeContextMenu();
+            }
+        }
+
+        async function renameItem() {
+            if (!contextMenuTarget) return;
+            
+            const oldName = contextMenuTarget.name;
+            const isFolder = contextMenuTarget.kind === 'directory';
+            const newName = prompt(`Rename ${isFolder ? 'folder' : 'file'}:`, oldName);
+            
+            if (!newName || !newName.trim() || newName === oldName) {
+                closeContextMenu();
+                return;
+            }
+
+            const trimmed = newName.trim();
+            if (INVALID_FILENAME_CHARS.test(trimmed) || trimmed === '.' || trimmed === '..' || /[\/\\]/.test(trimmed)) {
+                showToast('Invalid name');
+                closeContextMenu();
+                return;
+            }
+
+            try {
+                const pathParts = contextMenuTarget.path.split('/');
+                pathParts.pop();
+                
+                let parentHandle = currentDirHandle;
+                for (const part of pathParts) {
+                    if (part) {
+                        parentHandle = await parentHandle.getDirectoryHandle(part);
+                    }
+                }
+
+                try {
+                    if (isFolder) {
+                        await parentHandle.getDirectoryHandle(trimmed);
+                    } else {
+                        await parentHandle.getFileHandle(trimmed);
+                    }
+                    showToast('Name already exists');
+                    closeContextMenu();
+                    return;
+                } catch (e) { }
+
+                if (isFolder) {
+                    showToast('Folder renaming not yet implemented');
+                } else {
+                    const oldHandle = await parentHandle.getFileHandle(oldName);
+                    const file = await oldHandle.getFile();
+                    const content = await file.text();
+                    
+                    const newHandle = await parentHandle.getFileHandle(trimmed, { create: true });
+                    const writable = await newHandle.createWritable();
+                    await writable.write(content);
+                    await writable.close();
+                    
+                    await parentHandle.removeEntry(oldName);
+                    
+                    for (const openTab of tabs) {
+                        if (openTab.handle && await isSameEntry(openTab.handle, contextMenuTarget.handle)) {
+                            openTab.name = trimmed;
+                            openTab.handle = newHandle;
+                            if (openTab.element) {
+                                const nameSpan = openTab.element.querySelector('.tab-name');
+                                if (nameSpan) nameSpan.textContent = trimmed;
+                            }
+                            updateEditorStatus(openTab);
+                            break;
+                        }
+                    }
+                    
+                    await buildAndRenderTree();
+                    showToast(`Renamed to ${trimmed}`);
+                }
+            } catch (err) {
+                showToast('Failed to rename: ' + err.message);
+            } finally {
+                closeContextMenu();
+            }
+        }
+
+        async function openFileFromNode(node) {
+            try {
+                const file = await node.handle.getFile();
+                if (!file.type.startsWith('text/') && !TEXT_FILE_EXTENSIONS.test(file.name)) {
+                    if (!confirm('This looks like a binary file. Open anyway?')) return;
+                }
+                const content = await file.text();
+                createNewTab(node.handle, node.name, content);
+            } catch (err) {
+                showToast('Failed to open file: ' + err.message);
+            }
+        }
+
+        async function createNewTab(handle, name, content = '') {
+            if (handle) {
+                for (const t of tabs) {
+                    if (t.handle && await isSameEntry(t.handle, handle)) {
+                        switchToTab(t.id);
+                        return;
+                    }
+                }
+            }
+
+            const id = nextTabId++;
+            const tab = { id, name, handle, content, dirty: false };
+            tabs.push(tab);
+            
+            const tabEl = document.createElement('div');
+            tabEl.className = 'tab';
+            tabEl.dataset.id = id;
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'tab-name';
+            nameSpan.textContent = name;
+            
+            const dirtyIndicator = document.createElement('span');
+            dirtyIndicator.className = 'dirty-indicator';
+            dirtyIndicator.style.display = 'none';
+            dirtyIndicator.textContent = ' *';
+            
+            const closeBtn = document.createElement('span');
+            closeBtn.className = 'close';
+            closeBtn.textContent = '×';
+            closeBtn.onclick = (e) => { e.stopPropagation(); closeTab(id); };
+            
+            tabEl.appendChild(nameSpan);
+            tabEl.appendChild(dirtyIndicator);
+            tabEl.appendChild(closeBtn);
+            tabEl.onclick = () => switchToTab(id);
+            
+            tabsContainer.appendChild(tabEl);
+            tab.element = tabEl;
+            
+            switchToTab(id);
+        }
+
+        function switchToTab(id) {
+            if (currentTabId !== null) {
+                const current = tabs.find(t => t.id === currentTabId);
+                if (current) {
+                    current.content = textarea.value;
+                }
+            }
+            
+            currentTabId = id;
+            const tab = tabs.find(t => t.id === id);
+            
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab[data-id="${id}"]`)?.classList.add('active');
+            
+            textarea.value = tab.content;
+            updateLineNumbers();
+            updateEditorStatus(tab);
+        }
+
+        function closeTab(id) {
+            const idx = tabs.findIndex(t => t.id === id);
+            if (idx === -1) return;
+            
+            const tab = tabs[idx];
+            if (currentTabId === id) {
+                tab.content = textarea.value;
+            }
+            
+            if (tab.dirty) {
+                if (!confirm(`"${tab.name}" has unsaved changes. Close anyway?`)) {
+                    return;
+                }
+            }
+            
+            tabs.splice(idx, 1);
+            const tabEl = document.querySelector(`.tab[data-id="${id}"]`);
+            if (tabEl) tabEl.remove();
+            
+            if (tabs.length === 0) {
+                currentTabId = null;
+                textarea.value = '';
+                gutter.innerHTML = '';
+                editorStatusEl.textContent = 'No file open';
+                return;
+            }
+            
+            const nextIdx = Math.min(idx, tabs.length - 1);
+            switchToTab(tabs[nextIdx].id);
+        }
+
+        function updateLineNumbers() {
+            const lines = textarea.value.split('\n').length;
+            let html = '';
+            for (let i = 1; i <= lines; i++) html += i + '<br>';
+            gutter.innerHTML = html;
+        }
+
+        function syncScroll() { 
+            gutter.scrollTop = textarea.scrollTop; 
+        }
+
+        textarea.addEventListener('keydown', e => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                textarea.value = textarea.value.substring(0, start) + '    ' + textarea.value.substring(end);
+                textarea.selectionStart = textarea.selectionEnd = start + 4;
+                textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+
+        let saveTimer;
+        function scheduleSave() {
+            clearTimeout(saveTimer);
+            const tabIdToSave = currentTabId;
+            saveTimer = setTimeout(() => {
+                if (tabIdToSave !== null) {
+                    const tab = tabs.find(t => t.id === tabIdToSave);
+                    if (tab && tab.dirty) {
+                        if (currentTabId === tabIdToSave) {
+                            tab.content = textarea.value;
+                        }
+                        saveTab(tab);
+                    }
+                }
+            }, 800);
+        }
+
+        // Auto line break on typing
+        textarea.addEventListener('input', enforceLineBreaks);
+        textarea.addEventListener('input', () => {
+            updateLineNumbers();
+                if (currentTabId !== null) {
+                const tab = tabs.find(t => t.id === currentTabId);
+                if (tab) {
+                    tab.dirty = true;
+                    if (tab.element) {
+                        const indicator = tab.element.querySelector('.dirty-indicator');
+                        if (indicator) indicator.style.display = '';
+                    }
+                    updateEditorStatus(tab);
+                    scheduleSave();
+                }
+            }
+        });
+
+textarea.addEventListener('scroll', () => gutter.scrollTop = textarea.scrollTop);
+
+        async function saveTab(tab) {
+            if (!tab || !tab.handle) return;
+            if (!tab.dirty) return;
+            
+            try {
+                const writable = await tab.handle.createWritable();
+                const content = (currentTabId === tab.id) ? textarea.value : tab.content;
+                await writable.write(content);
+                await writable.close();
+                tab.content = content;
+                tab.dirty = false;
+                if (tab.element) {
+                    const indicator = tab.element.querySelector('.dirty-indicator');
+                    if (indicator) indicator.style.display = 'none';
+                }
+                updateEditorStatus(tab);
+                statusEl.textContent = 'Saved';
+                setTimeout(() => statusEl.textContent = 'Ready', 1200);
+            } catch (err) {
+                showToast('Save failed: ' + err.message);
+            }
+        }
+
+        async function saveCurrentFile() {
+            if (currentTabId === null) return;
+            const tab = tabs.find(t => t.id === currentTabId);
+            await saveTab(tab);
+        }
+
+        function updateEditorStatus(tab) {
+            editorStatusEl.textContent = tab.name + (tab.dirty ? ' • Modified' : '');
+        }
+
+        let searchPanel = null;
+        let searchMatches = [];
+        let currentMatchIndex = -1;
+
+        function showSearchPanel() {
+            if (searchPanel) {
+                document.getElementById('search-input').focus();
+                return;
+            }
+
+            searchPanel = document.createElement('div');
+            searchPanel.className = 'search-panel';
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.id = 'search-input';
+            input.placeholder = 'Search...';
+            
+            const matchCount = document.createElement('span');
+            matchCount.className = 'match-count';
+            matchCount.id = 'match-count';
+            matchCount.textContent = '0 matches';
+            
+            const nextBtn = document.createElement('button');
+            nextBtn.textContent = 'Next';
+            nextBtn.addEventListener('click', findNext);
+            
+            const prevBtn = document.createElement('button');
+            prevBtn.textContent = 'Previous';
+            prevBtn.addEventListener('click', findPrevious);
+            
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'close-search';
+            closeBtn.textContent = '×';
+            closeBtn.addEventListener('click', closeSearch);
+            
+            searchPanel.appendChild(input);
+            searchPanel.appendChild(matchCount);
+            searchPanel.appendChild(nextBtn);
+            searchPanel.appendChild(prevBtn);
+            searchPanel.appendChild(closeBtn);
+            document.body.appendChild(searchPanel);
+
+            input.focus();
+            input.addEventListener('input', performSearch);
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        findPrevious();
+                    } else {
+                        findNext();
+                    }
+                } else if (e.key === 'Escape') {
+                    closeSearch();
+                }
+            });
+        }
+
+        function performSearch() {
+            const query = document.getElementById('search-input').value;
+            searchMatches = [];
+            currentMatchIndex = -1;
+
+            if (!query || !textarea.value) {
+                document.getElementById('match-count').textContent = '0 matches';
+                return;
+            }
+
+            const text = textarea.value;
+            const lowerText = text.toLowerCase();
+            const lowerQuery = query.toLowerCase();
+            
+            let pos = 0;
+            while ((pos = lowerText.indexOf(lowerQuery, pos)) !== -1) {
+                searchMatches.push(pos);
+                pos += query.length;
+            }
+
+            document.getElementById('match-count').textContent = `${searchMatches.length} matches`;
+            
+            if (searchMatches.length > 0) {
+                currentMatchIndex = 0;
+                highlightMatch();
+            }
+        }
+
+        function findNext() {
+            if (searchMatches.length === 0) return;
+            currentMatchIndex = (currentMatchIndex + 1) % searchMatches.length;
+            highlightMatch();
+        }
+
+        function findPrevious() {
+            if (searchMatches.length === 0) return;
+            currentMatchIndex = (currentMatchIndex - 1 + searchMatches.length) % searchMatches.length;
+            highlightMatch();
+        }
+
+        function highlightMatch() {
+            if (currentMatchIndex < 0 || currentMatchIndex >= searchMatches.length) return;
+            
+            const pos = searchMatches[currentMatchIndex];
+            const query = document.getElementById('search-input').value;
+            
+            textarea.focus();
+            textarea.setSelectionRange(pos, pos + query.length);
+            textarea.scrollTop = textarea.scrollHeight * (pos / textarea.value.length) - textarea.clientHeight / 2;
+            
+            document.getElementById('match-count').textContent = 
+                `${currentMatchIndex + 1} of ${searchMatches.length}`;
+        }
+
+        function closeSearch() {
+            if (searchPanel) {
+                searchPanel.remove();
+                searchPanel = null;
+                searchMatches = [];
+                currentMatchIndex = -1;
+            }
+        }
+
+// Global keyboard shortcuts
         document.addEventListener('keydown', e => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
@@ -894,17 +1304,39 @@
                 if (currentTabId !== null) closeTab(currentTabId);
             }
         });
-
-        // Auto line break on typing
-        textarea.addEventListener('input', enforceLineBreaks);
-        textarea.addEventListener('input', () => {
-            updateLineNumbers();
-            markDirty();
-            updateEditorStatus();
+        
+        window.addEventListener('beforeunload', e => {
+            const hasUnsaved = tabs.some(t => t.dirty);
+            if (hasUnsaved) {
+                e.preventDefault();
+            }
         });
-        textarea.addEventListener('scroll', () => gutter.scrollTop = textarea.scrollTop);
 
-        window.onload = async () => {
+        async function clearSavedFolder() {
+            if (db) {
+                try {
+                    const tx = db.transaction('handles', 'readwrite');
+                    tx.objectStore('handles').delete('main');
+                } catch (e) {
+                    console.error('Failed to clear saved folder:', e);
+                }
+            }
+            currentDirHandle = null;
+            fileTree = null;
+            treeContainer.innerHTML = '';
+            sidebarHeader.textContent = 'Directory';
+            expandedFolders.clear();
+            localStorage.removeItem('expandedFolders');
+            showToast('Saved folder cleared');
+        }
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+                .then(() => console.log('Service Worker registered'))
+                .catch(err => console.log('SW registration failed', err));
+        }
+
+window.onload = async () => {
             await initDB();
             loadExpandedState();
             await loadSavedFolder();
