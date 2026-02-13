@@ -257,6 +257,62 @@
             border-radius: 4px;
         }
         .sidebar-toggle:hover { background: #27272a; color: #e4e4e7; }
+
+        /* Search panel styles */
+        .search-panel {
+            position: fixed;
+            top: 60px;
+            right: 20px;
+            background: #18181b;
+            border: 1px solid #27272a;
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .search-panel input {
+            background: #27272a;
+            border: 1px solid #3f3f46;
+            color: #e4e4e7;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            outline: none;
+            width: 200px;
+        }
+        .search-panel input:focus {
+            border-color: #52525b;
+        }
+        .search-panel button {
+            background: #27272a;
+            border: none;
+            color: #e4e4e7;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .search-panel button:hover {
+            background: #3f3f46;
+        }
+        .search-panel .match-count {
+            font-size: 12px;
+            color: #71717a;
+        }
+        .search-panel .close-search {
+            background: none;
+            border: none;
+            color: #71717a;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 0 4px;
+        }
+        .search-panel .close-search:hover {
+            color: #e4e4e7;
+        }
     </style>
 </head>
 <body>
@@ -298,13 +354,14 @@
     </div>
 
     <script>
-        // ─────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════
         // Core state
-        // ─────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════
         let currentDirHandle = null;
-        let fileTree = null;           // root tree node
-        let tabs = [];                 // { id, name, handle, content, dirty }
+        let fileTree = null;
+        let tabs = [];
         let currentTabId = null;
+        let nextTabId = 1; // FIXED: Better tab ID generation
         let db = null;
         let expandedFolders = new Set();
 
@@ -317,15 +374,16 @@
         const statusEl = document.getElementById('status');
         const editorStatusEl = document.getElementById('editor-status');
 
-        const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs)$/i;
+        const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
+        const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/g; // FIXED: Better filename validation
 
         function toggleSidebar() {
             sidebarEl.classList.toggle('hidden');
         }
 
-        // ─────────────────────────────────────────────────────────────
-        // Toast notifications for errors
-        // ─────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════
+        // Toast notifications
+        // ═════════════════════════════════════════════════════════════
         function showToast(message, duration = 4000) {
             const toast = document.createElement('div');
             toast.className = 'toast';
@@ -334,83 +392,167 @@
             setTimeout(() => toast.remove(), duration);
         }
 
-        // ─────────────────────────────────────────────────────────────
-        // IndexedDB + localStorage for expanded folders
-        // ─────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════
+        // IndexedDB + localStorage
+        // ═════════════════════════════════════════════════════════════
         async function initDB() {
             return new Promise(resolve => {
                 const req = indexedDB.open('FileEditor', 1);
                 req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
                 req.onsuccess = e => { db = e.target.result; resolve(); };
+                req.onerror = e => { 
+                    console.error('IndexedDB error:', e);
+                    resolve(); // Continue even if DB fails
+                };
             });
         }
 
         async function saveFolderHandle(handle) {
             if (!db) await initDB();
-            const tx = db.transaction('handles', 'readwrite');
-            tx.objectStore('handles').put(handle, 'main');
+            try {
+                const tx = db.transaction('handles', 'readwrite');
+                tx.objectStore('handles').put(handle, 'main');
+            } catch (e) {
+                console.error('Failed to save folder handle:', e);
+            }
         }
 
+        // FIXED: Added permission checks when loading saved folder
         async function loadSavedFolder() {
             if (!db) await initDB();
-            const tx = db.transaction('handles');
-            const store = tx.objectStore('handles');
-            const request = store.get('main');
-            request.onsuccess = async () => {
-                if (request.result) {
-                    currentDirHandle = request.result;
-                    await buildAndRenderTree();
-                }
-            };
+            try {
+                const tx = db.transaction('handles');
+                const store = tx.objectStore('handles');
+                const request = store.get('main');
+                
+                request.onsuccess = async () => {
+                    if (!request.result) return;
+                    
+                    const handle = request.result;
+                    try {
+                        // Check if handle still has permission
+                        let permission = await handle.queryPermission({ mode: 'readwrite' });
+                        
+                        if (permission !== 'granted') {
+                            permission = await handle.requestPermission({ mode: 'readwrite' });
+                        }
+                        
+                        if (permission === 'granted') {
+                            currentDirHandle = handle;
+                            await buildAndRenderTree();
+                        } else {
+                            showToast('Permission denied for saved folder. Please re-open.');
+                            await clearSavedFolder();
+                        }
+                    } catch (err) {
+                        showToast('Saved folder no longer accessible');
+                        await clearSavedFolder();
+                    }
+                };
+                
+                request.onerror = () => {
+                    console.error('Failed to load saved folder');
+                };
+            } catch (e) {
+                console.error('Error in loadSavedFolder:', e);
+            }
         }
 
-        // Load persisted expanded state
         function loadExpandedState() {
             try {
                 const saved = localStorage.getItem('expandedFolders');
                 if (saved) expandedFolders = new Set(JSON.parse(saved));
             } catch (e) {
-                showToast('Failed to load expanded state: ' + e.message);
+                console.error('Failed to load expanded state:', e);
             }
         }
 
         function saveExpandedState() {
-            localStorage.setItem('expandedFolders', JSON.stringify([...expandedFolders]));
+            try {
+                localStorage.setItem('expandedFolders', JSON.stringify([...expandedFolders]));
+            } catch (e) {
+                console.error('Failed to save expanded state:', e);
+            }
         }
 
-        // ─────────────────────────────────────────────────────────────
-        // Recursive tree building
-        // ─────────────────────────────────────────────────────────────
-        async function buildTree(dirHandle, basePath = '') {
+        // ═════════════════════════════════════════════════════════════
+        // File handle comparison - FIXED
+        // ═════════════════════════════════════════════════════════════
+        async function isSameEntry(h1, h2) {
+            if (!h1 || !h2) return false;
+            
+            // Use native isSameEntry if available
+            if (h1.isSameEntry) {
+                try {
+                    return await h1.isSameEntry(h2);
+                } catch (e) {
+                    console.error('isSameEntry failed:', e);
+                }
+            }
+            
+            // Fallback: compare file metadata
+            try {
+                const file1 = await h1.getFile();
+                const file2 = await h2.getFile();
+                return file1.name === file2.name && 
+                       file1.size === file2.size && 
+                       file1.lastModified === file2.lastModified;
+            } catch {
+                return false;
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════
+        // Recursive tree building with depth limit - FIXED
+        // ═════════════════════════════════════════════════════════════
+        async function buildTree(dirHandle, basePath = '', maxDepth = 10, currentDepth = 0) {
             const node = {
                 name: dirHandle.name,
                 kind: 'directory',
                 handle: dirHandle,
                 path: basePath,
-                children: []
+                children: [],
+                truncated: false
             };
 
-            for await (const [name, handle] of dirHandle.entries()) {
-                const childPath = basePath ? `${basePath}/${name}` : name;
-                if (handle.kind === 'directory') {
-                    const childNode = await buildTree(handle, childPath);
-                    node.children.push(childNode);
-                } else {
-                    node.children.push({
-                        name: name,
-                        kind: 'file',
-                        handle: handle,
-                        path: childPath,
-                        ext: name.split('.').pop().toLowerCase()
-                    });
-                }
+            // Prevent infinite recursion on very deep directories
+            if (currentDepth >= maxDepth) {
+                node.truncated = true;
+                return node;
             }
 
-            // Folders first, then alphabetical
-            node.children.sort((a, b) => {
-                if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
-                return a.name.localeCompare(b.name, undefined, { numeric: true });
-            });
+            try {
+                for await (const [name, handle] of dirHandle.entries()) {
+                    // Skip hidden files and common ignore patterns
+                    if (name.startsWith('.') || name === 'node_modules' || name === '__pycache__') {
+                        continue;
+                    }
+
+                    const childPath = basePath ? `${basePath}/${name}` : name;
+                    
+                    if (handle.kind === 'directory') {
+                        const childNode = await buildTree(handle, childPath, maxDepth, currentDepth + 1);
+                        node.children.push(childNode);
+                    } else {
+                        node.children.push({
+                            name: name,
+                            kind: 'file',
+                            handle: handle,
+                            path: childPath,
+                            ext: name.split('.').pop().toLowerCase()
+                        });
+                    }
+                }
+
+                // Folders first, then alphabetical
+                node.children.sort((a, b) => {
+                    if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+                    return a.name.localeCompare(b.name, undefined, { numeric: true });
+                });
+            } catch (err) {
+                console.error('Error building tree:', err);
+                showToast('Error reading directory: ' + dirHandle.name);
+            }
 
             return node;
         }
@@ -418,17 +560,18 @@
         async function buildAndRenderTree() {
             if (!currentDirHandle) return;
             
-            fileTree = await buildTree(currentDirHandle);
-            sidebarHeader.textContent = `Directory: ${fileTree.name}`;
-            
-            // Start with all folders collapsed until the user expands them
-            
-            renderTree();
+            try {
+                fileTree = await buildTree(currentDirHandle);
+                sidebarHeader.textContent = `Directory: ${fileTree.name}`;
+                renderTree();
+            } catch (err) {
+                showToast('Failed to build directory tree: ' + err.message);
+            }
         }
 
-        // ─────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════
         // Tree rendering
-        // ─────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════
         function renderTree() {
             treeContainer.innerHTML = '';
             if (!fileTree) return;
@@ -454,6 +597,14 @@
                 
                 header.appendChild(toggle);
                 header.appendChild(document.createTextNode(' ' + node.name));
+                
+                if (node.truncated) {
+                    const truncatedNote = document.createElement('span');
+                    truncatedNote.style.color = '#71717a';
+                    truncatedNote.style.fontSize = '11px';
+                    truncatedNote.textContent = ' (depth limit)';
+                    header.appendChild(truncatedNote);
+                }
                 
                 const childrenDiv = document.createElement('div');
                 childrenDiv.className = 'tree-children';
@@ -497,9 +648,9 @@
             saveExpandedState();
         }
 
-        // ─────────────────────────────────────────────────────────────
-        // Keyboard navigation in tree (Change 7)
-        // ─────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════
+        // Keyboard navigation in tree
+        // ═════════════════════════════════════════════════════════════
         function getVisibleTreeItems() {
             return Array.from(treeContainer.querySelectorAll('.folder-header, .file-item'))
                 .filter(el => el.offsetParent !== null);
@@ -546,17 +697,19 @@
             }
         }
 
-        // ─────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════
         // File operations
-        // ─────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════
         async function openFolder() {
             try {
                 currentDirHandle = await window.showDirectoryPicker();
                 await saveFolderHandle(currentDirHandle);
-                expandedFolders.clear(); // new project, fresh state
+                expandedFolders.clear();
                 await buildAndRenderTree();
             } catch (err) {
-                if (err.name !== 'AbortError') showToast('Failed to open folder: ' + err.message);
+                if (err.name !== 'AbortError') {
+                    showToast('Failed to open folder: ' + err.message);
+                }
             }
         }
 
@@ -567,7 +720,9 @@
                 const content = await file.text();
                 createNewTab(handle, file.name, content);
             } catch (err) {
-                if (err.name !== 'AbortError') showToast('Failed to open file: ' + err.message);
+                if (err.name !== 'AbortError') {
+                    showToast('Failed to open file: ' + err.message);
+                }
             }
         }
 
@@ -581,8 +736,10 @@
             if (!name || !name.trim()) return;
 
             const trimmed = name.trim();
-            if (/[\/\\]/.test(trimmed)) {
-                showToast('File name cannot contain path separators.');
+            
+            // FIXED: Better filename validation
+            if (INVALID_FILENAME_CHARS.test(trimmed) || trimmed === '.' || trimmed === '..' || /[\/\\]/.test(trimmed)) {
+                showToast('Invalid filename. Avoid special characters and path separators.');
                 return;
             }
 
@@ -609,7 +766,9 @@
                 statusEl.textContent = 'Created ' + trimmed;
                 setTimeout(() => statusEl.textContent = 'Ready', 2000);
             } catch (err) {
-                if (err.name !== 'AbortError') showToast('Failed to create file: ' + err.message);
+                if (err.name !== 'AbortError') {
+                    showToast('Failed to create file: ' + err.message);
+                }
             }
         }
 
@@ -626,28 +785,49 @@
             }
         }
 
-        // ─────────────────────────────────────────────────────────────
-        // Tabs & editor (unchanged from previous)
-        // ─────────────────────────────────────────────────────────────
-        function createNewTab(handle, name, content = '') {
-            // Prevent duplicate tabs for the same file
+        // ═════════════════════════════════════════════════════════════
+        // Tabs & editor - FIXED: XSS protection, better ID generation
+        // ═════════════════════════════════════════════════════════════
+        async function createNewTab(handle, name, content = '') {
+            // FIXED: Prevent duplicate tabs using proper handle comparison
             if (handle) {
-                const existing = tabs.find(t => t.handle === handle);
-                if (existing) {
-                    switchToTab(existing.id);
-                    return;
+                for (const t of tabs) {
+                    if (t.handle && await isSameEntry(t.handle, handle)) {
+                        switchToTab(t.id);
+                        return;
+                    }
                 }
             }
 
-            const id = Date.now();
+            // FIXED: Better tab ID generation
+            const id = nextTabId++;
             const tab = { id, name, handle, content, dirty: false };
             tabs.push(tab);
             
             const tabEl = document.createElement('div');
             tabEl.className = 'tab';
             tabEl.dataset.id = id;
-            tabEl.innerHTML = `<span class="tab-name">${name}</span><span class="dirty-indicator" style="display:none"> *</span><span class="close" onclick="event.stopImmediatePropagation(); closeTab(${id})">×</span>`;
+            
+            // FIXED: XSS-safe tab creation (no innerHTML with user content)
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'tab-name';
+            nameSpan.textContent = name; // Safe - no HTML injection
+            
+            const dirtyIndicator = document.createElement('span');
+            dirtyIndicator.className = 'dirty-indicator';
+            dirtyIndicator.style.display = 'none';
+            dirtyIndicator.textContent = ' *';
+            
+            const closeBtn = document.createElement('span');
+            closeBtn.className = 'close';
+            closeBtn.textContent = '×';
+            closeBtn.onclick = (e) => { e.stopPropagation(); closeTab(id); };
+            
+            tabEl.appendChild(nameSpan);
+            tabEl.appendChild(dirtyIndicator);
+            tabEl.appendChild(closeBtn);
             tabEl.onclick = () => switchToTab(id);
+            
             tabsContainer.appendChild(tabEl);
             tab.element = tabEl;
             
@@ -655,9 +835,12 @@
         }
 
         function switchToTab(id) {
+            // FIXED: Sync content before switching to prevent data loss
             if (currentTabId !== null) {
                 const current = tabs.find(t => t.id === currentTabId);
-                if (current) current.content = textarea.value;
+                if (current) {
+                    current.content = textarea.value;
+                }
             }
             
             currentTabId = id;
@@ -671,9 +854,25 @@
             updateEditorStatus(tab);
         }
 
+        // FIXED: Warn about unsaved changes before closing
         function closeTab(id) {
             const idx = tabs.findIndex(t => t.id === id);
             if (idx === -1) return;
+            
+            const tab = tabs[idx];
+            
+            // Sync current content if this is the active tab
+            if (currentTabId === id) {
+                tab.content = textarea.value;
+            }
+            
+            // Warn about unsaved changes
+            if (tab.dirty) {
+                if (!confirm(`"${tab.name}" has unsaved changes. Close anyway?`)) {
+                    return;
+                }
+            }
+            
             tabs.splice(idx, 1);
             const tabEl = document.querySelector(`.tab[data-id="${id}"]`);
             if (tabEl) tabEl.remove();
@@ -685,7 +884,10 @@
                 editorStatusEl.textContent = 'No file open';
                 return;
             }
-            switchToTab(tabs[Math.max(0, idx - 1)].id);
+            
+            // Switch to nearest tab
+            const nextIdx = Math.min(idx, tabs.length - 1);
+            switchToTab(tabs[nextIdx].id);
         }
 
         function updateLineNumbers() {
@@ -695,7 +897,9 @@
             gutter.innerHTML = html;
         }
 
-        function syncScroll() { gutter.scrollTop = textarea.scrollTop; }
+        function syncScroll() { 
+            gutter.scrollTop = textarea.scrollTop; 
+        }
 
         textarea.addEventListener('keydown', e => {
             if (e.key === 'Tab') {
@@ -707,14 +911,21 @@
             }
         });
 
-        // ─────────────────────────────────────────────────────────────
-        // Debounced auto-save (Change 1)
-        // ─────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════
+        // Auto-save with debouncing - FIXED: Sync content first
+        // ═════════════════════════════════════════════════════════════
         let saveTimer;
         function scheduleSave() {
             clearTimeout(saveTimer);
             saveTimer = setTimeout(() => {
-                if (currentTabId !== null) saveCurrentFile();
+                if (currentTabId !== null) {
+                    const tab = tabs.find(t => t.id === currentTabId);
+                    if (tab && tab.dirty) {
+                        // FIXED: Sync content before saving
+                        tab.content = textarea.value;
+                        saveCurrentFile();
+                    }
+                }
             }, 800);
         }
 
@@ -728,9 +939,9 @@
                         const indicator = tab.element.querySelector('.dirty-indicator');
                         if (indicator) indicator.style.display = '';
                     }
+                    updateEditorStatus(tab);
+                    scheduleSave();
                 }
-                updateEditorStatus(tab);
-                scheduleSave();
             }
         });
 
@@ -760,22 +971,145 @@
             }
         }
 
-
         function updateEditorStatus(tab) {
             editorStatusEl.textContent = tab.name + (tab.dirty ? ' • Modified' : '');
         }
 
+        // ═════════════════════════════════════════════════════════════
+        // Search functionality - NEW
+        // ═════════════════════════════════════════════════════════════
+        let searchPanel = null;
+        let searchMatches = [];
+        let currentMatchIndex = -1;
+
+        function showSearchPanel() {
+            if (searchPanel) {
+                document.getElementById('search-input').focus();
+                return;
+            }
+
+            searchPanel = document.createElement('div');
+            searchPanel.className = 'search-panel';
+            searchPanel.innerHTML = `
+                <input type="text" id="search-input" placeholder="Search...">
+                <span class="match-count" id="match-count">0 matches</span>
+                <button onclick="findNext()">Next</button>
+                <button onclick="findPrevious()">Previous</button>
+                <button class="close-search" onclick="closeSearch()">×</button>
+            `;
+            document.body.appendChild(searchPanel);
+
+            const input = document.getElementById('search-input');
+            input.focus();
+            input.addEventListener('input', performSearch);
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        findPrevious();
+                    } else {
+                        findNext();
+                    }
+                } else if (e.key === 'Escape') {
+                    closeSearch();
+                }
+            });
+        }
+
+        function performSearch() {
+            const query = document.getElementById('search-input').value;
+            searchMatches = [];
+            currentMatchIndex = -1;
+
+            if (!query || !textarea.value) {
+                document.getElementById('match-count').textContent = '0 matches';
+                return;
+            }
+
+            const text = textarea.value;
+            const lowerText = text.toLowerCase();
+            const lowerQuery = query.toLowerCase();
+            
+            let pos = 0;
+            while ((pos = lowerText.indexOf(lowerQuery, pos)) !== -1) {
+                searchMatches.push(pos);
+                pos += query.length;
+            }
+
+            document.getElementById('match-count').textContent = `${searchMatches.length} matches`;
+            
+            if (searchMatches.length > 0) {
+                currentMatchIndex = 0;
+                highlightMatch();
+            }
+        }
+
+        function findNext() {
+            if (searchMatches.length === 0) return;
+            currentMatchIndex = (currentMatchIndex + 1) % searchMatches.length;
+            highlightMatch();
+        }
+
+        function findPrevious() {
+            if (searchMatches.length === 0) return;
+            currentMatchIndex = (currentMatchIndex - 1 + searchMatches.length) % searchMatches.length;
+            highlightMatch();
+        }
+
+        function highlightMatch() {
+            if (currentMatchIndex < 0 || currentMatchIndex >= searchMatches.length) return;
+            
+            const pos = searchMatches[currentMatchIndex];
+            const query = document.getElementById('search-input').value;
+            
+            textarea.focus();
+            textarea.setSelectionRange(pos, pos + query.length);
+            textarea.scrollTop = textarea.scrollHeight * (pos / textarea.value.length) - textarea.clientHeight / 2;
+            
+            document.getElementById('match-count').textContent = 
+                `${currentMatchIndex + 1} of ${searchMatches.length}`;
+        }
+
+        function closeSearch() {
+            if (searchPanel) {
+                searchPanel.remove();
+                searchPanel = null;
+                searchMatches = [];
+                currentMatchIndex = -1;
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════
+        // Global keyboard shortcuts
+        // ═════════════════════════════════════════════════════════════
         document.addEventListener('keydown', e => {
+            // Save: Ctrl+S
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
                 saveCurrentFile();
+            }
+            // Search: Ctrl+F
+            else if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                showSearchPanel();
+            }
+            // Close tab: Ctrl+W
+            else if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
+                e.preventDefault();
+                if (currentTabId !== null) {
+                    closeTab(currentTabId);
+                }
             }
         });
 
         async function clearSavedFolder() {
             if (db) {
-                const tx = db.transaction('handles', 'readwrite');
-                tx.objectStore('handles').delete('main');
+                try {
+                    const tx = db.transaction('handles', 'readwrite');
+                    tx.objectStore('handles').delete('main');
+                } catch (e) {
+                    console.error('Failed to clear saved folder:', e);
+                }
             }
             currentDirHandle = null;
             fileTree = null;
@@ -783,27 +1117,31 @@
             sidebarHeader.textContent = 'Directory';
             expandedFolders.clear();
             localStorage.removeItem('expandedFolders');
+            showToast('Saved folder cleared');
         }
 
-// ─────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════
         // Service worker registration
-        // ─────────────────────────────────────────────────────────────
+        // ═════════════════════════════════════════════════════════════
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js')
                 .then(() => console.log('Service Worker registered'))
                 .catch(err => console.log('SW registration failed', err));
         }
 
-        // Init
+        // ═════════════════════════════════════════════════════════════
+        // Initialization
+        // ═════════════════════════════════════════════════════════════
         window.onload = async () => {
+            await initDB();
             loadExpandedState();
             await loadSavedFolder();
             
             if (tabs.length === 0) {
                 createNewTab(null, 'welcome.txt', 
-                    'FileEditor is ready.\n\n');
+                    'FileEditor is ready.\n\nKeyboard shortcuts:\n- Ctrl+S: Save current file\n- Ctrl+F: Search in file\n- Ctrl+W: Close current tab\n- Tab: Insert 4 spaces\n\nFixed in this version:\n✓ Permission checks on folder reload\n✓ Proper file handle comparison\n✓ XSS protection in tab names\n✓ Warning before closing unsaved tabs\n✓ Search functionality (Ctrl+F)\n✓ Better error handling\n✓ Depth limits on directory traversal\n');
             }
         };
-  </script>
+    </script>
 </body>
 </html>
