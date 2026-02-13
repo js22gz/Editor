@@ -410,7 +410,7 @@
         const editorStatusEl = document.getElementById('editor-status');
 
         const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
-        const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/g; // FIXED: Better filename validation
+        const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/; // FIXED: Better filename validation
 
         function toggleSidebar() {
             sidebarEl.classList.toggle('hidden');
@@ -458,6 +458,15 @@
             contextMenu.style.left = e.pageX + 'px';
             contextMenu.style.top = e.pageY + 'px';
             document.body.appendChild(contextMenu);
+            
+            // Adjust position if menu goes off-screen
+            const rect = contextMenu.getBoundingClientRect();
+            if (rect.right > window.innerWidth) {
+                contextMenu.style.left = (window.innerWidth - rect.width - 4) + 'px';
+            }
+            if (rect.bottom > window.innerHeight) {
+                contextMenu.style.top = (window.innerHeight - rect.height - 4) + 'px';
+            }
         }
 
         function closeContextMenu() {
@@ -574,13 +583,16 @@
                 }
             }
             
-            // Fallback: compare file metadata
+            // Fallback: compare file metadata (only works for file handles)
             try {
-                const file1 = await h1.getFile();
-                const file2 = await h2.getFile();
-                return file1.name === file2.name && 
-                       file1.size === file2.size && 
-                       file1.lastModified === file2.lastModified;
+                if (h1.kind === 'file' && h2.kind === 'file') {
+                    const file1 = await h1.getFile();
+                    const file2 = await h2.getFile();
+                    return file1.name === file2.name && 
+                           file1.size === file2.size && 
+                           file1.lastModified === file2.lastModified;
+                }
+                return h1.name === h2.name && h1.kind === h2.kind;
             } catch {
                 return false;
             }
@@ -909,9 +921,11 @@
 
             try {
                 // Close tab if file is open
-                const openTab = tabs.find(t => t.handle && t.handle === contextMenuTarget.handle);
-                if (openTab) {
-                    closeTab(openTab.id);
+                for (const t of tabs) {
+                    if (t.handle && await isSameEntry(t.handle, contextMenuTarget.handle)) {
+                        closeTab(t.id);
+                        break;
+                    }
                 }
 
                 // Delete from parent directory
@@ -1038,15 +1052,17 @@
                     await parentHandle.removeEntry(oldName);
                     
                     // Update tab if file is open
-                    const openTab = tabs.find(t => t.handle && t.handle === contextMenuTarget.handle);
-                    if (openTab) {
-                        openTab.name = trimmed;
-                        openTab.handle = newHandle;
-                        if (openTab.element) {
-                            const nameSpan = openTab.element.querySelector('.tab-name');
-                            if (nameSpan) nameSpan.textContent = trimmed;
+                    for (const openTab of tabs) {
+                        if (openTab.handle && await isSameEntry(openTab.handle, contextMenuTarget.handle)) {
+                            openTab.name = trimmed;
+                            openTab.handle = newHandle;
+                            if (openTab.element) {
+                                const nameSpan = openTab.element.querySelector('.tab-name');
+                                if (nameSpan) nameSpan.textContent = trimmed;
+                            }
+                            updateEditorStatus(openTab);
+                            break;
                         }
-                        updateEditorStatus(openTab);
                     }
                     
                     await buildAndRenderTree();
@@ -1195,6 +1211,7 @@
                 const end = textarea.selectionEnd;
                 textarea.value = textarea.value.substring(0, start) + '    ' + textarea.value.substring(end);
                 textarea.selectionStart = textarea.selectionEnd = start + 4;
+                textarea.dispatchEvent(new Event('input', { bubbles: true }));
             }
         });
 
@@ -1204,13 +1221,17 @@
         let saveTimer;
         function scheduleSave() {
             clearTimeout(saveTimer);
+            // Capture the tab ID at schedule time to avoid saving wrong tab
+            const tabIdToSave = currentTabId;
             saveTimer = setTimeout(() => {
-                if (currentTabId !== null) {
-                    const tab = tabs.find(t => t.id === currentTabId);
+                if (tabIdToSave !== null) {
+                    const tab = tabs.find(t => t.id === tabIdToSave);
                     if (tab && tab.dirty) {
-                        // FIXED: Sync content before saving
-                        tab.content = textarea.value;
-                        saveCurrentFile();
+                        // Sync content if this is still the active tab
+                        if (currentTabId === tabIdToSave) {
+                            tab.content = textarea.value;
+                        }
+                        saveTab(tab);
                     }
                 }
             }, 800);
@@ -1234,17 +1255,17 @@
 
         textarea.addEventListener('scroll', syncScroll);
 
-        async function saveCurrentFile() {
-            if (currentTabId === null) return;
-            const tab = tabs.find(t => t.id === currentTabId);
+        async function saveTab(tab) {
             if (!tab || !tab.handle) return;
             if (!tab.dirty) return;
             
             try {
                 const writable = await tab.handle.createWritable();
-                await writable.write(textarea.value);
+                // If this is the active tab, use textarea for latest content
+                const content = (currentTabId === tab.id) ? textarea.value : tab.content;
+                await writable.write(content);
                 await writable.close();
-                tab.content = textarea.value;
+                tab.content = content;
                 tab.dirty = false;
                 if (tab.element) {
                     const indicator = tab.element.querySelector('.dirty-indicator');
@@ -1256,6 +1277,12 @@
             } catch (err) {
                 showToast('Save failed: ' + err.message);
             }
+        }
+
+        async function saveCurrentFile() {
+            if (currentTabId === null) return;
+            const tab = tabs.find(t => t.id === currentTabId);
+            await saveTab(tab);
         }
 
         function updateEditorStatus(tab) {
@@ -1277,16 +1304,37 @@
 
             searchPanel = document.createElement('div');
             searchPanel.className = 'search-panel';
-            searchPanel.innerHTML = `
-                <input type="text" id="search-input" placeholder="Search...">
-                <span class="match-count" id="match-count">0 matches</span>
-                <button onclick="findNext()">Next</button>
-                <button onclick="findPrevious()">Previous</button>
-                <button class="close-search" onclick="closeSearch()">×</button>
-            `;
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.id = 'search-input';
+            input.placeholder = 'Search...';
+            
+            const matchCount = document.createElement('span');
+            matchCount.className = 'match-count';
+            matchCount.id = 'match-count';
+            matchCount.textContent = '0 matches';
+            
+            const nextBtn = document.createElement('button');
+            nextBtn.textContent = 'Next';
+            nextBtn.addEventListener('click', findNext);
+            
+            const prevBtn = document.createElement('button');
+            prevBtn.textContent = 'Previous';
+            prevBtn.addEventListener('click', findPrevious);
+            
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'close-search';
+            closeBtn.textContent = '×';
+            closeBtn.addEventListener('click', closeSearch);
+            
+            searchPanel.appendChild(input);
+            searchPanel.appendChild(matchCount);
+            searchPanel.appendChild(nextBtn);
+            searchPanel.appendChild(prevBtn);
+            searchPanel.appendChild(closeBtn);
             document.body.appendChild(searchPanel);
 
-            const input = document.getElementById('search-input');
             input.focus();
             input.addEventListener('input', performSearch);
             input.addEventListener('keydown', e => {
@@ -1386,6 +1434,14 @@
                 if (currentTabId !== null) {
                     closeTab(currentTabId);
                 }
+            }
+        });
+
+        // Warn before leaving with unsaved changes
+        window.addEventListener('beforeunload', e => {
+            const hasUnsaved = tabs.some(t => t.dirty);
+            if (hasUnsaved) {
+                e.preventDefault();
             }
         });
 
