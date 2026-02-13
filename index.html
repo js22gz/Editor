@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor</title>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#10b981">
+  
+    <style>
+        :root { --accent: #10b981; }
+        
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            height: 100vh;
+            background: #09090b;
+            color: #e4e4e7;
+            font-family: system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .topbar {
+            height: 52px;
+            background: #18181b;
+            border-bottom: 1px solid #27272a;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        
+        .logo { font-weight: 700; font-size: 20px; letter-spacing: -0.5px; }
+        
+        .btn {
+            background: #27272a;
+            color: #e4e4e7;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn:hover { background: #3f3f46; }
+        .btn.accent {
+            background: var(--accent);
+            color: black;
+            font-weight: 600;
+        }
+        
+        .main { flex: 1; display: flex; overflow: hidden; }
+        
+        .sidebar {
+            width: 280px;
+            background: #111113;
+            border-right: 1px solid #27272a;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .sidebar-header {
+            padding: 12px 16px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #71717a;
+            border-bottom: 1px solid #27272a;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .tree-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 0;
+            font-size: 13px;
+        }
+        
+        .tree-folder { }
+        
+        .folder-header {
+            padding: 4px 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .folder-header:hover { background: #27272a; }
+        
+        .toggle {
+            display: inline-block;
+            width: 14px;
+            font-size: 11px;
+            color: #71717a;
+        }
+        
+        .tree-children {
+            padding-left: 20px;
+        }
+        
+        .file-item {
+            padding: 4px 12px 4px 32px;
+            cursor: pointer;
+        }
+        .file-item:hover { background: #27272a; }
+        
+        .editor-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        
+        .tabs {
+            display: flex;
+            background: #18181b;
+            border-bottom: 1px solid #27272a;
+            overflow-x: auto;
+            flex-shrink: 0;
+        }
+        
+        .tab {
+            padding: 10px 20px 8px;
+            white-space: nowrap;
+            border-right: 1px solid #27272a;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            position: relative;
+        }
+        .tab.active {
+            background: #09090b;
+            border-bottom: 2px solid var(--accent);
+        }
+        .tab .close {
+            margin-left: 12px;
+            opacity: 0.6;
+            font-size: 15px;
+        }
+        .tab .close:hover { opacity: 1; color: #ef4444; }
+        .tab.dirty::after {
+            content: "●";
+            color: var(--accent);
+            position: absolute;
+            right: 8px;
+            top: 12px;
+            font-size: 10px;
+        }
+        
+        .editor-wrapper {
+            flex: 1;
+            display: flex;
+            position: relative;
+            background: #0a0a0b;
+            overflow: hidden;
+        }
+        
+        #gutter {
+            width: 52px;
+            background: #0f0f11;
+            color: #52525b;
+            text-align: right;
+            padding: 12px 8px 0 0;
+            user-select: none;
+            font-family: ui-monospace, monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            overflow: hidden;
+            border-right: 1px solid #1f1f22;
+            flex-shrink: 0;
+        }
+        
+        #textarea {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #e4e4e7;
+            font-family: ui-monospace, monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            padding: 12px 16px;
+            resize: none;
+            overflow: auto;
+            white-space: pre;
+            tab-size: 4;
+        }
+        
+        .status {
+            height: 28px;
+            background: #18181b;
+            border-top: 1px solid #27272a;
+            font-size: 12px;
+            color: #52525b;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            font-family: ui-monospace, monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <div class="logo">FileEditor</div>
+        
+        <button class="btn" onclick="openFolder()">Open Folder</button>
+        <button class="btn" onclick="openFile()">Open File</button>
+        <button class="btn accent" onclick="saveCurrentFile()">Save (Ctrl+S)</button>
+        
+        <div style="flex:1"></div>
+        <div id="status" class="status">Ready</div>
+    </div>
+
+    <div class="main">
+        <!-- Sidebar with recursive tree -->
+        <div class="sidebar">
+            <div id="sidebar-header" class="sidebar-header">Project</div>
+            <div id="tree-container" class="tree-container"></div>
+            <div style="padding:12px;border-top:1px solid #27272a;font-size:11px;color:#52525b;cursor:pointer" onclick="clearSavedFolder()">
+                Clear saved folder
+            </div>
+        </div>
+
+        <!-- Editor area -->
+        <div class="editor-area">
+            <div id="tabs" class="tabs"></div>
+            
+            <div class="editor-wrapper">
+                <div id="gutter"></div>
+                <textarea id="textarea" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea>
+            </div>
+            
+            <div id="editor-status" class="status">No file open</div>
+        </div>
+    </div>
+
+    <script>
+        // ─────────────────────────────────────────────────────────────
+        // Core state
+        // ─────────────────────────────────────────────────────────────
+        let currentDirHandle = null;
+        let fileTree = null;           // root tree node
+        let tabs = [];                 // { id, name, handle, content, dirty }
+        let currentTabId = null;
+        let db = null;
+        let expandedFolders = new Set();
+
+        const textarea = document.getElementById('textarea');
+        const gutter = document.getElementById('gutter');
+        const tabsContainer = document.getElementById('tabs');
+        const treeContainer = document.getElementById('tree-container');
+        const sidebarHeader = document.getElementById('sidebar-header');
+        const statusEl = document.getElementById('status');
+        const editorStatusEl = document.getElementById('editor-status');
+
+        // ─────────────────────────────────────────────────────────────
+        // IndexedDB + localStorage for expanded folders
+        // ─────────────────────────────────────────────────────────────
+        async function initDB() {
+            return new Promise(resolve => {
+                const req = indexedDB.open('FileEditor', 1);
+                req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
+                req.onsuccess = e => { db = e.target.result; resolve(); };
+            });
+        }
+
+        async function saveFolderHandle(handle) {
+            if (!db) await initDB();
+            const tx = db.transaction('handles', 'readwrite');
+            tx.objectStore('handles').put(handle, 'main');
+        }
+
+        async function loadSavedFolder() {
+            if (!db) await initDB();
+            const tx = db.transaction('handles');
+            const store = tx.objectStore('handles');
+            const request = store.get('main');
+            request.onsuccess = async () => {
+                if (request.result) {
+                    currentDirHandle = request.result;
+                    await buildAndRenderTree();
+                }
+            };
+        }
+
+        // Load persisted expanded state
+        function loadExpandedState() {
+            try {
+                const saved = localStorage.getItem('expandedFolders');
+                if (saved) expandedFolders = new Set(JSON.parse(saved));
+            } catch (e) {}
+        }
+
+        function saveExpandedState() {
+            localStorage.setItem('expandedFolders', JSON.stringify([...expandedFolders]));
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // Recursive tree building
+        // ─────────────────────────────────────────────────────────────
+        async function buildTree(dirHandle, basePath = '') {
+            const node = {
+                name: dirHandle.name,
+                kind: 'directory',
+                handle: dirHandle,
+                path: basePath,
+                children: []
+            };
+
+            for await (const [name, handle] of dirHandle.entries()) {
+                const childPath = basePath ? `${basePath}/${name}` : name;
+                if (handle.kind === 'directory') {
+                    const childNode = await buildTree(handle, childPath);
+                    node.children.push(childNode);
+                } else {
+                    node.children.push({
+                        name: name,
+                        kind: 'file',
+                        handle: handle,
+                        path: childPath,
+                        ext: name.split('.').pop().toLowerCase()
+                    });
+                }
+            }
+
+            // Folders first, then alphabetical
+            node.children.sort((a, b) => {
+                if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+                return a.name.localeCompare(b.name);
+            });
+
+            return node;
+        }
+
+        async function buildAndRenderTree() {
+            if (!currentDirHandle) return;
+            
+            fileTree = await buildTree(currentDirHandle);
+            sidebarHeader.textContent = `Project: ${fileTree.name}`;
+            
+            // Default: expand all top-level folders on first load
+            if (expandedFolders.size === 0) {
+                fileTree.children.forEach(child => {
+                    if (child.kind === 'directory') expandedFolders.add(child.path);
+                });
+                saveExpandedState();
+            }
+            
+            renderTree();
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // Tree rendering
+        // ─────────────────────────────────────────────────────────────
+        function renderTree() {
+            treeContainer.innerHTML = '';
+            if (!fileTree) return;
+            
+            fileTree.children.forEach(child => {
+                renderTreeItem(child, treeContainer, 0);
+            });
+        }
+
+        function renderTreeItem(node, parentEl, level) {
+            if (node.kind === 'directory') {
+                const folderDiv = document.createElement('div');
+                folderDiv.className = 'tree-folder';
+                
+                const header = document.createElement('div');
+                header.className = 'folder-header';
+                header.style.paddingLeft = `${level * 16}px`;
+                
+                const toggle = document.createElement('span');
+                toggle.className = 'toggle';
+                toggle.textContent = expandedFolders.has(node.path) ? '▼' : '▶';
+                
+                header.appendChild(toggle);
+                header.appendChild(document.createTextNode(' ' + node.name));
+                
+                const childrenDiv = document.createElement('div');
+                childrenDiv.className = 'tree-children';
+                childrenDiv.style.display = expandedFolders.has(node.path) ? 'block' : 'none';
+                
+                header.onclick = () => toggleFolder(node, header, childrenDiv);
+                
+                folderDiv.appendChild(header);
+                folderDiv.appendChild(childrenDiv);
+                parentEl.appendChild(folderDiv);
+                
+                node.children.forEach(child => renderTreeItem(child, childrenDiv, level + 1));
+            } else {
+                const fileDiv = document.createElement('div');
+                fileDiv.className = 'file-item';
+                fileDiv.style.paddingLeft = `${level * 16 + 28}px`;
+                fileDiv.textContent = node.name;
+                fileDiv.onclick = () => openFileFromNode(node);
+                parentEl.appendChild(fileDiv);
+            }
+        }
+
+        function toggleFolder(node, header, childrenDiv) {
+            const isOpen = childrenDiv.style.display !== 'none';
+            childrenDiv.style.display = isOpen ? 'none' : 'block';
+            
+            const toggle = header.querySelector('.toggle');
+            toggle.textContent = isOpen ? '▶' : '▼';
+            
+            if (isOpen) {
+                expandedFolders.delete(node.path);
+            } else {
+                expandedFolders.add(node.path);
+            }
+            saveExpandedState();
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // File operations
+        // ─────────────────────────────────────────────────────────────
+        async function openFolder() {
+            try {
+                currentDirHandle = await window.showDirectoryPicker();
+                await saveFolderHandle(currentDirHandle);
+                expandedFolders.clear(); // new project, fresh state
+                await buildAndRenderTree();
+            } catch (err) {}
+        }
+
+        async function openFile() {
+            try {
+                const [handle] = await window.showOpenFilePicker();
+                const file = await handle.getFile();
+                const content = await file.text();
+                createNewTab(handle, file.name, content);
+            } catch (e) {}
+        }
+
+        async function openFileFromNode(node) {
+            const file = await node.handle.getFile();
+            const content = await file.text();
+            createNewTab(node.handle, node.name, content);
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // Tabs & editor (unchanged from previous)
+        // ─────────────────────────────────────────────────────────────
+        function createNewTab(handle, name, content = '') {
+            const id = Date.now();
+            tabs.push({ id, name, handle, content, dirty: false });
+            
+            const tabEl = document.createElement('div');
+            tabEl.className = 'tab';
+            tabEl.innerHTML = `${name}<span class="close" onclick="event.stopImmediatePropagation(); closeTab(${id})">×</span>`;
+            tabEl.onclick = () => switchToTab(id);
+            tabsContainer.appendChild(tabEl);
+            
+            if (tabs.length === 1) switchToTab(id);
+        }
+
+        function switchToTab(id) {
+            if (currentTabId !== null) {
+                const current = tabs.find(t => t.id === currentTabId);
+                if (current) current.content = textarea.value;
+            }
+            
+            currentTabId = id;
+            const tab = tabs.find(t => t.id === id);
+            
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            Array.from(tabsContainer.children).find(t => t.textContent.includes(tab.name)).classList.add('active');
+            
+            textarea.value = tab.content;
+            updateLineNumbers();
+            updateEditorStatus(tab);
+        }
+
+        function closeTab(id) {
+            const idx = tabs.findIndex(t => t.id === id);
+            if (idx === -1) return;
+            tabs.splice(idx, 1);
+            tabsContainer.children[idx].remove();
+            
+            if (tabs.length === 0) {
+                currentTabId = null;
+                textarea.value = '';
+                gutter.innerHTML = '';
+                editorStatusEl.textContent = 'No file open';
+                return;
+            }
+            switchToTab(tabs[Math.max(0, idx - 1)].id);
+        }
+
+        function updateLineNumbers() {
+            const lines = textarea.value.split('\n').length;
+            let html = '';
+            for (let i = 1; i <= lines; i++) html += i + '<br>';
+            gutter.innerHTML = html;
+        }
+
+        function syncScroll() { gutter.scrollTop = textarea.scrollTop; }
+
+        textarea.addEventListener('keydown', e => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                textarea.value = textarea.value.substring(0, start) + '    ' + textarea.value.substring(end);
+                textarea.selectionStart = textarea.selectionEnd = start + 4;
+            }
+        });
+
+        textarea.addEventListener('input', () => {
+            updateLineNumbers();
+            if (currentTabId !== null) {
+                const tab = tabs.find(t => t.id === currentTabId);
+                if (tab) tab.dirty = true;
+                updateEditorStatus(tab);
+            }
+        });
+
+        textarea.addEventListener('scroll', syncScroll);
+
+        async function saveCurrentFile() {
+            if (currentTabId === null) return;
+            const tab = tabs.find(t => t.id === currentTabId);
+            if (!tab || !tab.handle) return;
+            
+            try {
+                const writable = await tab.handle.createWritable();
+                await writable.write(textarea.value);
+                await writable.close();
+                tab.content = textarea.value;
+                tab.dirty = false;
+                updateEditorStatus(tab);
+                statusEl.textContent = 'Saved';
+                setTimeout(() => statusEl.textContent = 'Ready', 1200);
+            } catch (err) {
+                alert('Save failed');
+            }
+        }
+
+        setInterval(() => { if (currentTabId !== null) saveCurrentFile(); }, 4000);
+
+        function updateEditorStatus(tab) {
+            editorStatusEl.textContent = tab.name + (tab.dirty ? ' • Modified' : '');
+        }
+
+        document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveCurrentFile();
+            }
+        });
+
+        async function clearSavedFolder() {
+            if (db) {
+                const tx = db.transaction('handles', 'readwrite');
+                tx.objectStore('handles').delete('main');
+            }
+            currentDirHandle = null;
+            fileTree = null;
+            treeContainer.innerHTML = '';
+            sidebarHeader.textContent = 'Project';
+            expandedFolders.clear();
+            localStorage.removeItem('expandedFolders');
+        }
+
+// ─────────────────────────────────────────────────────────────
+        // Service worker registration
+        // ─────────────────────────────────────────────────────────────
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+                .then(() => console.log('Service Worker registered'))
+                .catch(err => console.log('SW registration failed', err));
+        }
+
+        // Init
+        window.onload = async () => {
+            loadExpandedState();
+            await loadSavedFolder();
+            
+            if (tabs.length === 0) {
+                createNewTab(null, 'welcome.txt', 
+                    'FileEditor is ready.\n\n');
+            }
+        };
+  </script>
+</body>
+</html>
