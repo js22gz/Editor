@@ -1,2 +1,8 @@
 # Editor
-A PWA file-editor. Single file, HTML, CSS, vanilla Javascript. 
+A **single-file** HTML-based file-editor that runs ocally in the browser.  
+
+No server. No tracking. No bullshit.
+
+## License
+
+MIT. Do whatever. Fork it, improve it, ship it.
