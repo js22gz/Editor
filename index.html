@@ -109,8 +109,11 @@
         .file-item {
             padding: 4px 12px 4px 32px;
             cursor: pointer;
+            outline: none;
         }
-        .file-item:hover { background: #27272a; }
+        .file-item:hover, .file-item:focus { background: #27272a; }
+
+        .folder-header:focus { background: #27272a; outline: none; }
         
         .editor-area {
             flex: 1;
@@ -148,13 +151,31 @@
             font-size: 15px;
         }
         .tab .close:hover { opacity: 1; color: #ef4444; }
-        .tab.dirty::after {
-            content: "●";
+        .tab .dirty-indicator {
             color: var(--accent);
-            position: absolute;
-            right: 8px;
-            top: 12px;
             font-size: 10px;
+            margin-left: 2px;
+        }
+        
+        .toast {
+            position: fixed;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #7f1d1d;
+            color: #fca5a5;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 13px;
+            z-index: 9999;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            animation: toast-in 0.3s ease;
+            max-width: 80vw;
+            word-break: break-word;
+        }
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+            to   { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
         
         .editor-wrapper {
@@ -264,6 +285,17 @@
         const editorStatusEl = document.getElementById('editor-status');
 
         // ─────────────────────────────────────────────────────────────
+        // Toast notifications for errors
+        // ─────────────────────────────────────────────────────────────
+        function showToast(message, duration = 4000) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), duration);
+        }
+
+        // ─────────────────────────────────────────────────────────────
         // IndexedDB + localStorage for expanded folders
         // ─────────────────────────────────────────────────────────────
         async function initDB() {
@@ -298,7 +330,9 @@
             try {
                 const saved = localStorage.getItem('expandedFolders');
                 if (saved) expandedFolders = new Set(JSON.parse(saved));
-            } catch (e) {}
+            } catch (e) {
+                showToast('Failed to load expanded state: ' + e.message);
+            }
         }
 
         function saveExpandedState() {
@@ -336,7 +370,7 @@
             // Folders first, then alphabetical
             node.children.sort((a, b) => {
                 if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
-                return a.name.localeCompare(b.name);
+                return a.name.localeCompare(b.name, undefined, { numeric: true });
             });
 
             return node;
@@ -379,6 +413,7 @@
                 const header = document.createElement('div');
                 header.className = 'folder-header';
                 header.style.paddingLeft = `${level * 16}px`;
+                header.tabIndex = 0;
                 
                 const toggle = document.createElement('span');
                 toggle.className = 'toggle';
@@ -392,6 +427,7 @@
                 childrenDiv.style.display = expandedFolders.has(node.path) ? 'block' : 'none';
                 
                 header.onclick = () => toggleFolder(node, header, childrenDiv);
+                header.addEventListener('keydown', e => handleTreeKeydown(e, node, header, childrenDiv));
                 
                 folderDiv.appendChild(header);
                 folderDiv.appendChild(childrenDiv);
@@ -403,7 +439,12 @@
                 fileDiv.className = 'file-item';
                 fileDiv.style.paddingLeft = `${level * 16 + 28}px`;
                 fileDiv.textContent = node.name;
+                fileDiv.tabIndex = 0;
                 fileDiv.onclick = () => openFileFromNode(node);
+                fileDiv.addEventListener('keydown', e => {
+                    if (e.key === 'Enter') { e.preventDefault(); openFileFromNode(node); }
+                    else navigateTree(e);
+                });
                 parentEl.appendChild(fileDiv);
             }
         }
@@ -424,6 +465,55 @@
         }
 
         // ─────────────────────────────────────────────────────────────
+        // Keyboard navigation in tree (Change 7)
+        // ─────────────────────────────────────────────────────────────
+        function getVisibleTreeItems() {
+            return Array.from(treeContainer.querySelectorAll('.folder-header, .file-item'))
+                .filter(el => el.offsetParent !== null);
+        }
+
+        function navigateTree(e) {
+            const items = getVisibleTreeItems();
+            const idx = items.indexOf(e.target);
+            if (idx === -1) return;
+            if (e.key === 'ArrowDown' && idx < items.length - 1) {
+                e.preventDefault();
+                items[idx + 1].focus();
+            } else if (e.key === 'ArrowUp' && idx > 0) {
+                e.preventDefault();
+                items[idx - 1].focus();
+            }
+        }
+
+        function handleTreeKeydown(e, node, header, childrenDiv) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleFolder(node, header, childrenDiv);
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                if (childrenDiv.style.display === 'none') {
+                    toggleFolder(node, header, childrenDiv);
+                } else {
+                    const firstChild = childrenDiv.querySelector('.folder-header, .file-item');
+                    if (firstChild) firstChild.focus();
+                }
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                if (childrenDiv.style.display !== 'none') {
+                    toggleFolder(node, header, childrenDiv);
+                } else {
+                    const parentChildren = header.closest('.tree-children');
+                    if (parentChildren) {
+                        const parentHeader = parentChildren.previousElementSibling;
+                        if (parentHeader) parentHeader.focus();
+                    }
+                }
+            } else {
+                navigateTree(e);
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────
         // File operations
         // ─────────────────────────────────────────────────────────────
         async function openFolder() {
@@ -432,7 +522,9 @@
                 await saveFolderHandle(currentDirHandle);
                 expandedFolders.clear(); // new project, fresh state
                 await buildAndRenderTree();
-            } catch (err) {}
+            } catch (err) {
+                if (err.name !== 'AbortError') showToast('Failed to open folder: ' + err.message);
+            }
         }
 
         async function openFile() {
@@ -441,13 +533,22 @@
                 const file = await handle.getFile();
                 const content = await file.text();
                 createNewTab(handle, file.name, content);
-            } catch (e) {}
+            } catch (err) {
+                if (err.name !== 'AbortError') showToast('Failed to open file: ' + err.message);
+            }
         }
 
         async function openFileFromNode(node) {
-            const file = await node.handle.getFile();
-            const content = await file.text();
-            createNewTab(node.handle, node.name, content);
+            try {
+                const file = await node.handle.getFile();
+                if (!file.type.startsWith('text/') && !/\.(txt|md|js|ts|html|css|json|py|go|rs)$/i.test(file.name)) {
+                    if (!confirm('This looks like a binary file. Open anyway?')) return;
+                }
+                const content = await file.text();
+                createNewTab(node.handle, node.name, content);
+            } catch (err) {
+                showToast('Failed to open file: ' + err.message);
+            }
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -455,13 +556,16 @@
         // ─────────────────────────────────────────────────────────────
         function createNewTab(handle, name, content = '') {
             const id = Date.now();
-            tabs.push({ id, name, handle, content, dirty: false });
+            const tab = { id, name, handle, content, dirty: false };
+            tabs.push(tab);
             
             const tabEl = document.createElement('div');
             tabEl.className = 'tab';
-            tabEl.innerHTML = `${name}<span class="close" onclick="event.stopImmediatePropagation(); closeTab(${id})">×</span>`;
+            tabEl.dataset.id = id;
+            tabEl.innerHTML = `<span class="tab-name">${name}</span><span class="dirty-indicator" style="display:none"> *</span><span class="close" onclick="event.stopImmediatePropagation(); closeTab(${id})">×</span>`;
             tabEl.onclick = () => switchToTab(id);
             tabsContainer.appendChild(tabEl);
+            tab.element = tabEl;
             
             if (tabs.length === 1) switchToTab(id);
         }
@@ -476,7 +580,7 @@
             const tab = tabs.find(t => t.id === id);
             
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            Array.from(tabsContainer.children).find(t => t.textContent.includes(tab.name)).classList.add('active');
+            document.querySelector(`.tab[data-id="${id}"]`)?.classList.add('active');
             
             textarea.value = tab.content;
             updateLineNumbers();
@@ -487,7 +591,8 @@
             const idx = tabs.findIndex(t => t.id === id);
             if (idx === -1) return;
             tabs.splice(idx, 1);
-            tabsContainer.children[idx].remove();
+            const tabEl = document.querySelector(`.tab[data-id="${id}"]`);
+            if (tabEl) tabEl.remove();
             
             if (tabs.length === 0) {
                 currentTabId = null;
@@ -518,12 +623,30 @@
             }
         });
 
+        // ─────────────────────────────────────────────────────────────
+        // Debounced auto-save (Change 1)
+        // ─────────────────────────────────────────────────────────────
+        let saveTimer;
+        function scheduleSave() {
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => {
+                if (currentTabId !== null) saveCurrentFile();
+            }, 800);
+        }
+
         textarea.addEventListener('input', () => {
             updateLineNumbers();
             if (currentTabId !== null) {
                 const tab = tabs.find(t => t.id === currentTabId);
-                if (tab) tab.dirty = true;
+                if (tab) {
+                    tab.dirty = true;
+                    if (tab.element) {
+                        const indicator = tab.element.querySelector('.dirty-indicator');
+                        if (indicator) indicator.style.display = '';
+                    }
+                }
                 updateEditorStatus(tab);
+                scheduleSave();
             }
         });
 
@@ -533,6 +656,7 @@
             if (currentTabId === null) return;
             const tab = tabs.find(t => t.id === currentTabId);
             if (!tab || !tab.handle) return;
+            if (!tab.dirty) return;
             
             try {
                 const writable = await tab.handle.createWritable();
@@ -540,15 +664,18 @@
                 await writable.close();
                 tab.content = textarea.value;
                 tab.dirty = false;
+                if (tab.element) {
+                    const indicator = tab.element.querySelector('.dirty-indicator');
+                    if (indicator) indicator.style.display = 'none';
+                }
                 updateEditorStatus(tab);
                 statusEl.textContent = 'Saved';
                 setTimeout(() => statusEl.textContent = 'Ready', 1200);
             } catch (err) {
-                alert('Save failed');
+                showToast('Save failed: ' + err.message);
             }
         }
 
-        setInterval(() => { if (currentTabId !== null) saveCurrentFile(); }, 4000);
 
         function updateEditorStatus(tab) {
             editorStatusEl.textContent = tab.name + (tab.dirty ? ' • Modified' : '');
