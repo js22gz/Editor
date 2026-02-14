@@ -396,8 +396,8 @@
             // Ordered lists: 1. item, 2) item
             if (/^\d+[.)]\s/.test(trimmed)) return true;
             
-            // Block quotes: > text
-            if (/^>\s?/.test(trimmed)) return true;
+            // Block quotes: > text (requires space after >)
+            if (/^>\s/.test(trimmed)) return true;
             
             // Horizontal rules: ---, ***, ___
             if (/^([-*_])\1{2,}$/.test(trimmed)) return true;
