@@ -455,7 +455,8 @@
                     text = text.substring(0, lineEnd) + space + firstWord + '\n' + rest + text.substring(nextLineEnd);
                 }
                 changed = true;
-                lineEnd = text.indexOf('\n', lineStart + currentLine.length) || text.length;
+                lineEnd = text.indexOf('\n', lineStart + currentLine.length);
+                if (lineEnd === -1) lineEnd = text.length;
             }
 
             // Split if still too long (improved logic to avoid mid-word breaks)
@@ -526,7 +527,8 @@
                 // Regular paragraph: collect and reflow
                 let para = line;
                 i++;
-                while (i < lines.length && lines[i].trim() !== '' && !isStructuralLine(lines[i])) {
+                while (i < lines.length) {
+                    if (lines[i].trim() === '' || isStructuralLine(lines[i])) break;
                     para += ' ' + lines[i];
                     i++;
                 }
