@@ -317,6 +317,7 @@
         let contextMenu = null;
         let contextMenuTarget = null;
         let maxCharsPerLine = 66;
+        let enforcingLineBreaks = false;
 
         const textarea = document.getElementById('textarea');
         const gutter = document.getElementById('gutter');
@@ -347,81 +348,80 @@
             });
         }
 
-        function enforceLineBreaks(e) {
-            if (!maxCharsPerLine) return;
-            
-            const cursor = textarea.selectionStart;
-            let text = textarea.value;
-            
-            // Find current line boundaries
-            let lineStart = text.lastIndexOf('\n', cursor - 1) + 1;
-            let lineEnd = text.indexOf('\n', cursor);
-            if (lineEnd === -1) lineEnd = text.length;
-            
-            let currentLine = text.substring(lineStart, lineEnd);
-            let changed = false;
-            let newCursor = cursor;
-            
-            // ── Merge: pull words from next line if current line is short ──
-            while (currentLine.length < maxCharsPerLine) {
-                let nextLineEnd = text.indexOf('\n', lineEnd + 1);
-                if (nextLineEnd === -1) nextLineEnd = text.length;
-                if (lineEnd >= text.length) break;
-                
-                const nextLine = text.substring(lineEnd + 1, nextLineEnd);
-                if (nextLine.length === 0) break; // preserve blank lines
-                
-                const space = currentLine.length === 0 ? '' : ' ';
-                const remaining = maxCharsPerLine - currentLine.length - space.length;
-                if (remaining <= 0) break;
-                
-                // Find how much of the next line fits
-                const spaceIdx = nextLine.indexOf(' ');
-                const firstWord = spaceIdx === -1 ? nextLine : nextLine.substring(0, spaceIdx);
-                if (firstWord.length > remaining) break;
-                
-                // Pull first word (or entire next line) up
-                if (spaceIdx === -1) {
-                    // Entire next line fits — merge and remove the line break
-                    currentLine = currentLine + space + nextLine;
-                    text = text.substring(0, lineEnd) + space + nextLine + text.substring(nextLineEnd);
-                } else {
-                    currentLine = currentLine + space + firstWord;
-                    const rest = nextLine.substring(spaceIdx + 1);
-                    text = text.substring(0, lineEnd) + space + firstWord + '\n' + rest + text.substring(nextLineEnd);
-                }
-                changed = true;
-                // Recalculate lineEnd after merge
-                lineEnd = text.indexOf('\n', lineStart + currentLine.length);
-                if (lineEnd === -1) lineEnd = text.length;
-            }
-            
-            // ── Split: break line if it exceeds the limit ──
-            if (currentLine.length > maxCharsPerLine) {
-                let breakPos = currentLine.lastIndexOf(' ', maxCharsPerLine);
-                if (breakPos === -1 || breakPos < 10) breakPos = maxCharsPerLine;
-                
-                const before = currentLine.substring(0, breakPos);
-                let after = currentLine.substring(breakPos).trimStart();
-                
-                const newLine = before + '\n' + after;
-                text = text.substring(0, lineStart) + newLine + text.substring(lineEnd);
-                
-                // Adjust cursor: if cursor was past the break, move it to the new line
-                if (newCursor > lineStart + breakPos) {
-                    const offsetIntoAfter = newCursor - lineStart - breakPos;
-                    const trimmed = currentLine.substring(breakPos).length - after.length;
-                    newCursor = lineStart + before.length + 1 + Math.max(0, offsetIntoAfter - trimmed);
-                }
-                changed = true;
-            }
-            
-            if (changed) {
-                textarea.value = text;
-                textarea.selectionStart = textarea.selectionEnd = newCursor;
-                updateLineNumbers();
-            }
+function enforceLineBreaks() {
+    if (enforcingLineBreaks || !maxCharsPerLine) return;
+    enforcingLineBreaks = true;
+
+    const cursor = textarea.selectionStart;
+    let text = textarea.value;
+
+    // Find current line boundaries
+    let lineStart = text.lastIndexOf('\n', cursor - 1) + 1;
+    let lineEnd = text.indexOf('\n', cursor);
+    if (lineEnd === -1) lineEnd = text.length;
+
+    let currentLine = text.substring(lineStart, lineEnd);
+    let changed = false;
+    let newCursor = cursor;
+
+    // ── Merge: pull words from next line if current line is short ──
+    while (currentLine.length < maxCharsPerLine) {
+        let nextLineEnd = text.indexOf('\n', lineEnd + 1);
+        if (nextLineEnd === -1) nextLineEnd = text.length;
+        if (lineEnd >= text.length) break;
+
+        const nextLine = text.substring(lineEnd + 1, nextLineEnd);
+        if (nextLine.length === 0) break; // preserve blank lines
+
+        const space = currentLine.length === 0 ? '' : ' ';
+        const remaining = maxCharsPerLine - currentLine.length - space.length;
+        if (remaining <= 0) break;
+
+        const spaceIdx = nextLine.indexOf(' ');
+        const firstWord = spaceIdx === -1 ? nextLine : nextLine.substring(0, spaceIdx);
+        if (firstWord.length > remaining) break;
+
+        if (spaceIdx === -1) {
+            currentLine = currentLine + space + nextLine;
+            text = text.substring(0, lineEnd) + space + nextLine + text.substring(nextLineEnd);
+        } else {
+            currentLine = currentLine + space + firstWord;
+            const rest = nextLine.substring(spaceIdx + 1);
+            text = text.substring(0, lineEnd) + space + firstWord + '\n' + rest + text.substring(nextLineEnd);
         }
+        changed = true;
+
+        lineEnd = text.indexOf('\n', lineStart + currentLine.length);
+        if (lineEnd === -1) lineEnd = text.length;
+    }
+
+    // ── Split: break line if it exceeds the limit ──
+    if (currentLine.length > maxCharsPerLine) {
+        let breakPos = currentLine.lastIndexOf(' ', maxCharsPerLine);
+        if (breakPos === -1 || breakPos < 10) breakPos = maxCharsPerLine;
+
+        const before = currentLine.substring(0, breakPos);
+        let after = currentLine.substring(breakPos).trimStart();
+
+        const newLine = before + '\n' + after;
+        text = text.substring(0, lineStart) + newLine + text.substring(lineEnd);
+
+        if (newCursor > lineStart + breakPos) {
+            const offsetIntoAfter = newCursor - lineStart - breakPos;
+            const trimmed = currentLine.substring(breakPos).length - after.length;
+            newCursor = lineStart + before.length + 1 + Math.max(0, offsetIntoAfter - trimmed);
+        }
+        changed = true;
+    }
+
+    if (changed) {
+        textarea.value = text;
+        textarea.selectionStart = textarea.selectionEnd = newCursor;
+        updateLineNumbers();
+    }
+
+    enforcingLineBreaks = false;
+}
         
         function reflowAllText() {
             if (!maxCharsPerLine) return;
@@ -1172,12 +1172,17 @@
                 e.preventDefault();
                 const start = textarea.selectionStart;
                 const end = textarea.selectionEnd;
-                textarea.value = textarea.value.substring(0, start) + '    ' + textarea.value.substring(end);
-                textarea.selectionStart = textarea.selectionEnd = start + 4;
+                const indent = '    '; // 4 spaces, because real tabs are for animals
+        
+                textarea.value = textarea.value.substring(0, start) + indent + textarea.value.substring(end);
+                textarea.selectionStart = textarea.selectionEnd = start + indent.length;
+        
+                // Trigger the line-break logic safely
                 textarea.dispatchEvent(new Event('input', { bubbles: true }));
             }
         });
 
+        
         let saveTimer;
         function scheduleSave() {
             clearTimeout(saveTimer);
