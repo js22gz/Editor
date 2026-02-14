@@ -269,6 +269,7 @@
     <div class="topbar">
         <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle Sidebar">☰</button>
         <div class="logo">EDITOR</div>
+        <button class="btn" id="actions-btn" onclick="toggleActionsDropdown()">Actions ▾</button>
         <div style="flex:1"></div>
         
         <!-- Line length control -->
@@ -282,13 +283,6 @@
     </div>
     <div class="main">
         <div id="sidebar" class="sidebar">
-            <div class="sidebar-buttons">
-                <button class="btn" onclick="openFolder()">Open Folder</button>
-                <button class="btn" onclick="openFile()">Open File</button>
-                <button class="btn" onclick="newFile()">New File</button>
-                <button class="btn" onclick="newFolder()">New Folder</button>
-                <button class="btn accent" onclick="saveCurrentFile()">Save (Ctrl+S)</button>
-            </div>
             <div id="sidebar-header" class="sidebar-header">Directory</div>
             <div id="tree-container" class="tree-container"></div>
             <div style="padding:12px;border-top:1px solid #27272a;font-size:11px;color:#52525b;cursor:pointer" onclick="clearSavedFolder()">
@@ -316,6 +310,7 @@
         let expandedFolders = new Set();
         let contextMenu = null;
         let contextMenuTarget = null;
+        let actionsDropdown = null;
         let maxCharsPerLine = 66;
         let enforcingLineBreaks = false;
 
@@ -515,9 +510,61 @@ function enforceLineBreaks() {
                 contextMenuTarget = null;
             }
         }
+            function toggleActionsDropdown() {
+        if (actionsDropdown) {
+            closeActionsDropdown();
+            return;
+        }
+    
+        closeContextMenu();
+    
+        actionsDropdown = document.createElement('div');
+        actionsDropdown.className = 'context-menu';
+        actionsDropdown.innerHTML = `
+            <div class="context-menu-item" onclick="handleAction('openFolder')">Open Folder</div>
+            <div class="context-menu-item" onclick="handleAction('openFile')">Open File</div>
+            <div class="context-menu-separator"></div>
+            <div class="context-menu-item" onclick="handleAction('newFile')">New File</div>
+            <div class="context-menu-item" onclick="handleAction('newFolder')">New Folder</div>
+            <div class="context-menu-separator"></div>
+            <div class="context-menu-item" onclick="handleAction('saveCurrentFile')">Save (Ctrl+S)</div>
+        `;
+    
+        const btnRect = document.getElementById('actions-btn').getBoundingClientRect();
+        actionsDropdown.style.position = 'fixed';
+        actionsDropdown.style.top = `${btnRect.bottom + 4}px`;
+        actionsDropdown.style.left = `${btnRect.left}px`;
+        actionsDropdown.style.minWidth = '180px';
+    
+        document.body.appendChild(actionsDropdown);
+    }
+    
+    function handleAction(action) {
+        closeActionsDropdown();
+    
+        switch (action) {
+            case 'openFolder': openFolder(); break;
+            case 'openFile': openFile(); break;
+            case 'newFile': newFile(); break;
+            case 'newFolder': newFolder(); break;
+            case 'saveCurrentFile': saveCurrentFile(); break;
+        }
+    }
+    
+    function closeActionsDropdown() {
+        if (actionsDropdown) {
+            actionsDropdown.remove();
+            actionsDropdown = null;
+        }
+    }
 
-        document.addEventListener('click', closeContextMenu);
-        document.addEventListener('contextmenu', (e) => {
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.context-menu') && !e.target.closest('#actions-btn')) {
+                    closeContextMenu();
+                    closeActionsDropdown();
+                }
+            });
+            document.addEventListener('contextmenu', (e) => {
             if (!e.target.closest('.file-item') && !e.target.closest('.folder-header')) {
                 closeContextMenu();
             }
