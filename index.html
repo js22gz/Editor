@@ -367,7 +367,7 @@
                 maxCharsPerLine = parseInt(slider.value);
                 valueEl.textContent = maxCharsPerLine;
                 const currentTab = tabs.find(t => t.id === currentTabId);
-                if (currentTab && currentTab.enforceLineBreaks) {
+                if (currentTab && PROSE_EXTENSIONS.test(currentTab.name)) {
                     reflowAllText();
                 }
             });
@@ -516,6 +516,7 @@
                 <div class="context-menu-item sub" onclick="handleAction('openFile')">File</div>
                 <div class="context-menu-item sub" onclick="handleAction('openFolder')">Folder</div>
                 <div class="context-menu-separator"></div>
+                <div class="context-menu-item" onclick="handleAction('saveCurrentFile')">Save (Ctrl+S)</div>
                 <div class="context-menu-item" onclick="handleAction('saveAs')">Save As…</div>
             `;
 
@@ -533,6 +534,7 @@
                 case 'openFile': openFile(); break;
                 case 'newFile': newFile(); break;
                 case 'newFolder': newFolder(); break;
+                case 'saveCurrentFile': saveCurrentFile(); break;
                 case 'saveAs': saveAsCurrentFile(); break;
             }
         }
@@ -644,53 +646,6 @@
                 contextMenuTarget = null;
             }
         }
-            function toggleActionsDropdown() {
-        if (actionsDropdown) {
-            closeActionsDropdown();
-            return;
-        }
-   
-        closeContextMenu();
-   
-        actionsDropdown = document.createElement('div');
-        actionsDropdown.className = 'context-menu';
-        actionsDropdown.innerHTML = `
-            <div class="context-menu-item" onclick="handleAction('openFolder')">Open Folder</div>
-            <div class="context-menu-item" onclick="handleAction('openFile')">Open File</div>
-            <div class="context-menu-separator"></div>
-            <div class="context-menu-item" onclick="handleAction('newFile')">New File</div>
-            <div class="context-menu-item" onclick="handleAction('newFolder')">New Folder</div>
-            <div class="context-menu-separator"></div>
-            <div class="context-menu-item" onclick="handleAction('saveCurrentFile')">Save (Ctrl+S)</div>
-        `;
-   
-        const btnRect = document.getElementById('menu-btn').getBoundingClientRect();
-        actionsDropdown.style.position = 'fixed';
-        actionsDropdown.style.top = `${btnRect.bottom + 4}px`;
-        actionsDropdown.style.left = `${btnRect.left}px`;
-        actionsDropdown.style.minWidth = '180px';
-   
-        document.body.appendChild(actionsDropdown);
-    }
-   
-    function handleAction(action) {
-        closeActionsDropdown();
-   
-        switch (action) {
-            case 'openFolder': openFolder(); break;
-            case 'openFile': openFile(); break;
-            case 'newFile': newFile(); break;
-            case 'newFolder': newFolder(); break;
-            case 'saveCurrentFile': saveCurrentFile(); break;
-        }
-    }
-   
-    function closeActionsDropdown() {
-        if (actionsDropdown) {
-            actionsDropdown.remove();
-            actionsDropdown = null;
-        }
-    }
             document.addEventListener('click', (e) => {
                 if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) {
                     closeContextMenu();
@@ -855,6 +810,7 @@
                
                 const header = document.createElement('div');
                 header.className = 'folder-header';
+                header.dataset.path = node.path;
                 header.style.paddingLeft = `${level * 14}px`;
                 header.tabIndex = 0;
                
@@ -881,6 +837,7 @@
             } else {
                 const fileDiv = document.createElement('div');
                 fileDiv.className = 'file-item';
+                fileDiv.dataset.path = node.path;
                 fileDiv.style.paddingLeft = `${level * 14 + 26}px`;
                 fileDiv.textContent = node.name;
                 fileDiv.tabIndex = 0;
@@ -986,21 +943,23 @@
                 showToast('Invalid filename');
                 return;
             }
+            const dirHandle = targetDirHandle || currentDirHandle;
             try {
                 let exists = false;
                 try {
-                    await currentDirHandle.getFileHandle(trimmed);
+                    await dirHandle.getFileHandle(trimmed);
                     exists = true;
                 } catch (e) { }
                 if (exists) {
                     showToast('File already exists');
                     return;
                 }
-                const fileHandle = await currentDirHandle.getFileHandle(trimmed, { create: true });
+                const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
                 const writable = await fileHandle.createWritable();
                 await writable.write('');
                 await writable.close();
-                createNewTab(fileHandle, trimmed, '');
+                const filePath = activeFolderPath ? `${activeFolderPath}/${trimmed}` : trimmed;
+                createNewTab(fileHandle, trimmed, '', filePath);
                 await buildAndRenderTree();
                 statusEl.textContent = 'Created ' + trimmed;
                 setTimeout(() => statusEl.textContent = 'Ready', 2000);
@@ -1022,17 +981,18 @@
                 showToast('Invalid folder name');
                 return;
             }
+            const dirHandle = targetDirHandle || currentDirHandle;
             try {
                 let exists = false;
                 try {
-                    await currentDirHandle.getDirectoryHandle(trimmed);
+                    await dirHandle.getDirectoryHandle(trimmed);
                     exists = true;
                 } catch (e) { }
                 if (exists) {
                     showToast('Folder already exists');
                     return;
                 }
-                await currentDirHandle.getDirectoryHandle(trimmed, { create: true });
+                await dirHandle.getDirectoryHandle(trimmed, { create: true });
                 await buildAndRenderTree();
                 statusEl.textContent = 'Created folder ' + trimmed;
                 setTimeout(() => statusEl.textContent = 'Ready', 2000);
@@ -1191,12 +1151,12 @@
                     if (!confirm('This looks like a binary file. Open anyway?')) return;
                 }
                 const content = await file.text();
-                createNewTab(node.handle, node.name, content);
+                createNewTab(node.handle, node.name, content, node.path);
             } catch (err) {
                 showToast('Failed to open file: ' + err.message);
             }
         }
-        async function createNewTab(handle, name, content = '') {
+        async function createNewTab(handle, name, content = '', path = null) {
             if (handle) {
                 for (const t of tabs) {
                     if (t.handle && await isSameEntry(t.handle, handle)) {
@@ -1206,7 +1166,7 @@
                 }
             }
             const id = nextTabId++;
-            const tab = { id, name, handle, content, dirty: false };
+            const tab = { id, name, handle, content, dirty: false, path };
             tabs.push(tab);
            
             const tabEl = document.createElement('div');
@@ -1254,6 +1214,14 @@
             textarea.value = tab.content;
             updateLineNumbers();
             updateEditorStatus(tab);
+
+            if (tab.path) {
+                setActiveFromPath(tab.path);
+            } else {
+                activeFilePath = null;
+                activeFolderPath = null;
+                highlightActiveItems();
+            }
         }
         function closeTab(id) {
             const idx = tabs.findIndex(t => t.id === id);
@@ -1325,8 +1293,13 @@
                 }
             }, 800);
         }
-        // Auto line break on typing
-        textarea.addEventListener('input', enforceLineBreaks);
+        // Auto line break on typing (prose files only)
+        textarea.addEventListener('input', () => {
+            const tab = tabs.find(t => t.id === currentTabId);
+            if (tab && PROSE_EXTENSIONS.test(tab.name)) {
+                enforceLineBreaks();
+            }
+        });
         textarea.addEventListener('input', () => {
             updateLineNumbers();
                 if (currentTabId !== null) {
