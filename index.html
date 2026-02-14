@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EDITOR</title>
-  
+ 
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#18181b">
     <style>
@@ -19,7 +19,7 @@
             display: flex;
             flex-direction: column;
         }
-      
+     
         .topbar {
             height: 52px;
             background: #18181b;
@@ -30,9 +30,9 @@
             gap: 12px;
             flex-shrink: 0;
         }
-      
+     
         .logo { font-weight: 700; font-size: 20px; letter-spacing: -0.5px; }
-      
+     
         .btn {
             background: #27272a;
             color: #e4e4e7;
@@ -50,9 +50,9 @@
             font-weight: 600;
         }
         .btn.accent:hover { background: #e4e4e7; }
-      
+     
         .main { flex: 1; display: flex; overflow: hidden; }
-      
+     
         .sidebar {
             width: 280px;
             background: #111113;
@@ -76,7 +76,7 @@
             padding: 12px;
             border-bottom: 1px solid #27272a;
         }
-      
+     
         .sidebar-header {
             padding: 12px 16px;
             font-size: 11px;
@@ -85,14 +85,14 @@
             color: #71717a;
             border-bottom: 1px solid #27272a;
         }
-      
+     
         .tree-container {
             flex: 1;
             overflow-y: auto;
             padding: 8px 0;
             font-size: 13px;
         }
-      
+     
         .folder-header {
             padding: 4px 12px;
             display: flex;
@@ -101,19 +101,27 @@
             cursor: pointer;
             user-select: none;
         }
-        .folder-header:hover { background: #27272a; }
-      
+        .folder-header:hover,
+        .folder-header.active { background: #27272a; }
+        .folder-header.active { color: #bae6fd; font-weight: 500; }
+     
         .toggle { display: inline-block; width: 14px; font-size: 11px; color: #71717a; }
         .tree-children { padding-left: 20px; }
-      
+     
         .file-item {
             padding: 4px 12px 4px 32px;
             cursor: pointer;
         }
-        .file-item:hover, .file-item:focus { background: #27272a; }
-      
+        .file-item:hover,
+        .file-item:focus { background: #27272a; }
+        .file-item.active {
+            background: #27272a !important;
+            color: #bae6fd;
+            font-weight: 500;
+        }
+     
         .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-      
+     
         .tabs {
             display: flex;
             background: #18181b;
@@ -121,7 +129,7 @@
             overflow-x: auto;
             flex-shrink: 0;
         }
-      
+     
         .tab {
             padding: 10px 20px 8px;
             white-space: nowrap;
@@ -139,7 +147,7 @@
         .tab .close { margin-left: 12px; opacity: 0.6; font-size: 15px; }
         .tab .close:hover { opacity: 1; color: #e4e4e7; }
         .tab .dirty-indicator { color: #a1a1aa; font-size: 10px; margin-left: 2px; }
-      
+     
         .toast {
             position: fixed;
             top: 16px;
@@ -153,7 +161,7 @@
             z-index: 9999;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
         }
-      
+     
         .editor-wrapper {
             flex: 1;
             display: flex;
@@ -161,7 +169,7 @@
             background: #0a0a0b;
             overflow: hidden;
         }
-      
+     
         #gutter {
             width: 52px;
             background: #0f0f11;
@@ -176,7 +184,7 @@
             border-right: 1px solid #1f1f22;
             flex-shrink: 0;
         }
-      
+     
         #textarea {
             flex: 1;
             background: transparent;
@@ -192,7 +200,7 @@
             white-space: pre;
             tab-size: 4;
         }
-      
+     
         .status {
             height: 28px;
             background: #18181b;
@@ -204,7 +212,7 @@
             padding: 0 16px;
             font-family: ui-monospace, monospace;
         }
-      
+     
         .sidebar-toggle {
             background: none;
             border: none;
@@ -218,7 +226,7 @@
             transition: color 0.2s;
         }
         .sidebar-toggle:hover { background: #27272a; color: #e4e4e7; }
-      
+     
         .context-menu {
             position: fixed;
             background: #18181b;
@@ -227,7 +235,7 @@
             padding: 4px 0;
             z-index: 10000;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            min-width: 160px;
+            min-width: 180px;
         }
         .context-menu-item {
             padding: 8px 16px;
@@ -236,6 +244,17 @@
             color: #e4e4e7;
         }
         .context-menu-item:hover { background: #27272a; }
+        .context-menu-item.submenu-header {
+            padding: 8px 16px 4px;
+            color: #71717a;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: default;
+        }
+        .context-menu-item.sub {
+            padding-left: 40px;
+        }
         .context-menu-item.danger { color: #ef4444; }
         .context-menu-item.danger:hover { background: #7f1d1d; }
         .context-menu-separator {
@@ -243,7 +262,7 @@
             background: #27272a;
             margin: 4px 0;
         }
-      
+     
         .line-length {
             display: flex;
             align-items: center;
@@ -273,14 +292,14 @@
         <div class="logo">EDITOR</div>
         <button class="sidebar-toggle" id="menu-btn" onclick="toggleActionsDropdown()" title="Actions">⋮</button>
         <div style="flex:1"></div>
-       
+      
         <!-- Line length control -->
         <div class="line-length">
             <span>Line</span>
             <input type="range" id="line-slider" min="45" max="75" value="66">
             <span id="line-value">66</span>
         </div>
-       
+      
         <div id="status" class="status">Ready</div>
     </div>
     <div class="main">
@@ -300,7 +319,8 @@
             <div id="editor-status" class="status">No file open</div>
         </div>
     </div>
-    <script>
+    
+<script>
         // Core state
         let currentDirHandle = null;
         let fileTree = null;
@@ -314,6 +334,12 @@
         let actionsDropdown = null;
         let maxCharsPerLine = 66;
         let enforcingLineBreaks = false;
+
+        // New state for active/highlight
+        let activeFilePath = null;
+        let activeFolderPath = null;
+        let targetDirHandle = null;
+
         const textarea = document.getElementById('textarea');
         const gutter = document.getElementById('gutter');
         const tabsContainer = document.getElementById('tabs');
@@ -322,106 +348,109 @@
         const sidebarEl = document.getElementById('sidebar');
         const statusEl = document.getElementById('status');
         const editorStatusEl = document.getElementById('editor-status');
+
         const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
+        const PROSE_EXTENSIONS = /\.(txt|md|markdown|rst|org|tex|adoc|asciidoc)$/i;
         const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/;
+
         // ─────────────────────────────────────────────────────────────
-        // Line length slider + auto row-break
+        // Line length slider + smart row-break (prose only)
         // ─────────────────────────────────────────────────────────────
         function setupLineLengthControl() {
             const slider = document.getElementById('line-slider');
             const valueEl = document.getElementById('line-value');
-           
+          
             slider.value = maxCharsPerLine;
             valueEl.textContent = maxCharsPerLine;
-           
+          
             slider.addEventListener('input', () => {
                 maxCharsPerLine = parseInt(slider.value);
                 valueEl.textContent = maxCharsPerLine;
-                reflowAllText();
+                const currentTab = tabs.find(t => t.id === currentTabId);
+                if (currentTab && currentTab.enforceLineBreaks) {
+                    reflowAllText();
+                }
             });
         }
-function enforceLineBreaks() {
-    if (enforcingLineBreaks || !maxCharsPerLine) return;
-    enforcingLineBreaks = true;
-    const cursor = textarea.selectionStart;
-    let text = textarea.value;
-    // Find current line boundaries
-    let lineStart = text.lastIndexOf('\n', cursor - 1) + 1;
-    let lineEnd = text.indexOf('\n', cursor);
-    if (lineEnd === -1) lineEnd = text.length;
-    let currentLine = text.substring(lineStart, lineEnd);
-    let changed = false;
-    let newCursor = cursor;
-    // ── Merge: pull words from next line if current line is short ──
-    while (currentLine.length < maxCharsPerLine) {
-        let nextLineEnd = text.indexOf('\n', lineEnd + 1);
-        if (nextLineEnd === -1) nextLineEnd = text.length;
-        if (lineEnd >= text.length) break;
-        const nextLine = text.substring(lineEnd + 1, nextLineEnd);
-        if (nextLine.length === 0) break; // preserve blank lines
-        const space = currentLine.length === 0 ? '' : ' ';
-        const remaining = maxCharsPerLine - currentLine.length - space.length;
-        if (remaining <= 0) break;
-        const spaceIdx = nextLine.indexOf(' ');
-        const firstWord = spaceIdx === -1 ? nextLine : nextLine.substring(0, spaceIdx);
-        if (firstWord.length > remaining) break;
-        if (spaceIdx === -1) {
-            currentLine = currentLine + space + nextLine;
-            text = text.substring(0, lineEnd) + space + nextLine + text.substring(nextLineEnd);
-        } else {
-            currentLine = currentLine + space + firstWord;
-            const rest = nextLine.substring(spaceIdx + 1);
-            text = text.substring(0, lineEnd) + space + firstWord + '\n' + rest + text.substring(nextLineEnd);
+
+        function enforceLineBreaks() {
+            if (enforcingLineBreaks || !maxCharsPerLine) return;
+            enforcingLineBreaks = true;
+            const cursor = textarea.selectionStart;
+            let text = textarea.value;
+            let lineStart = text.lastIndexOf('\n', cursor - 1) + 1;
+            let lineEnd = text.indexOf('\n', cursor);
+            if (lineEnd === -1) lineEnd = text.length;
+            let currentLine = text.substring(lineStart, lineEnd);
+            let changed = false;
+            let newCursor = cursor;
+
+            // Merge from next line
+            while (currentLine.length < maxCharsPerLine) {
+                let nextLineEnd = text.indexOf('\n', lineEnd + 1);
+                if (nextLineEnd === -1) nextLineEnd = text.length;
+                if (lineEnd >= text.length) break;
+                const nextLine = text.substring(lineEnd + 1, nextLineEnd);
+                if (nextLine.length === 0) break;
+                const space = currentLine.length === 0 ? '' : ' ';
+                const remaining = maxCharsPerLine - currentLine.length - space.length;
+                if (remaining <= 0) break;
+                const spaceIdx = nextLine.indexOf(' ');
+                const firstWord = spaceIdx === -1 ? nextLine : nextLine.substring(0, spaceIdx);
+                if (firstWord.length > remaining) break;
+
+                if (spaceIdx === -1) {
+                    currentLine += space + nextLine;
+                    text = text.substring(0, lineEnd) + space + nextLine + text.substring(nextLineEnd);
+                } else {
+                    currentLine += space + firstWord;
+                    const rest = nextLine.substring(spaceIdx + 1);
+                    text = text.substring(0, lineEnd) + space + firstWord + '\n' + rest + text.substring(nextLineEnd);
+                }
+                changed = true;
+                lineEnd = text.indexOf('\n', lineStart + currentLine.length) || text.length;
+            }
+
+            // Split if still too long
+            if (currentLine.length > maxCharsPerLine) {
+                let breakPos = currentLine.lastIndexOf(' ', maxCharsPerLine);
+                if (breakPos === -1 || breakPos < 10) breakPos = maxCharsPerLine;
+                const before = currentLine.substring(0, breakPos);
+                let after = currentLine.substring(breakPos).trimStart();
+                text = text.substring(0, lineStart) + before + '\n' + after + text.substring(lineEnd);
+                if (newCursor > lineStart + breakPos) {
+                    newCursor = lineStart + before.length + 1;
+                }
+                changed = true;
+            }
+
+            if (changed) {
+                textarea.value = text;
+                textarea.selectionStart = textarea.selectionEnd = newCursor;
+                updateLineNumbers();
+            }
+            enforcingLineBreaks = false;
         }
-        changed = true;
-        lineEnd = text.indexOf('\n', lineStart + currentLine.length);
-        if (lineEnd === -1) lineEnd = text.length;
-    }
-    // ── Split: break line if it exceeds the limit ──
-    if (currentLine.length > maxCharsPerLine) {
-        let breakPos = currentLine.lastIndexOf(' ', maxCharsPerLine);
-        if (breakPos === -1 || breakPos < 10) breakPos = maxCharsPerLine;
-        const before = currentLine.substring(0, breakPos);
-        let after = currentLine.substring(breakPos).trimStart();
-        const newLine = before + '\n' + after;
-        text = text.substring(0, lineStart) + newLine + text.substring(lineEnd);
-        if (newCursor > lineStart + breakPos) {
-            const offsetIntoAfter = newCursor - lineStart - breakPos;
-            const trimmed = currentLine.substring(breakPos).length - after.length;
-            newCursor = lineStart + before.length + 1 + Math.max(0, offsetIntoAfter - trimmed);
-        }
-        changed = true;
-    }
-    if (changed) {
-        textarea.value = text;
-        textarea.selectionStart = textarea.selectionEnd = newCursor;
-        updateLineNumbers();
-    }
-    enforcingLineBreaks = false;
-}
-       
+      
         function reflowAllText() {
             if (!maxCharsPerLine) return;
             const cursor = textarea.selectionStart;
             const lines = textarea.value.split('\n');
             const reflowed = [];
             let i = 0;
-           
+          
             while (i < lines.length) {
-                // Preserve blank lines as paragraph separators
                 if (lines[i].trim() === '') {
                     reflowed.push(lines[i]);
                     i++;
                     continue;
                 }
-                // Gather consecutive non-blank lines into a paragraph
                 let para = lines[i];
                 i++;
                 while (i < lines.length && lines[i].trim() !== '') {
                     para += ' ' + lines[i];
                     i++;
                 }
-                // Re-wrap the paragraph
                 while (para.length > maxCharsPerLine) {
                     let breakPos = para.lastIndexOf(' ', maxCharsPerLine);
                     if (breakPos === -1 || breakPos < 10) breakPos = maxCharsPerLine;
@@ -430,12 +459,128 @@ function enforceLineBreaks() {
                 }
                 reflowed.push(para);
             }
-           
+          
             textarea.value = reflowed.join('\n');
             textarea.selectionStart = textarea.selectionEnd = Math.min(cursor, textarea.value.length);
             updateLineNumbers();
         }
-       
+
+        // ─────────────────────────────────────────────────────────────
+        // Active file & folder highlighting
+        // ─────────────────────────────────────────────────────────────
+        async function getDirectoryHandleByPath(path) {
+            if (!path || path === '') return currentDirHandle;
+            const parts = path.split('/');
+            let handle = currentDirHandle;
+            for (const part of parts) {
+                if (part) handle = await handle.getDirectoryHandle(part);
+            }
+            return handle;
+        }
+
+        async function setActiveFromPath(path) {
+            activeFilePath = path;
+            const parentPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
+            activeFolderPath = parentPath;
+            targetDirHandle = await getDirectoryHandleByPath(parentPath);
+            highlightActiveItems();
+        }
+
+        function highlightActiveItems() {
+            document.querySelectorAll('.file-item.active, .folder-header.active').forEach(el => el.classList.remove('active'));
+            if (activeFilePath) {
+                const fileEl = treeContainer.querySelector(`.file-item[data-path="${activeFilePath}"]`);
+                if (fileEl) fileEl.classList.add('active');
+            }
+            if (activeFolderPath) {
+                const folderEl = treeContainer.querySelector(`.folder-header[data-path="${activeFolderPath}"]`);
+                if (folderEl) folderEl.classList.add('active');
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // Menu
+        // ─────────────────────────────────────────────────────────────
+        function toggleActionsDropdown() {
+            if (actionsDropdown) { closeActionsDropdown(); return; }
+            closeContextMenu();
+
+            actionsDropdown = document.createElement('div');
+            actionsDropdown.className = 'context-menu';
+            actionsDropdown.innerHTML = `
+                <div class="context-menu-item submenu-header">New</div>
+                <div class="context-menu-item sub" onclick="handleAction('newFile')">File</div>
+                <div class="context-menu-item sub" onclick="handleAction('newFolder')">Folder</div>
+                <div class="context-menu-separator"></div>
+                <div class="context-menu-item submenu-header">Open</div>
+                <div class="context-menu-item sub" onclick="handleAction('openFile')">File</div>
+                <div class="context-menu-item sub" onclick="handleAction('openFolder')">Folder</div>
+                <div class="context-menu-separator"></div>
+                <div class="context-menu-item" onclick="handleAction('saveAs')">Save As…</div>
+            `;
+
+            const btnRect = document.getElementById('menu-btn').getBoundingClientRect();
+            actionsDropdown.style.position = 'fixed';
+            actionsDropdown.style.top = `${btnRect.bottom + 4}px`;
+            actionsDropdown.style.left = `${btnRect.left}px`;
+            document.body.appendChild(actionsDropdown);
+        }
+
+        function handleAction(action) {
+            closeActionsDropdown();
+            switch (action) {
+                case 'openFolder': openFolder(); break;
+                case 'openFile': openFile(); break;
+                case 'newFile': newFile(); break;
+                case 'newFolder': newFolder(); break;
+                case 'saveAs': saveAsCurrentFile(); break;
+            }
+        }
+
+        function closeActionsDropdown() {
+            if (actionsDropdown) {
+                actionsDropdown.remove();
+                actionsDropdown = null;
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // Save As…
+        // ─────────────────────────────────────────────────────────────
+        async function saveAsCurrentFile() {
+            if (currentTabId === null) return;
+            const tab = tabs.find(t => t.id === currentTabId);
+            if (!tab) return;
+
+            try {
+                const content = (currentTabId === tab.id) ? textarea.value : tab.content;
+                const newHandle = await window.showSaveFilePicker({ suggestedName: tab.name });
+                const writable = await newHandle.createWritable();
+                await writable.write(content);
+                await writable.close();
+
+                // Update current tab to the new file
+                tab.handle = newHandle;
+                tab.name = newHandle.name;
+                tab.content = content;
+                tab.dirty = false;
+
+                if (tab.element) {
+                    tab.element.querySelector('.tab-name').textContent = newHandle.name;
+                    tab.element.querySelector('.dirty-indicator').style.display = 'none';
+                }
+
+                updateEditorStatus(tab);
+                showToast(`Saved as ${newHandle.name}`);
+
+                // Clear tree highlight (Save As may be outside current folder)
+                activeFilePath = null;
+                highlightActiveItems();
+            } catch (err) {
+                if (err.name !== 'AbortError') showToast('Save As failed');
+            }
+        }
+    
         function toggleSidebar() {
             sidebarEl.classList.toggle('hidden');
             updateSidebarToggle();
