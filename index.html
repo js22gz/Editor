@@ -288,8 +288,6 @@
         }
         /* Mobile responsive styles */
         @media (max-width: 768px) {
-            .sidebar { width: 0; border-right: none; opacity: 0; pointer-events: none; }
-            .sidebar.visible { width: 280px; border-right: 1px solid #27272a; opacity: 1; pointer-events: auto; }
             .line-length span { display: none; }
             #line-slider { width: 70px; }
         }
@@ -1204,7 +1202,7 @@
             tabEl.addEventListener('drop', e => {
                 e.preventDefault();
                 tabEl.classList.remove('drag-over');
-                const draggedId = parseInt(e.dataTransfer.getData('text/plain'));
+                const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
                 if (draggedId === id) return;
                 const fromIdx = tabs.findIndex(t => t.id === draggedId);
                 const toIdx = tabs.findIndex(t => t.id === id);
