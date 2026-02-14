@@ -380,6 +380,37 @@
             });
         }
 
+        // ─────────────────────────────────────────────────────────────
+        // Markdown structure detection helpers
+        // ─────────────────────────────────────────────────────────────
+        function isStructuralLine(line) {
+            const trimmed = line.trimStart();
+            if (trimmed === '') return false;
+            
+            // Headings: # Title
+            if (/^#{1,6}\s/.test(trimmed)) return true;
+            
+            // Unordered lists: - item, * item, + item
+            if (/^[-*+]\s/.test(trimmed)) return true;
+            
+            // Ordered lists: 1. item, 2) item
+            if (/^\d+[.)]\s/.test(trimmed)) return true;
+            
+            // Block quotes: > text (requires space after >)
+            if (/^>\s/.test(trimmed)) return true;
+            
+            // Horizontal rules: ---, ***, ___
+            if (/^([-*_])\1{2,}$/.test(trimmed)) return true;
+            
+            // Fenced code blocks: ```, ~~~
+            if (/^```|^~~~/.test(trimmed)) return true;
+            
+            // Indented code blocks (4+ spaces or tab)
+            if (/^(    |\t)/.test(line)) return true;
+            
+            return false;
+        }
+
         function enforceLineBreaks() {
             if (enforcingLineBreaks || !maxCharsPerLine) return;
             enforcingLineBreaks = true;
@@ -392,13 +423,22 @@
             let changed = false;
             let newCursor = cursor;
 
-            // Merge from next line
+            // Don't reflow structural lines
+            if (isStructuralLine(currentLine)) {
+                enforcingLineBreaks = false;
+                return;
+            }
+
+            // Merge from next line (only if not structural)
             while (currentLine.length < maxCharsPerLine) {
                 let nextLineEnd = text.indexOf('\n', lineEnd + 1);
                 if (nextLineEnd === -1) nextLineEnd = text.length;
                 if (lineEnd >= text.length) break;
                 const nextLine = text.substring(lineEnd + 1, nextLineEnd);
                 if (nextLine.length === 0) break;
+                // Don't merge structural lines
+                if (isStructuralLine(nextLine)) break;
+                
                 const space = currentLine.length === 0 ? '' : ' ';
                 const remaining = maxCharsPerLine - currentLine.length - space.length;
                 if (remaining <= 0) break;
@@ -415,13 +455,17 @@
                     text = text.substring(0, lineEnd) + space + firstWord + '\n' + rest + text.substring(nextLineEnd);
                 }
                 changed = true;
-                lineEnd = text.indexOf('\n', lineStart + currentLine.length) || text.length;
+                lineEnd = text.indexOf('\n', lineStart + currentLine.length);
+                if (lineEnd === -1) lineEnd = text.length;
             }
 
-            // Split if still too long
+            // Split if still too long (improved logic to avoid mid-word breaks)
             if (currentLine.length > maxCharsPerLine) {
                 let breakPos = currentLine.lastIndexOf(' ', maxCharsPerLine);
-                if (breakPos === -1 || breakPos < 10) breakPos = maxCharsPerLine;
+                // Only fall back to hard break if no space found at all
+                if (breakPos === -1) {
+                    breakPos = maxCharsPerLine;
+                }
                 const before = currentLine.substring(0, breakPos);
                 let after = currentLine.substring(breakPos).trimStart();
                 text = text.substring(0, lineStart) + before + '\n' + after + text.substring(lineEnd);
@@ -445,26 +489,63 @@
             const lines = textarea.value.split('\n');
             const reflowed = [];
             let i = 0;
+            let inCodeBlock = false;
           
             while (i < lines.length) {
-                if (lines[i].trim() === '') {
-                    reflowed.push(lines[i]);
+                const line = lines[i];
+                const trimmed = line.trimStart();
+                
+                // Toggle code block state on fence markers
+                if (/^```|^~~~/.test(trimmed)) {
+                    inCodeBlock = !inCodeBlock;
+                    reflowed.push(line);
                     i++;
                     continue;
                 }
-                let para = lines[i];
+                
+                // Inside code blocks: preserve everything as-is
+                if (inCodeBlock) {
+                    reflowed.push(line);
+                    i++;
+                    continue;
+                }
+                
+                // Empty lines: preserve
+                if (trimmed === '') {
+                    reflowed.push(line);
+                    i++;
+                    continue;
+                }
+                
+                // Structural lines: preserve as-is
+                if (isStructuralLine(line)) {
+                    reflowed.push(line);
+                    i++;
+                    continue;
+                }
+                
+                // Regular paragraph: collect and reflow
+                let para = line;
                 i++;
-                while (i < lines.length && lines[i].trim() !== '') {
+                while (i < lines.length) {
+                    if (lines[i].trim() === '' || isStructuralLine(lines[i])) break;
                     para += ' ' + lines[i];
                     i++;
                 }
+                
+                // Reflow the paragraph with improved line breaking
                 while (para.length > maxCharsPerLine) {
                     let breakPos = para.lastIndexOf(' ', maxCharsPerLine);
-                    if (breakPos === -1 || breakPos < 10) breakPos = maxCharsPerLine;
+                    // Only fall back to hard break if no space found at all
+                    if (breakPos === -1) {
+                        breakPos = maxCharsPerLine;
+                    }
                     reflowed.push(para.substring(0, breakPos));
                     para = para.substring(breakPos).trimStart();
                 }
-                reflowed.push(para);
+                if (para.length > 0) {
+                    reflowed.push(para);
+                }
             }
           
             textarea.value = reflowed.join('\n');
