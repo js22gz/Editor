@@ -101,9 +101,8 @@
             cursor: pointer;
             user-select: none;
         }
-        .folder-header:hover,
-        .folder-header.active { background: #27272a; }
-        .folder-header.active { color: #bae6fd; font-weight: 500; }
+        .folder-header:hover { background: #27272a; }
+        .folder-header.active { background: #27272a; color: #bae6fd; font-weight: 500; }
      
         .toggle { display: inline-block; width: 14px; font-size: 11px; color: #71717a; }
         .tree-children { padding-left: 20px; }
@@ -147,6 +146,9 @@
         .tab .close { margin-left: 12px; opacity: 0.6; font-size: 15px; }
         .tab .close:hover { opacity: 1; color: #e4e4e7; }
         .tab .dirty-indicator { color: #a1a1aa; font-size: 10px; margin-left: 2px; }
+        .tab.drag-over { border-left: 2px solid #a1a1aa; }
+        .tab[draggable] { cursor: grab; }
+        .tab[draggable]:active { cursor: grabbing; }
      
         .toast {
             position: fixed;
@@ -283,6 +285,13 @@
             font-family: ui-monospace, monospace;
             min-width: 24px;
             text-align: right;
+        }
+        /* Mobile responsive styles */
+        @media (max-width: 768px) {
+            .sidebar { width: 0; border-right: none; opacity: 0; pointer-events: none; }
+            .sidebar.visible { width: 280px; border-right: 1px solid #27272a; opacity: 1; pointer-events: auto; }
+            .line-length span { display: none; }
+            #line-slider { width: 70px; }
         }
     </style>
 </head>
@@ -646,13 +655,13 @@
                 contextMenuTarget = null;
             }
         }
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) {
-                    closeContextMenu();
-                    closeActionsDropdown();
-                }
-            });
-            document.addEventListener('contextmenu', (e) => {
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) {
+                closeContextMenu();
+                closeActionsDropdown();
+            }
+        });
+        document.addEventListener('contextmenu', (e) => {
             if (!e.target.closest('.file-item') && !e.target.closest('.folder-header')) {
                 closeContextMenu();
             }
@@ -863,6 +872,10 @@
                 expandedFolders.add(node.path);
             }
             saveExpandedState();
+
+            activeFolderPath = node.path;
+            targetDirHandle = node.handle;
+            highlightActiveItems();
         }
         function getVisibleTreeItems() {
             return Array.from(treeContainer.querySelectorAll('.folder-header, .file-item'))
@@ -1172,6 +1185,35 @@
             const tabEl = document.createElement('div');
             tabEl.className = 'tab';
             tabEl.dataset.id = id;
+            tabEl.draggable = true;
+
+            tabEl.addEventListener('dragstart', e => {
+                e.dataTransfer.setData('text/plain', id);
+                tabEl.style.opacity = '0.5';
+            });
+            tabEl.addEventListener('dragend', () => {
+                tabEl.style.opacity = '';
+                document.querySelectorAll('.tab.drag-over').forEach(t => t.classList.remove('drag-over'));
+            });
+            tabEl.addEventListener('dragover', e => {
+                e.preventDefault();
+                document.querySelectorAll('.tab.drag-over').forEach(t => t.classList.remove('drag-over'));
+                tabEl.classList.add('drag-over');
+            });
+            tabEl.addEventListener('dragleave', () => tabEl.classList.remove('drag-over'));
+            tabEl.addEventListener('drop', e => {
+                e.preventDefault();
+                tabEl.classList.remove('drag-over');
+                const draggedId = parseInt(e.dataTransfer.getData('text/plain'));
+                if (draggedId === id) return;
+                const fromIdx = tabs.findIndex(t => t.id === draggedId);
+                const toIdx = tabs.findIndex(t => t.id === id);
+                if (fromIdx === -1 || toIdx === -1) return;
+                const [moved] = tabs.splice(fromIdx, 1);
+                tabs.splice(toIdx, 0, moved);
+                const draggedEl = tabsContainer.querySelector(`.tab[data-id="${draggedId}"]`);
+                if (draggedEl) tabsContainer.insertBefore(draggedEl, tabEl);
+            });
            
             const nameSpan = document.createElement('span');
             nameSpan.className = 'tab-name';
@@ -1267,12 +1309,9 @@
                 e.preventDefault();
                 const start = textarea.selectionStart;
                 const end = textarea.selectionEnd;
-                const indent = ' '; // 4 spaces, because real tabs are for animals
-       
+                const indent = '    ';
                 textarea.value = textarea.value.substring(0, start) + indent + textarea.value.substring(end);
                 textarea.selectionStart = textarea.selectionEnd = start + indent.length;
-       
-                // Trigger the line-break logic safely
                 textarea.dispatchEvent(new Event('input', { bubbles: true }));
             }
         });
@@ -1302,7 +1341,7 @@
         });
         textarea.addEventListener('input', () => {
             updateLineNumbers();
-                if (currentTabId !== null) {
+            if (currentTabId !== null) {
                 const tab = tabs.find(t => t.id === currentTabId);
                 if (tab) {
                     tab.dirty = true;
@@ -1315,7 +1354,7 @@
                 }
             }
         });
-textarea.addEventListener('scroll', () => gutter.scrollTop = textarea.scrollTop);
+        textarea.addEventListener('scroll', () => gutter.scrollTop = textarea.scrollTop);
         async function saveTab(tab) {
             if (!tab || !tab.handle) return;
             if (!tab.dirty) return;
@@ -1456,7 +1495,7 @@ textarea.addEventListener('scroll', () => gutter.scrollTop = textarea.scrollTop)
                 currentMatchIndex = -1;
             }
         }
-// Global keyboard shortcuts
+        // Global keyboard shortcuts
         document.addEventListener('keydown', e => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
@@ -1502,8 +1541,21 @@ window.onload = async () => {
             await initDB();
             loadExpandedState();
             await loadSavedFolder();
+
+            // Mobile: collapse sidebar, adjust line slider range
+            const isMobile = window.innerWidth <= 768;
+            if (isMobile) {
+                sidebarEl.classList.add('hidden');
+                const slider = document.getElementById('line-slider');
+                slider.min = 30;
+                slider.max = 45;
+                slider.value = 38;
+                maxCharsPerLine = 38;
+                document.getElementById('line-value').textContent = '38';
+            }
+
             setupLineLengthControl();
-            updateSidebarToggle(); // ← NEW: set initial chevron state
+            updateSidebarToggle();
            
             if (tabs.length === 0) {
                 createNewTab(null, 'welcome.txt', 'EDITOR is ready.\n\nType. Break. Ship.\n\n66 characters feels right.');
