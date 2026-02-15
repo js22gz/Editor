@@ -1447,6 +1447,7 @@ function reflowCurrentParagraph() {
                                 const file = await entry.getFile();
                                 const content = await file.arrayBuffer();
                                 const newFileHandle = await destHandle.getFileHandle(entry.name, { create: true });
+                                await ensureWritePermission(newFileHandle);
                                 const writable = await newFileHandle.createWritable();
                                 await writable.write(content);
                                 await writable.close();
@@ -1458,7 +1459,13 @@ function reflowCurrentParagraph() {
                     }
                     const newFolderHandle = await parentHandle.getDirectoryHandle(trimmed, { create: true });
                     const oldFolderHandle = await parentHandle.getDirectoryHandle(oldName);
-                    await copyDir(oldFolderHandle, newFolderHandle);
+                    try {
+                        await copyDir(oldFolderHandle, newFolderHandle);
+                    } catch (copyErr) {
+                        // Clean up partial copy on failure
+                        try { await parentHandle.removeEntry(trimmed, { recursive: true }); } catch (e) { }
+                        throw copyErr;
+                    }
                     await parentHandle.removeEntry(oldName, { recursive: true });
 
                     // Update expanded state
