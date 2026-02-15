@@ -1673,18 +1673,24 @@ function reflowCurrentParagraph() {
         function syncScroll() {
             gutter.scrollTop = textarea.scrollTop;
         }
-        textarea.addEventListener('keydown', e => {
-            if (e.key === 'Tab') {
-                e.preventDefault();
-                const start = textarea.selectionStart;
-                const end = textarea.selectionEnd;
-                const indent = '    ';
-                textarea.value = textarea.value.substring(0, start) + indent + textarea.value.substring(end);
-                textarea.selectionStart = textarea.selectionEnd = start + indent.length;
-                textarea.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-        });
-       
+    
+let lastKey = '';
+
+// Track what key was pressed
+textarea.addEventListener('keydown', e => {
+    lastKey = e.key;
+    
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const indent = '    ';
+        textarea.value = textarea.value.substring(0, start) + indent + textarea.value.substring(end);
+        textarea.selectionStart = textarea.selectionEnd = start + indent.length;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+});
+    
         let saveTimer;
         let saveInProgress = false;
         function scheduleSave() {
@@ -1719,15 +1725,20 @@ function reflowCurrentParagraph() {
                 saveInProgress = false;
             }
         }
-        let enforceTimer;
+let enforceTimer;
 textarea.addEventListener('input', () => {
     const tab = tabs.find(t => t.id === currentTabId);
     if (tab && PROSE_EXTENSIONS.test(tab.name)) {
+        // Don't reflow when typing space or Enter - let the user control it
+        if (lastKey === ' ' || lastKey === 'Enter') {
+            lastKey = '';
+            return; // Skip reflow, just let the input happen
+        }
         clearTimeout(enforceTimer);
-        enforceTimer = setTimeout(reflowCurrentParagraph, 10); // snappy but not frantic
+        enforceTimer = setTimeout(reflowCurrentParagraph, 10);
     }
-        });
- 
+});
+    
         textarea.addEventListener('input', () => {
             updateLineNumbers();
             if (currentTabId !== null) {
