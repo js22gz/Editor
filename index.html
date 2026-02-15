@@ -757,7 +757,13 @@
                 touchTimer = setTimeout(() => {
                     if (touchTarget) {
                         // Create synthetic event with stored coordinates
-                        const syntheticEvent = { clientX: touchTarget.x, clientY: touchTarget.y, preventDefault: () => {}, stopPropagation: () => {} };
+                        const syntheticEvent = { 
+                            clientX: touchTarget.x, 
+                            clientY: touchTarget.y, 
+                            target: element,
+                            preventDefault: () => {}, 
+                            stopPropagation: () => {} 
+                        };
                         showContextMenu(syntheticEvent, node, isFolder);
                         touchTarget = null;
                     }
@@ -770,7 +776,7 @@
                     touchTimer = null;
                 }
                 touchTarget = null;
-            });
+            }, { passive: true });
             
             element.addEventListener('touchmove', () => {
                 if (touchTimer) {
@@ -778,7 +784,7 @@
                     touchTimer = null;
                 }
                 touchTarget = null;
-            });
+            }, { passive: true });
         }
         function handleOutsideClick(e) {
             if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) {
