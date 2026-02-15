@@ -446,42 +446,37 @@
                 };
             });
         }
-
-    // ─────────────────────────────────────────────────────────────
-// Permission helper – fixes the "cannot write on readonly" error
-// on Android/Chrome. Call this before ANY createWritable().
-// ─────────────────────────────────────────────────────────────
-async function ensureWritePermission(handle) {
-    if (!handle) throw new Error('No file or directory handle');
-
-    try {
-        // First check current permission state
-        let state = await handle.queryPermission({ mode: 'readwrite' });
-
-        if (state === 'granted') {
-            return handle; // Good to go
+        
+        // ─────────────────────────────────────────────────────────────
+        // Improved permission helper – aggressive but safe
+        // Works reliably on Android Chrome + desktop
+        // ─────────────────────────────────────────────────────────────
+        async function ensureWritePermission(handle) {
+            if (!handle) throw new Error('No handle');
+        
+            try {
+                let state = await handle.queryPermission({ mode: 'readwrite' });
+        
+                if (state === 'granted') {
+                    return handle;
+                }
+        
+                // Force the permission dialog if needed (Android loves this)
+                showToast('Android/Chrome needs write access…', 1200);
+                state = await handle.requestPermission({ mode: 'readwrite' });
+        
+                if (state === 'granted') {
+                    return handle;
+                }
+        
+                throw new Error('Write permission denied. Try opening the folder again.');
+            } catch (err) {
+                if (err.name === 'AbortError') throw err; // user cancelled
+                console.error('Permission failed:', err);
+                throw new Error('Permission error: ' + (err.message || err));
+            }
         }
-
-        // Prompt the user if needed (this is what Android often requires)
-        if (state === 'prompt') {
-            showToast('Android needs permission to edit files…', 1500);
-            state = await handle.requestPermission({ mode: 'readwrite' });
-        }
-
-        if (state !== 'granted') {
-            throw new Error('Write permission denied. Try "Open Folder" again from the menu.');
-        }
-
-        return handle;
-    } catch (err) {
-        if (err.name === 'AbortError') {
-            throw err; // User cancelled the permission dialog – let it bubble
-        }
-        console.error('Permission check failed:', err);
-        throw new Error('Permission error: ' + err.message);
-    }
-}
-
+            
         // ─────────────────────────────────────────────────────────────
         // Line length slider + smart row-break (prose only)
         // ─────────────────────────────────────────────────────────────
@@ -533,78 +528,60 @@ async function ensureWritePermission(handle) {
             return false;
         }
 
-        function enforceLineBreaks() {
-            if (enforcingLineBreaks || !maxCharsPerLine) return;
-            enforcingLineBreaks = true;
-            const cursor = textarea.selectionStart;
-            let text = textarea.value;
-            let lineStart = text.lastIndexOf('\n', cursor - 1) + 1;
-            let lineEnd = text.indexOf('\n', cursor);
-            if (lineEnd === -1) lineEnd = text.length;
-            let currentLine = text.substring(lineStart, lineEnd);
-            let changed = false;
-            let newCursor = cursor;
+// ─────────────────────────────────────────────────────────────
+// Simplified + robust line-break enforcement (prose only)
+// No more merge = no more cursor jumping when typing new lines
+// ─────────────────────────────────────────────────────────────
+function enforceLineBreaks() {
+    if (enforcingLineBreaks || !maxCharsPerLine) return;
+    enforcingLineBreaks = true;
 
-            // Don't reflow structural lines
-            if (isStructuralLine(currentLine)) {
-                enforcingLineBreaks = false;
-                return;
-            }
+    const cursor = textarea.selectionStart;
+    let text = textarea.value;
+    let lineStart = text.lastIndexOf('\n', cursor - 1) + 1;
+    let lineEnd = text.indexOf('\n', cursor);
+    if (lineEnd === -1) lineEnd = text.length;
 
-            // Merge from next line (only if not structural)
-            while (currentLine.length < maxCharsPerLine) {
-                let nextLineEnd = text.indexOf('\n', lineEnd + 1);
-                if (nextLineEnd === -1) nextLineEnd = text.length;
-                if (lineEnd >= text.length) break;
-                const nextLine = text.substring(lineEnd + 1, nextLineEnd);
-                if (nextLine.length === 0) break;
-                // Don't merge structural lines
-                if (isStructuralLine(nextLine)) break;
-                
-                const space = currentLine.length === 0 ? '' : ' ';
-                const remaining = maxCharsPerLine - currentLine.length - space.length;
-                if (remaining <= 0) break;
-                const spaceIdx = nextLine.indexOf(' ');
-                const firstWord = spaceIdx === -1 ? nextLine : nextLine.substring(0, spaceIdx);
-                if (firstWord.length > remaining) break;
+    let currentLine = text.substring(lineStart, lineEnd);
+    let changed = false;
+    let newCursor = cursor;
 
-                if (spaceIdx === -1) {
-                    currentLine += space + nextLine;
-                    text = text.substring(0, lineEnd) + space + nextLine + text.substring(nextLineEnd);
-                } else {
-                    currentLine += space + firstWord;
-                    const rest = nextLine.substring(spaceIdx + 1);
-                    text = text.substring(0, lineEnd) + space + firstWord + '\n' + rest + text.substring(nextLineEnd);
-                }
-                changed = true;
-                lineEnd = text.indexOf('\n', lineStart + currentLine.length);
-                if (lineEnd === -1) lineEnd = text.length;
-            }
+    // Skip structural Markdown lines
+    if (isStructuralLine(currentLine)) {
+        enforcingLineBreaks = false;
+        return;
+    }
 
-            // Split if still too long (improved logic to avoid mid-word breaks)
-            if (currentLine.length > maxCharsPerLine) {
-                let breakPos = currentLine.lastIndexOf(' ', maxCharsPerLine);
-                // Only fall back to hard break if no space found at all
-                if (breakPos === -1) {
-                    breakPos = maxCharsPerLine;
-                }
-                const before = currentLine.substring(0, breakPos);
-                let after = currentLine.substring(breakPos).trimStart();
-                text = text.substring(0, lineStart) + before + '\n' + after + text.substring(lineEnd);
-                if (newCursor > lineStart + breakPos) {
-                    newCursor = lineStart + before.length + 1;
-                }
-                changed = true;
-            }
-
-            if (changed) {
-                textarea.value = text;
-                textarea.selectionStart = textarea.selectionEnd = newCursor;
-                updateLineNumbers();
-            }
-            enforcingLineBreaks = false;
+    // ONLY split if too long (no merge → stable cursor)
+    if (currentLine.length > maxCharsPerLine) {
+        let breakPos = currentLine.lastIndexOf(' ', maxCharsPerLine);
+        if (breakPos === -1 || breakPos < 8) {
+            breakPos = maxCharsPerLine; // hard break as fallback
         }
-      
+
+        const before = currentLine.substring(0, breakPos);
+        let after = currentLine.substring(breakPos).trimStart();
+
+        text = text.substring(0, lineStart) + before + '\n' + after + text.substring(lineEnd);
+
+        // Cursor logic: if we were in the part that moved to next line → put cursor at start of new line
+        if (cursor > lineStart + breakPos) {
+            newCursor = lineStart + before.length + 1;
+        }
+        // otherwise cursor stays where it was (feels natural)
+
+        changed = true;
+    }
+
+    if (changed) {
+        textarea.value = text;
+        textarea.selectionStart = textarea.selectionEnd = newCursor;
+        updateLineNumbers();
+    }
+
+    enforcingLineBreaks = false;
+}
+    
         function reflowAllText() {
             if (!maxCharsPerLine) return;
             const cursor = textarea.selectionStart;
@@ -1215,6 +1192,8 @@ async function ensureWritePermission(handle) {
                 await ensureWritePermission(dirHandle);
         
                 let exists = false;
+
+                
                 try { await dirHandle.getFileHandle(trimmed); exists = true; } catch (e) {}
         
                 if (exists) {
@@ -1224,13 +1203,16 @@ async function ensureWritePermission(handle) {
         
                 const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
                 
-                // ← NEW: This is the critical line that was failing
-                await ensureWritePermission(fileHandle);
-        
+                const dirHandle = targetDirHandle || currentDirHandle;
+                await ensureWritePermission(dirHandle);   // parent dir
+                
+                const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
+                await ensureWritePermission(fileHandle);  // new file handle
+                
                 const writable = await fileHandle.createWritable();
                 await writable.write('');
                 await writable.close();
-        
+                
                 const filePath = activeFolderPath ? `${activeFolderPath}/${trimmed}` : trimmed;
                 createNewTab(fileHandle, trimmed, '', filePath);
                 
@@ -1391,12 +1373,18 @@ async function ensureWritePermission(handle) {
                     const content = await file.text();
                    
                     const newHandle = await parentHandle.getFileHandle(trimmed, { create: true });
-                    const writableHandle = await ensureWritePermission(newHandle);
-                    const writable = await newHandle.createWritable();
-                    await writable.write(content);
-                    await writable.close();
-                   
-                    await parentHandle.removeEntry(oldName);
+                                    const writableHandle = await ensureWritePermission(newHandle);
+                // Inside newFile(), replace the permission block with this:
+                const dirHandle = targetDirHandle || currentDirHandle;
+                await ensureWritePermission(dirHandle);   // parent dir
+                
+                const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
+                await ensureWritePermission(fileHandle);  // new file handle
+                
+                const writable = await fileHandle.createWritable();
+                await writable.write('');
+                await writable.close();                   
+                                    await parentHandle.removeEntry(oldName);
                    
                     for (const openTab of tabs) {
                         if (openTab.handle && await isSameEntry(openTab.handle, contextMenuTarget.handle)) {
@@ -1602,13 +1590,15 @@ async function ensureWritePermission(handle) {
                 }
             }, 800);
         }
-        // Auto line break on typing (prose files only)
+        let enforceTimer;
         textarea.addEventListener('input', () => {
             const tab = tabs.find(t => t.id === currentTabId);
             if (tab && PROSE_EXTENSIONS.test(tab.name)) {
-                enforceLineBreaks();
+                clearTimeout(enforceTimer);
+                enforceTimer = setTimeout(enforceLineBreaks, 80); // feels smoother
             }
         });
+ 
         textarea.addEventListener('input', () => {
             updateLineNumbers();
             if (currentTabId !== null) {
@@ -1629,14 +1619,15 @@ async function ensureWritePermission(handle) {
         if (!tab || !tab.handle || !tab.dirty) return;
         
         try {
-            // ← NEW: This fixes saves after open/create
-            const writableHandle = await ensureWritePermission(tab.handle);
+            const dirHandle = targetDirHandle || currentDirHandle;
+            await ensureWritePermission(dirHandle);   // parent dir
             
-            const writable = await writableHandle.createWritable();
-            const content = (currentTabId === tab.id) ? textarea.value : tab.content;
-            await writable.write(content);
-            await writable.close();
-    
+            const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
+            await ensureWritePermission(fileHandle);  // new file handle
+            
+            const writable = await fileHandle.createWritable();
+            await writable.write('');
+            await writable.close();    
             tab.content = content;
             tab.dirty = false;
             if (tab.element) {
