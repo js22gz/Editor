@@ -1667,7 +1667,7 @@ textarea.addEventListener('input', () => {
     const tab = tabs.find(t => t.id === currentTabId);
     if (tab && PROSE_EXTENSIONS.test(tab.name)) {
         clearTimeout(enforceTimer);
-        enforceTimer = setTimeout(reflowCurrentParagraph, 42); // snappy but not frantic
+        enforceTimer = setTimeout(reflowCurrentParagraph, 10); // snappy but not frantic
     }
         });
  
