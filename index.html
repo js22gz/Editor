@@ -1617,15 +1617,11 @@ function enforceLineBreaks() {
         if (!tab || !tab.handle || !tab.dirty) return;
         
         try {
-            const dirHandle = targetDirHandle || currentDirHandle;
-            await ensureWritePermission(dirHandle);   // parent dir
-            
-            const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
-            await ensureWritePermission(fileHandle);  // new file handle
-            
-            const writable = await fileHandle.createWritable();
-            await writable.write('');
-            await writable.close();    
+            const content = (currentTabId === tab.id) ? textarea.value : tab.content;
+            const writableHandle = await ensureWritePermission(tab.handle);
+            const writable = await writableHandle.createWritable();
+            await writable.write(content);
+            await writable.close();
             tab.content = content;
             tab.dirty = false;
             if (tab.element) {
