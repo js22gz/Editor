@@ -730,8 +730,8 @@
             }
            
             // Handle both mouse and touch coordinates
-            const x = e.touches ? e.touches[0].clientX : e.clientX;
-            const y = e.touches ? e.touches[0].clientY : e.clientY;
+            const x = e.clientX;
+            const y = e.clientY;
             
             contextMenu.style.left = x + 'px';
             contextMenu.style.top = y + 'px';
@@ -754,11 +754,14 @@
         }
         function setupTouchHandlers(element, node, isFolder) {
             element.addEventListener('touchstart', (e) => {
-                const touchEvent = e;
-                touchTarget = { element, node, isFolder, event: touchEvent };
+                const x = e.touches[0].clientX;
+                const y = e.touches[0].clientY;
+                touchTarget = { element, node, isFolder, x, y };
                 touchTimer = setTimeout(() => {
                     if (touchTarget) {
-                        showContextMenu(touchTarget.event, node, isFolder);
+                        // Create synthetic event with stored coordinates
+                        const syntheticEvent = { clientX: touchTarget.x, clientY: touchTarget.y, preventDefault: () => {}, stopPropagation: () => {} };
+                        showContextMenu(syntheticEvent, node, isFolder);
                         touchTarget = null;
                     }
                 }, 500); // 500ms long-press
@@ -780,17 +783,14 @@
                 touchTarget = null;
             });
         }
-        document.addEventListener('click', (e) => {
+        function handleOutsideClick(e) {
             if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) {
                 closeContextMenu();
                 closeActionsDropdown();
             }
-        });
-        document.addEventListener('touchstart', (e) => {
-            if (contextMenu && !e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) {
-                closeContextMenu();
-            }
-        });
+        }
+        document.addEventListener('click', handleOutsideClick);
+        document.addEventListener('touchstart', handleOutsideClick);
         document.addEventListener('contextmenu', (e) => {
             if (!e.target.closest('.file-item') && !e.target.closest('.folder-header')) {
                 closeContextMenu();
