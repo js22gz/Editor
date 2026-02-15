@@ -244,6 +244,9 @@
             cursor: pointer;
             font-size: 13px;
             color: #e4e4e7;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
         .context-menu-item:hover { background: #27272a; }
         .context-menu-item.submenu-header {
@@ -263,6 +266,15 @@
             height: 1px;
             background: #27272a;
             margin: 4px 0;
+        }
+        @media (hover: none) and (pointer: coarse) {
+            .context-menu-item {
+                padding: 12px 16px;
+                font-size: 14px;
+            }
+            .context-menu {
+                min-width: 200px;
+            }
         }
      
         .line-length {
@@ -341,6 +353,8 @@
         let actionsDropdown = null;
         let maxCharsPerLine = 66;
         let enforcingLineBreaks = false;
+        let touchTimer = null;
+        let touchTarget = null;
 
         // New state for active/highlight
         let activeFilePath = null;
@@ -715,8 +729,9 @@
                 `;
             }
            
-            contextMenu.style.left = e.pageX + 'px';
-            contextMenu.style.top = e.pageY + 'px';
+            // Position using clientX/Y since menu has position: fixed
+            contextMenu.style.left = e.clientX + 'px';
+            contextMenu.style.top = e.clientY + 'px';
             document.body.appendChild(contextMenu);
            
             const rect = contextMenu.getBoundingClientRect();
@@ -734,12 +749,51 @@
                 contextMenuTarget = null;
             }
         }
-        document.addEventListener('click', (e) => {
+        function setupTouchHandlers(element, node, isFolder) {
+            element.addEventListener('touchstart', (e) => {
+                const x = e.touches[0].clientX;
+                const y = e.touches[0].clientY;
+                touchTarget = { element, node, isFolder, x, y };
+                touchTimer = setTimeout(() => {
+                    if (touchTarget) {
+                        // Create synthetic event with stored coordinates
+                        const syntheticEvent = { 
+                            clientX: touchTarget.x, 
+                            clientY: touchTarget.y, 
+                            target: element,
+                            preventDefault: () => {}, 
+                            stopPropagation: () => {} 
+                        };
+                        showContextMenu(syntheticEvent, node, isFolder);
+                        touchTarget = null;
+                    }
+                }, 500); // 500ms long-press
+            }, { passive: true });
+            
+            element.addEventListener('touchend', () => {
+                if (touchTimer) {
+                    clearTimeout(touchTimer);
+                    touchTimer = null;
+                }
+                touchTarget = null;
+            }, { passive: true });
+            
+            element.addEventListener('touchmove', () => {
+                if (touchTimer) {
+                    clearTimeout(touchTimer);
+                    touchTimer = null;
+                }
+                touchTarget = null;
+            }, { passive: true });
+        }
+        function handleOutsideClick(e) {
             if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) {
                 closeContextMenu();
                 closeActionsDropdown();
             }
-        });
+        }
+        document.addEventListener('click', handleOutsideClick);
+        document.addEventListener('touchstart', handleOutsideClick, { passive: true });
         document.addEventListener('contextmenu', (e) => {
             if (!e.target.closest('.file-item') && !e.target.closest('.folder-header')) {
                 closeContextMenu();
@@ -916,6 +970,7 @@
                 header.onclick = () => toggleFolder(node, header, childrenDiv);
                 header.addEventListener('keydown', e => handleTreeKeydown(e, node, header, childrenDiv));
                 header.addEventListener('contextmenu', e => showContextMenu(e, node, true));
+                setupTouchHandlers(header, node, true);
                
                 folderDiv.appendChild(header);
                 folderDiv.appendChild(childrenDiv);
@@ -935,6 +990,7 @@
                     else navigateTree(e);
                 });
                 fileDiv.addEventListener('contextmenu', e => showContextMenu(e, node, false));
+                setupTouchHandlers(fileDiv, node, false);
                 parentEl.appendChild(fileDiv);
             }
         }
