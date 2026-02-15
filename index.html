@@ -447,6 +447,41 @@
             });
         }
 
+    // ─────────────────────────────────────────────────────────────
+// Permission helper – fixes the "cannot write on readonly" error
+// on Android/Chrome. Call this before ANY createWritable().
+// ─────────────────────────────────────────────────────────────
+async function ensureWritePermission(handle) {
+    if (!handle) throw new Error('No file or directory handle');
+
+    try {
+        // First check current permission state
+        let state = await handle.queryPermission({ mode: 'readwrite' });
+
+        if (state === 'granted') {
+            return handle; // Good to go
+        }
+
+        // Prompt the user if needed (this is what Android often requires)
+        if (state === 'prompt') {
+            showToast('Android needs permission to edit files…', 1500);
+            state = await handle.requestPermission({ mode: 'readwrite' });
+        }
+
+        if (state !== 'granted') {
+            throw new Error('Write permission denied. Try "Open Folder" again from the menu.');
+        }
+
+        return handle;
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            throw err; // User cancelled the permission dialog – let it bubble
+        }
+        console.error('Permission check failed:', err);
+        throw new Error('Permission error: ' + err.message);
+    }
+}
+
         // ─────────────────────────────────────────────────────────────
         // Line length slider + smart row-break (prose only)
         // ─────────────────────────────────────────────────────────────
@@ -732,7 +767,8 @@
             try {
                 const content = (currentTabId === tab.id) ? textarea.value : tab.content;
                 const newHandle = await window.showSaveFilePicker({ suggestedName: tab.name });
-                const writable = await newHandle.createWritable();
+                const writableHandle = await ensureWritePermission(newHandle);
+                const writable = await writableHandle.createWritable();
                 await writable.write(content);
                 await writable.close();
 
@@ -1142,10 +1178,17 @@
         }
         async function openFile() {
             try {
-                const [handle] = await window.showOpenFilePicker();
+                const [handle] = await window.showOpenFilePicker({
+                    types: [{ description: 'Text files', accept: { 'text/*': ['.txt','.md','.js','.ts','.json','.html','.css'] } }]
+                });
+                
+                // ← NEW: Request write permission right away so saves work later
+                await ensureWritePermission(handle);
+                
                 const file = await handle.getFile();
                 const content = await file.text();
                 createNewTab(handle, file.name, content);
+                showToast(`Opened ${file.name}`);
             } catch (err) {
                 if (err.name !== 'AbortError') {
                     showToast('Failed to open file: ' + err.message);
@@ -1159,28 +1202,38 @@
             }
             const name = await showInputDialog('Enter new file name:');
             if (!name || !name.trim()) return;
+        
             const trimmed = name.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || trimmed === '.' || trimmed === '..' || /[\/\\]/.test(trimmed)) {
                 showToast('Invalid filename');
                 return;
             }
+        
             const dirHandle = targetDirHandle || currentDirHandle;
             try {
+                // Ensure the directory itself has write permission
+                await ensureWritePermission(dirHandle);
+        
                 let exists = false;
-                try {
-                    await dirHandle.getFileHandle(trimmed);
-                    exists = true;
-                } catch (e) { }
+                try { await dirHandle.getFileHandle(trimmed); exists = true; } catch (e) {}
+        
                 if (exists) {
                     showToast('File already exists');
                     return;
                 }
+        
                 const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
+                
+                // ← NEW: This is the critical line that was failing
+                await ensureWritePermission(fileHandle);
+        
                 const writable = await fileHandle.createWritable();
                 await writable.write('');
                 await writable.close();
+        
                 const filePath = activeFolderPath ? `${activeFolderPath}/${trimmed}` : trimmed;
                 createNewTab(fileHandle, trimmed, '', filePath);
+                
                 await buildAndRenderTree();
                 statusEl.textContent = 'Created ' + trimmed;
                 setTimeout(() => statusEl.textContent = 'Ready', 2000);
@@ -1190,6 +1243,7 @@
                 }
             }
         }
+    
         async function newFolder() {
             if (!currentDirHandle) {
                 showToast('Open a folder first to create a new folder');
@@ -1337,6 +1391,7 @@
                     const content = await file.text();
                    
                     const newHandle = await parentHandle.getFileHandle(trimmed, { create: true });
+                    const writableHandle = await ensureWritePermission(newHandle);
                     const writable = await newHandle.createWritable();
                     await writable.write(content);
                     await writable.close();
@@ -1367,6 +1422,9 @@
         }
         async function openFileFromNode(node) {
             try {
+                // ← NEW: Ensure write permission so we can save later
+                await ensureWritePermission(node.handle);
+                
                 const file = await node.handle.getFile();
                 if (!file.type.startsWith('text/') && !TEXT_FILE_EXTENSIONS.test(file.name)) {
                     if (!confirm('This looks like a binary file. Open anyway?')) return;
@@ -1374,7 +1432,11 @@
                 const content = await file.text();
                 createNewTab(node.handle, node.name, content, node.path);
             } catch (err) {
-                showToast('Failed to open file: ' + err.message);
+                if (err.message.includes('permission')) {
+                    showToast(err.message);
+                } else {
+                    showToast('Failed to open file: ' + err.message);
+                }
             }
         }
         async function createNewTab(handle, name, content = '', path = null) {
@@ -1563,29 +1625,36 @@
             }
         });
         textarea.addEventListener('scroll', () => gutter.scrollTop = textarea.scrollTop);
-        async function saveTab(tab) {
-            if (!tab || !tab.handle) return;
-            if (!tab.dirty) return;
-           
-            try {
-                const writable = await tab.handle.createWritable();
-                const content = (currentTabId === tab.id) ? textarea.value : tab.content;
-                await writable.write(content);
-                await writable.close();
-                tab.content = content;
-                tab.dirty = false;
-                if (tab.element) {
-                    const indicator = tab.element.querySelector('.dirty-indicator');
-                    if (indicator) indicator.style.display = 'none';
-                }
-                updateEditorStatus(tab);
-                statusEl.textContent = 'Saved';
-                setTimeout(() => statusEl.textContent = 'Ready', 1200);
-            } catch (err) {
+    async function saveTab(tab) {
+        if (!tab || !tab.handle || !tab.dirty) return;
+        
+        try {
+            // ← NEW: This fixes saves after open/create
+            const writableHandle = await ensureWritePermission(tab.handle);
+            
+            const writable = await writableHandle.createWritable();
+            const content = (currentTabId === tab.id) ? textarea.value : tab.content;
+            await writable.write(content);
+            await writable.close();
+    
+            tab.content = content;
+            tab.dirty = false;
+            if (tab.element) {
+                const indicator = tab.element.querySelector('.dirty-indicator');
+                if (indicator) indicator.style.display = 'none';
+            }
+            updateEditorStatus(tab);
+            statusEl.textContent = 'Saved';
+            setTimeout(() => statusEl.textContent = 'Ready', 1200);
+        } catch (err) {
+            if (err.message.includes('permission')) {
+                showToast('Permission issue. Open the folder again from the menu.');
+            } else if (err.name !== 'AbortError') {
                 showToast('Save failed: ' + err.message);
             }
         }
-        async function saveCurrentFile() {
+    }
+    async function saveCurrentFile() {
             if (currentTabId === null) return;
             const tab = tabs.find(t => t.id === currentTabId);
             await saveTab(tab);
