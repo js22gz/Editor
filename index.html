@@ -730,8 +730,8 @@
             }
            
             // Handle both mouse and touch coordinates
-            const x = e.touches ? e.touches[0].clientX : (e.clientX || e.pageX);
-            const y = e.touches ? e.touches[0].clientY : (e.clientY || e.pageY);
+            const x = e.touches ? e.touches[0].clientX : e.clientX;
+            const y = e.touches ? e.touches[0].clientY : e.clientY;
             
             contextMenu.style.left = x + 'px';
             contextMenu.style.top = y + 'px';
@@ -754,14 +754,15 @@
         }
         function setupTouchHandlers(element, node, isFolder) {
             element.addEventListener('touchstart', (e) => {
-                touchTarget = { element, node, isFolder };
+                const touchEvent = e;
+                touchTarget = { element, node, isFolder, event: touchEvent };
                 touchTimer = setTimeout(() => {
                     if (touchTarget) {
-                        showContextMenu(e, node, isFolder);
+                        showContextMenu(touchTarget.event, node, isFolder);
                         touchTarget = null;
                     }
                 }, 500); // 500ms long-press
-            }, { passive: false });
+            }, { passive: true });
             
             element.addEventListener('touchend', () => {
                 if (touchTimer) {
@@ -786,7 +787,7 @@
             }
         });
         document.addEventListener('touchstart', (e) => {
-            if (contextMenu && !e.target.closest('.context-menu') && !e.target.closest('.file-item') && !e.target.closest('.folder-header')) {
+            if (contextMenu && !e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) {
                 closeContextMenu();
             }
         });
