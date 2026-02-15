@@ -531,6 +531,22 @@
 // ─────────────────────────────────────────────────────────────
 // Paragraph reflow 
 // ─────────────────────────────────────────────────────────────
+function reflowWords(words, maxLen) {
+    const lines = [];
+    let currentLineWords = [];
+    for (const word of words) {
+        const wouldBeLength = currentLineWords.reduce((sum, w) => sum + w.length + 1, 0) - (currentLineWords.length ? 1 : 0);
+        if (wouldBeLength + (currentLineWords.length ? 1 : 0) + word.length > maxLen) {
+            if (currentLineWords.length) lines.push(currentLineWords.join(' '));
+            currentLineWords = [word];
+        } else {
+            currentLineWords.push(word);
+        }
+    }
+    if (currentLineWords.length) lines.push(currentLineWords.join(' '));
+    return lines;
+}
+
 function reflowCurrentParagraph() {
     if (enforcingLineBreaks || !maxCharsPerLine) return;
     enforcingLineBreaks = true;
@@ -602,18 +618,7 @@ function reflowCurrentParagraph() {
         }
 
         // Reflow words into lines
-        const newParaLines = [];
-        let currentLineWords = [];
-        for (let word of words) {
-            const wouldBeLength = currentLineWords.reduce((sum, w) => sum + w.length + 1, 0) - (currentLineWords.length ? 1 : 0);
-            if (wouldBeLength + (currentLineWords.length ? 1 : 0) + word.length > maxCharsPerLine) {
-                if (currentLineWords.length) newParaLines.push(currentLineWords.join(' '));
-                currentLineWords = [word];
-            } else {
-                currentLineWords.push(word);
-            }
-        }
-        if (currentLineWords.length) newParaLines.push(currentLineWords.join(' '));
+        const newParaLines = reflowWords(words, maxCharsPerLine);
 
         let newParaText = newParaLines.join('\n');
 
@@ -710,19 +715,9 @@ function reflowCurrentParagraph() {
                     i++;
                 }
                 
-                // Reflow the paragraph with improved line breaking
-                while (para.length > maxCharsPerLine) {
-                    let breakPos = para.lastIndexOf(' ', maxCharsPerLine);
-                    // Only fall back to hard break if no space found at all
-                    if (breakPos === -1) {
-                        breakPos = maxCharsPerLine;
-                    }
-                    reflowed.push(para.substring(0, breakPos));
-                    para = para.substring(breakPos).trimStart();
-                }
-                if (para.length > 0) {
-                    reflowed.push(para);
-                }
+                const words = para.split(/\s+/).filter(Boolean);
+                const rewrapped = reflowWords(words, maxCharsPerLine);
+                for (const rl of rewrapped) reflowed.push(rl);
             }
           
             textarea.value = reflowed.join('\n');
@@ -1431,6 +1426,8 @@ function reflowCurrentParagraph() {
                         parentHandle = await parentHandle.getDirectoryHandle(part);
                     }
                 }
+                await ensureWritePermission(parentHandle);
+
                 try {
                     if (isFolder) {
                         await parentHandle.getDirectoryHandle(trimmed);
@@ -1441,26 +1438,66 @@ function reflowCurrentParagraph() {
                     closeContextMenu();
                     return;
                 } catch (e) { }
+
                 if (isFolder) {
-                    showToast('Folder renaming not yet implemented');
+                    // Recursive copy to new folder, then remove old
+                    async function copyDir(srcHandle, destHandle) {
+                        for await (const entry of srcHandle.values()) {
+                            if (entry.kind === 'file') {
+                                const file = await entry.getFile();
+                                const content = await file.arrayBuffer();
+                                const newFileHandle = await destHandle.getFileHandle(entry.name, { create: true });
+                                await ensureWritePermission(newFileHandle);
+                                const writable = await newFileHandle.createWritable();
+                                await writable.write(content);
+                                await writable.close();
+                            } else {
+                                const newSubDir = await destHandle.getDirectoryHandle(entry.name, { create: true });
+                                await copyDir(entry, newSubDir);
+                            }
+                        }
+                    }
+                    const newFolderHandle = await parentHandle.getDirectoryHandle(trimmed, { create: true });
+                    const oldFolderHandle = await parentHandle.getDirectoryHandle(oldName);
+                    try {
+                        await copyDir(oldFolderHandle, newFolderHandle);
+                    } catch (copyErr) {
+                        // Clean up partial copy on failure
+                        try { await parentHandle.removeEntry(trimmed, { recursive: true }); } catch (e) { }
+                        throw copyErr;
+                    }
+                    await parentHandle.removeEntry(oldName, { recursive: true });
+
+                    // Update expanded state
+                    const oldPath = contextMenuTarget.path;
+                    const newPath = pathParts.length ? pathParts.join('/') + '/' + trimmed : trimmed;
+                    const updatedFolders = new Set();
+                    for (const fp of expandedFolders) {
+                        if (fp === oldPath) {
+                            updatedFolders.add(newPath);
+                        } else if (fp.startsWith(oldPath + '/')) {
+                            updatedFolders.add(newPath + fp.substring(oldPath.length));
+                        } else {
+                            updatedFolders.add(fp);
+                        }
+                    }
+                    expandedFolders.clear();
+                    for (const fp of updatedFolders) expandedFolders.add(fp);
+                    saveExpandedState();
+
+                    await buildAndRenderTree();
+                    showToast(`Renamed folder to ${trimmed}`);
                 } else {
                     const oldHandle = await parentHandle.getFileHandle(oldName);
                     const file = await oldHandle.getFile();
-                    const content = await file.text();
+                    const content = await file.arrayBuffer();
                    
                     const newHandle = await parentHandle.getFileHandle(trimmed, { create: true });
-                                    const writableHandle = await ensureWritePermission(newHandle);
-                // Inside newFile(), replace the permission block with this:
-                const dirHandle = targetDirHandle || currentDirHandle;
-                await ensureWritePermission(dirHandle);   // parent dir
-                
-                const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
-                await ensureWritePermission(fileHandle);  // new file handle
-                
-                const writable = await fileHandle.createWritable();
-                await writable.write('');
-                await writable.close();                   
-                                    await parentHandle.removeEntry(oldName);
+                    await ensureWritePermission(newHandle);
+                    const writable = await newHandle.createWritable();
+                    await writable.write(content);
+                    await writable.close();
+                    await parentHandle.removeEntry(oldName);
                    
                     for (const openTab of tabs) {
                         if (openTab.handle && await isSameEntry(openTab.handle, contextMenuTarget.handle)) {
