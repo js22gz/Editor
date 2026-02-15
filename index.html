@@ -529,64 +529,132 @@
         }
 
 // ─────────────────────────────────────────────────────────────
-// Simplified + robust line-break enforcement (prose only)
-// No more merge = no more cursor jumping when typing new lines
+// Paragraph reflow — the real greatness (no jumping, cursor-stable)
 // ─────────────────────────────────────────────────────────────
-function enforceLineBreaks() {
+function reflowCurrentParagraph() {
     if (enforcingLineBreaks || !maxCharsPerLine) return;
     enforcingLineBreaks = true;
 
-    const cursor = textarea.selectionStart;
-    let text = textarea.value;
-    let lineStart = text.lastIndexOf('\n', cursor - 1) + 1;
-    let lineEnd = text.indexOf('\n', cursor);
-    if (lineEnd === -1) lineEnd = text.length;
+    try {
+        const oldCursor = textarea.selectionStart;
+        const text = textarea.value;
+        const lines = text.split('\n');
 
-    let currentLine = text.substring(lineStart, lineEnd);
-    let changed = false;
-    let newCursor = cursor;
-
-    // Skip structural Markdown lines
-    if (isStructuralLine(currentLine)) {
-        enforcingLineBreaks = false;
-        return;
-    }
-
-    // ONLY split if too long (no merge → stable cursor)
-    if (currentLine.length > maxCharsPerLine) {
-        let breakPos = currentLine.lastIndexOf(' ', maxCharsPerLine);
-        if (breakPos === -1 || breakPos < 8) {
-            breakPos = maxCharsPerLine; // hard break as fallback
+        // Find current line index
+        let charCount = 0;
+        let currentLineIdx = 0;
+        for (let i = 0; i < lines.length; i++) {
+            charCount += lines[i].length + 1;
+            if (charCount > oldCursor) {
+                currentLineIdx = i;
+                break;
+            }
         }
 
-        const before = currentLine.substring(0, breakPos);
-        const raw = currentLine.substring(breakPos);
-        const trimmed = raw.trimStart();
-        const trimmedCount = raw.length - trimmed.length;
-
-        text = text.substring(0, lineStart) + before + '\n' + trimmed + text.substring(lineEnd);
-
-        // Cursor logic: keep cursor at correct position relative to the wrapped text
-        const cursorOffsetInLine = cursor - lineStart;
-        if (cursorOffsetInLine > breakPos) {
-            // Cursor was in the part that moved to the next line
-            // Calculate its offset within the "after" text, accounting for trimmed whitespace
-            const offsetInAfter = cursorOffsetInLine - breakPos - trimmedCount;
-            newCursor = lineStart + before.length + 1 + Math.max(0, offsetInAfter);
+        const currentLine = lines[currentLineIdx];
+        if (currentLine.trim() === '' || isStructuralLine(currentLine)) {
+            enforcingLineBreaks = false;
+            return;
         }
-        // otherwise cursor stays where it was (feels natural)
 
-        changed = true;
-    }
+        // Find paragraph bounds (consecutive prose lines)
+        let startIdx = currentLineIdx;
+        while (startIdx > 0) {
+            const prev = lines[startIdx - 1];
+            if (prev.trim() === '' || isStructuralLine(prev)) break;
+            startIdx--;
+        }
+        let endIdx = currentLineIdx;
+        while (endIdx < lines.length - 1) {
+            const next = lines[endIdx + 1];
+            if (next.trim() === '' || isStructuralLine(next)) break;
+            endIdx++;
+        }
 
-    if (changed) {
-        textarea.value = text;
-        textarea.selectionStart = textarea.selectionEnd = newCursor;
+        // Original paragraph data
+        const originalParaLines = lines.slice(startIdx, endIdx + 1);
+        const originalParaText = originalParaLines.join('\n');
+        let paraStartPos = 0;
+        for (let i = 0; i < startIdx; i++) {
+            paraStartPos += lines[i].length + 1;
+        }
+        const cursorInPara = oldCursor - paraStartPos;
+
+        // Extract words (order preserved)
+        const words = originalParaText.split(/\s+/).filter(Boolean);
+        if (words.length === 0) {
+            enforcingLineBreaks = false;
+            return;
+        }
+
+        // Find which word + offset the cursor was in (robust even with extra whitespace)
+        const wordMatches = [...originalParaText.matchAll(/\S+/g)];
+        let wordIndex = wordMatches.length;
+        let offsetInWord = 0;
+
+        for (let i = 0; i < wordMatches.length; i++) {
+            const start = wordMatches[i].index;
+            const end = start + wordMatches[i][0].length;
+            if (cursorInPara >= start && cursorInPara <= end) {
+                wordIndex = i;
+                offsetInWord = cursorInPara - start;
+                break;
+            } else if (cursorInPara < start) {
+                wordIndex = i;
+                offsetInWord = 0;
+                break;
+            }
+        }
+
+        // Reflow words into lines
+        const newParaLines = [];
+        let currentLineWords = [];
+        for (let word of words) {
+            const wouldBeLength = currentLineWords.reduce((sum, w) => sum + w.length + 1, 0) - (currentLineWords.length ? 1 : 0);
+            if (wouldBeLength + (currentLineWords.length ? 1 : 0) + word.length > maxCharsPerLine) {
+                if (currentLineWords.length) newParaLines.push(currentLineWords.join(' '));
+                currentLineWords = [word];
+            } else {
+                currentLineWords.push(word);
+            }
+        }
+        if (currentLineWords.length) newParaLines.push(currentLineWords.join(' '));
+
+        const newParaText = newParaLines.join('\n');
+
+        // Reconstruct new cursor position in the reflowed paragraph
+        let newCursorInPara = 0;
+        let currentWordIdx = 0;
+        outer: for (let line of newParaLines) {
+            const lineWords = line.split(' ');
+            for (let w = 0; w < lineWords.length; w++) {
+                if (currentWordIdx === wordIndex) {
+                    newCursorInPara += offsetInWord;
+                    break outer;
+                }
+                newCursorInPara += lineWords[w].length;
+                if (w < lineWords.length - 1) newCursorInPara += 1; // space
+                currentWordIdx++;
+            }
+            newCursorInPara += 1; // newline (except after last line, but we add it anyway and it gets clipped)
+        }
+        if (wordIndex >= words.length) {
+            newCursorInPara = newParaText.length;
+        }
+
+        // Apply
+        const newText = text.substring(0, paraStartPos) + newParaText + text.substring(paraStartPos + originalParaText.length);
+        textarea.value = newText;
+        textarea.selectionStart = textarea.selectionEnd = paraStartPos + newCursorInPara;
+
         updateLineNumbers();
+    } catch (e) {
+        console.error('Reflow failed (should never happen):', e);
+    } finally {
+        enforcingLineBreaks = false;
     }
-
-    enforcingLineBreaks = false;
 }
+    
     
         function reflowAllText() {
             if (!maxCharsPerLine) return;
@@ -1595,12 +1663,12 @@ function enforceLineBreaks() {
             }, 800);
         }
         let enforceTimer;
-        textarea.addEventListener('input', () => {
-            const tab = tabs.find(t => t.id === currentTabId);
-            if (tab && PROSE_EXTENSIONS.test(tab.name)) {
-                clearTimeout(enforceTimer);
-                enforceTimer = setTimeout(enforceLineBreaks, 80); // feels smoother
-            }
+textarea.addEventListener('input', () => {
+    const tab = tabs.find(t => t.id === currentTabId);
+    if (tab && PROSE_EXTENSIONS.test(tab.name)) {
+        clearTimeout(enforceTimer);
+        enforceTimer = setTimeout(reflowCurrentParagraph, 42); // snappy but not frantic
+    }
         });
  
         textarea.addEventListener('input', () => {
