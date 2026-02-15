@@ -375,6 +375,79 @@
         const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/;
 
         // ─────────────────────────────────────────────────────────────
+        // Mobile-friendly input dialog (replaces prompt())
+        // ─────────────────────────────────────────────────────────────
+        function showInputDialog(message, defaultValue = '') {
+            return new Promise((resolve) => {
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                    background: rgba(0,0,0,0.8); display: flex;
+                    align-items: center; justify-content: center; z-index: 10001;
+                `;
+                
+                const dialog = document.createElement('div');
+                dialog.style.cssText = `
+                    background: #18181b; padding: 24px; border-radius: 8px;
+                    min-width: 300px; max-width: 90%; border: 1px solid #27272a;
+                `;
+                
+                const escapedMessage = message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const escapedValue = defaultValue.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                
+                dialog.innerHTML = `
+                    <div style="color: #e4e4e7; margin-bottom: 12px; font-size: 14px;">${escapedMessage}</div>
+                    <input type="text" id="dialog-input" value="${escapedValue}" style="
+                        width: 100%; padding: 10px; background: #27272a;
+                        border: 1px solid #3f3f46; color: #e4e4e7;
+                        border-radius: 4px; font-size: 16px; box-sizing: border-box;
+                    ">
+                    <div style="display: flex; gap: 8px; margin-top: 16px;">
+                        <button id="dialog-ok" class="btn accent" style="flex: 1; min-height: 44px;">OK</button>
+                        <button id="dialog-cancel" class="btn" style="flex: 1; min-height: 44px;">Cancel</button>
+                    </div>
+                `;
+                
+                modal.appendChild(dialog);
+                document.body.appendChild(modal);
+                
+                const input = dialog.querySelector('#dialog-input');
+                input.focus();
+                input.select(); // Select default text if provided
+                
+                dialog.querySelector('#dialog-ok').onclick = () => {
+                    resolve(input.value);
+                    modal.remove();
+                };
+                
+                dialog.querySelector('#dialog-cancel').onclick = () => {
+                    resolve(null);
+                    modal.remove();
+                };
+                
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        resolve(input.value);
+                        modal.remove();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        resolve(null);
+                        modal.remove();
+                    }
+                });
+                
+                // Close on backdrop click
+                modal.onclick = (e) => {
+                    if (e.target === modal) {
+                        resolve(null);
+                        modal.remove();
+                    }
+                };
+            });
+        }
+
+        // ─────────────────────────────────────────────────────────────
         // Line length slider + smart row-break (prose only)
         // ─────────────────────────────────────────────────────────────
         function setupLineLengthControl() {
@@ -1084,7 +1157,7 @@
                 showToast('Open a folder first to create a new file');
                 return;
             }
-            const name = prompt('Enter new file name:');
+            const name = await showInputDialog('Enter new file name:');
             if (!name || !name.trim()) return;
             const trimmed = name.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || trimmed === '.' || trimmed === '..' || /[\/\\]/.test(trimmed)) {
@@ -1122,7 +1195,7 @@
                 showToast('Open a folder first to create a new folder');
                 return;
             }
-            const name = prompt('Enter new folder name:');
+            const name = await showInputDialog('Enter new folder name:');
             if (!name || !name.trim()) return;
             const trimmed = name.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || trimmed === '.' || trimmed === '..' || /[\/\\]/.test(trimmed)) {
@@ -1224,7 +1297,7 @@
            
             const oldName = contextMenuTarget.name;
             const isFolder = contextMenuTarget.kind === 'directory';
-            const newName = prompt(`Rename ${isFolder ? 'folder' : 'file'}:`, oldName);
+            const newName = await showInputDialog(`Rename ${isFolder ? 'folder' : 'file'}:`, oldName);
            
             if (!newName || !newName.trim() || newName === oldName) {
                 closeContextMenu();
