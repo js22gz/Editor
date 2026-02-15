@@ -529,35 +529,29 @@
         }
 
 // ─────────────────────────────────────────────────────────────
-// Paragraph reflow — the real greatness (no jumping, cursor-stable)
+// Paragraph reflow 
 // ─────────────────────────────────────────────────────────────
 function reflowCurrentParagraph() {
     if (enforcingLineBreaks || !maxCharsPerLine) return;
     enforcingLineBreaks = true;
 
     try {
-        const oldCursor = textarea.selectionStart;
+        const cursor = textarea.selectionStart;
         const text = textarea.value;
         const lines = text.split('\n');
 
-        // Find current line index
-        let charCount = 0;
+        // Find which line the cursor is on
+        let charPos = 0;
         let currentLineIdx = 0;
         for (let i = 0; i < lines.length; i++) {
-            charCount += lines[i].length + 1;
-            if (charCount > oldCursor) {
+            charPos += lines[i].length + 1;
+            if (charPos > cursor) {
                 currentLineIdx = i;
                 break;
             }
         }
 
-        const currentLine = lines[currentLineIdx];
-        if (currentLine.trim() === '' || isStructuralLine(currentLine)) {
-            enforcingLineBreaks = false;
-            return;
-        }
-
-        // Find paragraph bounds (consecutive prose lines)
+        // Find full paragraph bounds (consecutive prose lines)
         let startIdx = currentLineIdx;
         while (startIdx > 0) {
             const prev = lines[startIdx - 1];
@@ -571,14 +565,15 @@ function reflowCurrentParagraph() {
             endIdx++;
         }
 
-        // Original paragraph data
-        const originalParaLines = lines.slice(startIdx, endIdx + 1);
-        const originalParaText = originalParaLines.join('\n');
-        let paraStartPos = 0;
-        for (let i = 0; i < startIdx; i++) {
-            paraStartPos += lines[i].length + 1;
+        const paraStartPos = lines.slice(0, startIdx).reduce((sum, l) => sum + l.length + 1, 0);
+        const originalParaText = lines.slice(startIdx, endIdx + 1).join('\n');
+        const cursorInPara = cursor - paraStartPos;
+
+        // Skip if empty or structural
+        if (originalParaText.trim() === '' || isStructuralLine(originalParaText)) {
+            enforcingLineBreaks = false;
+            return;
         }
-        const cursorInPara = oldCursor - paraStartPos;
 
         // Extract words (order preserved)
         const words = originalParaText.split(/\s+/).filter(Boolean);
@@ -587,7 +582,7 @@ function reflowCurrentParagraph() {
             return;
         }
 
-        // Find which word + offset the cursor was in (robust even with extra whitespace)
+        // Find exact word + offset the cursor is in (handles spaces perfectly)
         const wordMatches = [...originalParaText.matchAll(/\S+/g)];
         let wordIndex = wordMatches.length;
         let offsetInWord = 0;
@@ -620,9 +615,15 @@ function reflowCurrentParagraph() {
         }
         if (currentLineWords.length) newParaLines.push(currentLineWords.join(' '));
 
-        const newParaText = newParaLines.join('\n');
+        let newParaText = newParaLines.join('\n');
 
-        // Reconstruct new cursor position in the reflowed paragraph
+        // === CRITICAL FIX: Preserve trailing whitespace (the space bug) ===
+        const trailingMatch = originalParaText.match(/\s*$/);
+        const trailingWS = trailingMatch ? trailingMatch[0] : '';
+        const contentLength = originalParaText.length - trailingWS.length;
+        newParaText += trailingWS;
+
+        // Reconstruct cursor in the reflowed content
         let newCursorInPara = 0;
         let currentWordIdx = 0;
         outer: for (let line of newParaLines) {
@@ -636,10 +637,14 @@ function reflowCurrentParagraph() {
                 if (w < lineWords.length - 1) newCursorInPara += 1; // space
                 currentWordIdx++;
             }
-            newCursorInPara += 1; // newline (except after last line, but we add it anyway and it gets clipped)
+            newCursorInPara += 1; // newline
         }
-        if (wordIndex >= words.length) {
-            newCursorInPara = newParaText.length;
+
+        // Final cursor adjustment (handles typing spaces at end / wrap cases)
+        if (cursorInPara > contentLength) {
+            newCursorInPara = (newParaText.length - trailingWS.length) + (cursorInPara - contentLength);
+        } else if (wordIndex >= words.length) {
+            newCursorInPara = newParaText.length - trailingWS.length;
         }
 
         // Apply
@@ -649,12 +654,11 @@ function reflowCurrentParagraph() {
 
         updateLineNumbers();
     } catch (e) {
-        console.error('Reflow failed (should never happen):', e);
+        console.error('Reflow failed:', e);
     } finally {
         enforcingLineBreaks = false;
     }
-}
-    
+}    
     
         function reflowAllText() {
             if (!maxCharsPerLine) return;
