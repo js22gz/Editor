@@ -1201,8 +1201,6 @@ function enforceLineBreaks() {
                     return;
                 }
         
-                const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
-                
                 const dirHandle = targetDirHandle || currentDirHandle;
                 await ensureWritePermission(dirHandle);   // parent dir
                 
