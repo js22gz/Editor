@@ -560,13 +560,19 @@ function enforceLineBreaks() {
         }
 
         const before = currentLine.substring(0, breakPos);
-        let after = currentLine.substring(breakPos).trimStart();
+        const raw = currentLine.substring(breakPos);
+        const trimmed = raw.trimStart();
+        const trimmedCount = raw.length - trimmed.length;
 
-        text = text.substring(0, lineStart) + before + '\n' + after + text.substring(lineEnd);
+        text = text.substring(0, lineStart) + before + '\n' + trimmed + text.substring(lineEnd);
 
-        // Cursor logic: if we were in the part that moved to next line → put cursor at start of new line
-        if (cursor > lineStart + breakPos) {
-            newCursor = lineStart + before.length + 1;
+        // Cursor logic: keep cursor at correct position relative to the wrapped text
+        const cursorOffsetInLine = cursor - lineStart;
+        if (cursorOffsetInLine > breakPos) {
+            // Cursor was in the part that moved to the next line
+            // Calculate its offset within the "after" text, accounting for trimmed whitespace
+            const offsetInAfter = cursorOffsetInLine - breakPos - trimmedCount;
+            newCursor = lineStart + before.length + 1 + Math.max(0, offsetInAfter);
         }
         // otherwise cursor stays where it was (feels natural)
 
