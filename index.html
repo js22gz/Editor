@@ -729,12 +729,9 @@
                 `;
             }
            
-            // Handle both mouse and touch coordinates
-            const x = e.clientX;
-            const y = e.clientY;
-            
-            contextMenu.style.left = x + 'px';
-            contextMenu.style.top = y + 'px';
+            // Position using clientX/Y since menu has position: fixed
+            contextMenu.style.left = e.clientX + 'px';
+            contextMenu.style.top = e.clientY + 'px';
             document.body.appendChild(contextMenu);
            
             const rect = contextMenu.getBoundingClientRect();
@@ -790,7 +787,7 @@
             }
         }
         document.addEventListener('click', handleOutsideClick);
-        document.addEventListener('touchstart', handleOutsideClick);
+        document.addEventListener('touchstart', handleOutsideClick, { passive: true });
         document.addEventListener('contextmenu', (e) => {
             if (!e.target.closest('.file-item') && !e.target.closest('.folder-header')) {
                 closeContextMenu();
