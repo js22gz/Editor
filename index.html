@@ -995,6 +995,7 @@ function reflowCurrentParagraph() {
                             currentDirHandle = handle;
                             await buildAndRenderTree();
                         } else {
+                            currentDirHandle = null;
                             showToast('Permission denied for saved folder');
                             await clearSavedFolder();
                         }
@@ -1274,9 +1275,6 @@ function reflowCurrentParagraph() {
                     return;
                 }
         
-                const dirHandle = targetDirHandle || currentDirHandle;
-                await ensureWritePermission(dirHandle);   // parent dir
-                
                 const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
                 await ensureWritePermission(fileHandle);  // new file handle
                 
@@ -1688,10 +1686,12 @@ function reflowCurrentParagraph() {
         });
        
         let saveTimer;
+        let saveInProgress = false;
         function scheduleSave() {
             clearTimeout(saveTimer);
             const tabIdToSave = currentTabId;
             saveTimer = setTimeout(() => {
+                if (saveInProgress) return;
                 if (tabIdToSave !== null) {
                     const tab = tabs.find(t => t.id === tabIdToSave);
                     if (tab && tab.dirty) {
@@ -1702,6 +1702,22 @@ function reflowCurrentParagraph() {
                     }
                 }
             }, 800);
+        }
+        async function flushSave() {
+            if (saveInProgress) return;
+            saveInProgress = true;
+            try {
+                for (const tab of tabs) {
+                    if (tab.dirty && tab.handle) {
+                        if (currentTabId === tab.id) {
+                            tab.content = textarea.value;
+                        }
+                        await saveTab(tab);
+                    }
+                }
+            } finally {
+                saveInProgress = false;
+            }
         }
         let enforceTimer;
 textarea.addEventListener('input', () => {
@@ -1890,6 +1906,8 @@ textarea.addEventListener('input', () => {
             const hasUnsaved = tabs.some(t => t.dirty);
             if (hasUnsaved) {
                 e.preventDefault();
+                flushSave(); // Fire and pray – best effort async save
+                return e.returnValue = 'Unsaved changes';
             }
         });
         async function clearSavedFolder() {
