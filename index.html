@@ -335,9 +335,7 @@
     <div class="topbar">
         <button class="sidebar-toggle" id="sidebar-toggle" onclick="UI.toggleSidebar()" title="Toggle Sidebar">›</button>
         <div class="logo">EDITOR</div>
-        <button class="sidebar-toggle" id="menu-btn" onclick="UI.toggleActionsDropdown()" title="Actions">⋮</button>
         <div style="flex:1"></div>
-      
         <div id="status" class="status">Ready</div>
     </div>
     <div class="main">
@@ -1054,35 +1052,6 @@ const UI = (() => {
         const isHidden = sidebarEl.classList.contains('hidden');
         btn.textContent = isHidden ? '<' : '>';
         btn.title = isHidden ? 'Expand Sidebar' : 'Collapse Sidebar';
-    }
-
-    // Actions dropdown
-
-    function toggleActionsDropdown() {
-        if (actionsDropdown) { closeActionsDropdown(); return; }
-        closeContextMenu();
-        actionsDropdown = document.createElement('div');
-        actionsDropdown.className = 'context-menu';
-        actionsDropdown.innerHTML =
-            '<div class="context-menu-item submenu-header">New</div>' +
-            '<div class="context-menu-item sub" onclick="Actions.handleAction(\'newFile\')">File</div>' +
-            '<div class="context-menu-item sub" onclick="Actions.handleAction(\'newFolder\')">Folder</div>' +
-            '<div class="context-menu-separator"></div>' +
-            '<div class="context-menu-item submenu-header">Open</div>' +
-            '<div class="context-menu-item sub" onclick="Actions.handleAction(\'openFile\')">File</div>' +
-            '<div class="context-menu-item sub" onclick="Actions.handleAction(\'openFolder\')">Folder</div>' +
-            '<div class="context-menu-separator"></div>' +
-            '<div class="context-menu-item" onclick="Actions.handleAction(\'saveCurrentFile\')">Save (Ctrl+S)</div>' +
-            '<div class="context-menu-item" onclick="Actions.handleAction(\'saveAs\')">Save As…</div>';
-        const r = document.getElementById('menu-btn').getBoundingClientRect();
-        actionsDropdown.style.position = 'fixed';
-        actionsDropdown.style.top = (r.bottom + 4) + 'px';
-        actionsDropdown.style.left = r.left + 'px';
-        document.body.appendChild(actionsDropdown);
-    }
-
-    function closeActionsDropdown() {
-        if (actionsDropdown) { actionsDropdown.remove(); actionsDropdown = null; }
     }
 
     // Context menu
