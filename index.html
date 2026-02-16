@@ -20,19 +20,30 @@
             flex-direction: column;
         }
      
-        .topbar {
-            height: 52px;
-            background: #18181b;
-            border-bottom: 1px solid #27272a;
-            display: flex;
-            align-items: center;
-            padding: 0 16px;
-            gap: 12px;
-            flex-shrink: 0;
-        }
-     
-        .logo { font-weight: 700; font-size: 20px; letter-spacing: -0.5px; }
-     
+/* Ensure the topbar is the relative anchor */
+.topbar {
+    height: 52px;
+    background: #18181b;
+    border-bottom: 1px solid #27272a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* Space out the toggle button */
+    padding: 0 16px;
+    flex-shrink: 0;
+    position: relative; 
+}
+
+.logo { 
+    font-weight: 700; 
+    font-size: 20px; 
+    letter-spacing: -0.5px;
+    position: absolute;
+    /* Center exactly in the middle of the topbar */
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none; /* Prevents logo from blocking clicks on other elements */
+}     
         .btn {
             background: #27272a;
             color: #e4e4e7;
@@ -340,7 +351,7 @@
     </div>
     <div class="main">
         <div id="sidebar" class="sidebar">
-            <div id="sidebar-header" class="sidebar-header">Directory</div>
+<div id="sidebar-header" class="sidebar-header"  style="cursor: pointer;" onclick="if(!currentDirHandle) Actions.openFolder()"title="Click to open folder">Directory</div>
             <div id="tree-container" class="tree-container"></div>
             <div style="padding:12px;border-top:1px solid #27272a;font-size:11px;color:#52525b;cursor:pointer" onclick="Actions.clearSavedFolder()">
                 Clear saved folder
@@ -599,14 +610,16 @@ const Logic = (() => {
         return node;
     }
 
-    async function buildAndRenderTree() {
-        if (!currentDirHandle) return;
-        try {
-            fileTree = await buildTree(currentDirHandle);
-            sidebarHeader.textContent = 'Directory: ' + fileTree.name;
-            UI.renderTree();
-        } catch (err) { UI.showToast('Failed to build directory tree: ' + err.message); }
+async function buildAndRenderTree() {
+    if (!currentDirHandle) {
+        sidebarHeader.textContent = 'Click to Open Folder';
+        treeContainer.innerHTML = '<div style="padding: 20px; color: #52525b; font-size: 12px; text-align: center;">No folder selected. Click "Directory" above to begin.</div>';
+        return;
     }
+    fileTree = await buildTree(currentDirHandle);
+    sidebarHeader.textContent = 'Directory: ' + fileTree.name;
+    UI.renderTree();
+}
 
     // Path helpers
 
