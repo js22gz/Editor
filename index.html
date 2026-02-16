@@ -289,15 +289,6 @@
             height: 100%;
         }
         .line-length span { font-weight: 500; }
-        #line-slider {
-            accent-color: #e4e4e7;
-            width: 110px;
-        }
-        #line-value {
-            font-family: ui-monospace, monospace;
-            min-width: 24px;
-            text-align: right;
-        }
         /* Re-authorize bar (Permission Guard) */
         .reauth-bar {
             display: none;
@@ -316,7 +307,6 @@
         /* Mobile responsive styles */
         @media (max-width: 768px) {
             .line-length span { display: none; }
-            #line-slider { width: 70px; }
         }
     </style>
 </head>
@@ -330,7 +320,6 @@
         <!-- Line length control -->
         <div class="line-length">
             <span>Line</span>
-            <input type="range" id="line-slider" min="45" max="75" value="66">
             <span id="line-value">66</span>
         </div>
       
@@ -1437,21 +1426,6 @@ const UI = (() => {
         editorStatusEl.textContent = tab.name + (tab.dirty ? ' • Modified' : '');
     }
 
-    // Line length control
-
-    function setupLineLengthControl() {
-        const slider = document.getElementById('line-slider');
-        const valueEl = document.getElementById('line-value');
-        slider.value = maxCharsPerLine;
-        valueEl.textContent = maxCharsPerLine;
-        slider.addEventListener('input', () => {
-            maxCharsPerLine = parseInt(slider.value);
-            valueEl.textContent = maxCharsPerLine;
-            const cur = tabs.find(t => t.id === currentTabId);
-            if (cur && PROSE_EXTENSIONS.test(cur.name)) Logic.reflowAllText();
-        });
-    }
-
     // Search panel
 
     function showSearchPanel() {
@@ -1580,13 +1554,10 @@ const UI = (() => {
         const isMobile = window.innerWidth <= 768;
         if (isMobile) {
             sidebarEl.classList.add('hidden');
-            const slider = document.getElementById('line-slider');
-            slider.min = 30; slider.max = 45; slider.value = 38;
-            maxCharsPerLine = 38;
-            document.getElementById('line-value').textContent = '38';
+            maxCharsPerLine = 33;
+            document.getElementById('line-value').textContent = '33';
         }
 
-        setupLineLengthControl();
         updateSidebarToggle();
 
         if (tabs.length === 0) {
