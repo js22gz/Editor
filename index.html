@@ -199,7 +199,9 @@
             padding: 12px 16px;
             resize: none;
             overflow: auto;
-            white-space: pre;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
             tab-size: 4;
         }
      
@@ -277,18 +279,6 @@
             }
         }
      
-        .line-length {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 12px;
-            color: #71717a;
-            padding: 0 12px;
-            border-left: 1px solid #27272a;
-            border-right: 1px solid #27272a;
-            height: 100%;
-        }
-        .line-length span { font-weight: 500; }
         /* Re-authorize bar (Permission Guard) */
         .reauth-bar {
             display: none;
@@ -303,11 +293,6 @@
         }
         .reauth-bar .btn { background: #44403c; color: #fafaf9; }
         .reauth-bar .btn:hover { background: #57534e; }
-
-        /* Mobile responsive styles */
-        @media (max-width: 768px) {
-            .line-length span { display: none; }
-        }
     </style>
 </head>
 <body>
@@ -316,12 +301,6 @@
         <div class="logo">EDITOR</div>
         <button class="sidebar-toggle" id="menu-btn" onclick="UI.toggleActionsDropdown()" title="Actions">⋮</button>
         <div style="flex:1"></div>
-      
-        <!-- Line length control -->
-        <div class="line-length">
-            <span>Line</span>
-            <span id="line-value">66</span>
-        </div>
       
         <div id="status" class="status">Ready</div>
     </div>
@@ -372,8 +351,6 @@ let expandedFolders = new Set();
 let contextMenu = null;
 let contextMenuTarget = null;
 let actionsDropdown = null;
-let maxCharsPerLine = 66;
-let enforcingLineBreaks = false;
 let touchTimer = null;
 let touchTarget = null;
 
@@ -396,7 +373,6 @@ let textarea, gutter, tabsContainer, treeContainer,
 
 // Constants
 const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
-const PROSE_EXTENSIONS = /\.(txt|md|markdown|rst|org|tex|adoc|asciidoc)$/i;
 const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/;
 
 // ═══════════════════════════════════════════════════════════════
@@ -551,7 +527,7 @@ const FSL = (() => {
 
 // ═══════════════════════════════════════════════════════════════
 // LAYER 3 — LOGIC
-// Pure business logic: tree building, reflow, search.
+// Pure business logic: tree building, search.
 // ═══════════════════════════════════════════════════════════════
 
 const Logic = (() => {
@@ -617,121 +593,6 @@ const Logic = (() => {
 
     // Markdown / prose helpers
 
-    function isStructuralLine(line) {
-        const t = line.trimStart();
-        if (t === '') return false;
-        if (/^#{1,6}\s/.test(t)) return true;
-        if (/^[-*+]\s/.test(t)) return true;
-        if (/^\d+[.)]\s/.test(t)) return true;
-        if (/^>\s/.test(t)) return true;
-        if (/^([-*_])\1{2,}$/.test(t)) return true;
-        if (/^```|^~~~/.test(t)) return true;
-        if (/^(    |\t)/.test(line)) return true;
-        return false;
-    }
-
-    function reflowWords(words, maxLen) {
-        const lines = [];
-        let cur = [];
-        for (const word of words) {
-            const len = cur.reduce((s, w) => s + w.length + 1, 0) - (cur.length ? 1 : 0);
-            if (len + (cur.length ? 1 : 0) + word.length > maxLen) {
-                if (cur.length) lines.push(cur.join(' '));
-                cur = [word];
-            } else { cur.push(word); }
-        }
-        if (cur.length) lines.push(cur.join(' '));
-        return lines;
-    }
-
-    function reflowCurrentParagraph() {
-        if (enforcingLineBreaks || !maxCharsPerLine) return;
-        enforcingLineBreaks = true;
-        try {
-            const cursor = textarea.selectionStart;
-            const text = textarea.value;
-            const lines = text.split('\n');
-
-            let charPos = 0, currentLineIdx = 0;
-            for (let i = 0; i < lines.length; i++) {
-                charPos += lines[i].length + 1;
-                if (charPos > cursor) { currentLineIdx = i; break; }
-            }
-
-            let startIdx = currentLineIdx;
-            while (startIdx > 0) { const p = lines[startIdx - 1]; if (p.trim() === '' || isStructuralLine(p)) break; startIdx--; }
-            let endIdx = currentLineIdx;
-            while (endIdx < lines.length - 1) { const n = lines[endIdx + 1]; if (n.trim() === '' || isStructuralLine(n)) break; endIdx++; }
-
-            const paraStartPos = lines.slice(0, startIdx).reduce((s, l) => s + l.length + 1, 0);
-            const originalParaText = lines.slice(startIdx, endIdx + 1).join('\n');
-            const cursorInPara = cursor - paraStartPos;
-            if (originalParaText.trim() === '' || isStructuralLine(originalParaText)) { enforcingLineBreaks = false; return; }
-
-            const words = originalParaText.split(/\s+/).filter(Boolean);
-            if (!words.length) { enforcingLineBreaks = false; return; }
-
-            const wordMatches = [...originalParaText.matchAll(/\S+/g)];
-            let wordIndex = wordMatches.length, offsetInWord = 0;
-            for (let i = 0; i < wordMatches.length; i++) {
-                const s = wordMatches[i].index, e = s + wordMatches[i][0].length;
-                if (cursorInPara >= s && cursorInPara <= e) { wordIndex = i; offsetInWord = cursorInPara - s; break; }
-                else if (cursorInPara < s) { wordIndex = i; offsetInWord = 0; break; }
-            }
-
-            const newParaLines = reflowWords(words, maxCharsPerLine);
-            let newParaText = newParaLines.join('\n');
-            const trailingMatch = originalParaText.match(/\s*$/);
-            const trailingWS = trailingMatch ? trailingMatch[0] : '';
-            const contentLength = originalParaText.length - trailingWS.length;
-            newParaText += trailingWS;
-
-            let newCursorInPara = 0, curWordIdx = 0;
-            outer: for (const line of newParaLines) {
-                const lw = line.split(' ');
-                for (let w = 0; w < lw.length; w++) {
-                    if (curWordIdx === wordIndex) { newCursorInPara += offsetInWord; break outer; }
-                    newCursorInPara += lw[w].length;
-                    if (w < lw.length - 1) newCursorInPara += 1;
-                    curWordIdx++;
-                }
-                newCursorInPara += 1;
-            }
-            if (cursorInPara > contentLength) {
-                newCursorInPara = (newParaText.length - trailingWS.length) + (cursorInPara - contentLength);
-            } else if (wordIndex >= words.length) {
-                newCursorInPara = newParaText.length - trailingWS.length;
-            }
-
-            textarea.value = text.substring(0, paraStartPos) + newParaText + text.substring(paraStartPos + originalParaText.length);
-            textarea.selectionStart = textarea.selectionEnd = paraStartPos + newCursorInPara;
-            UI.updateLineNumbers();
-        } catch (e) { console.error('Reflow failed:', e); }
-        finally { enforcingLineBreaks = false; }
-    }
-
-    function reflowAllText() {
-        if (!maxCharsPerLine) return;
-        const cursor = textarea.selectionStart;
-        const lines = textarea.value.split('\n');
-        const reflowed = [];
-        let i = 0, inCodeBlock = false;
-        while (i < lines.length) {
-            const line = lines[i], trimmed = line.trimStart();
-            if (/^```|^~~~/.test(trimmed)) { inCodeBlock = !inCodeBlock; reflowed.push(line); i++; continue; }
-            if (inCodeBlock)  { reflowed.push(line); i++; continue; }
-            if (trimmed === '') { reflowed.push(line); i++; continue; }
-            if (isStructuralLine(line)) { reflowed.push(line); i++; continue; }
-            let para = line; i++;
-            while (i < lines.length) { if (lines[i].trim() === '' || isStructuralLine(lines[i])) break; para += ' ' + lines[i]; i++; }
-            const words = para.split(/\s+/).filter(Boolean);
-            for (const rl of reflowWords(words, maxCharsPerLine)) reflowed.push(rl);
-        }
-        textarea.value = reflowed.join('\n');
-        textarea.selectionStart = textarea.selectionEnd = Math.min(cursor, textarea.value.length);
-        UI.updateLineNumbers();
-    }
-
     // Search
 
     function performSearch() {
@@ -769,7 +630,6 @@ const Logic = (() => {
 
     return {
         buildTree, buildAndRenderTree, getDirectoryHandleByPath, setActiveFromPath,
-        isStructuralLine, reflowWords, reflowCurrentParagraph, reflowAllText,
         performSearch, findNext, findPrevious, highlightMatch
     };
 })();
@@ -1478,9 +1338,7 @@ const UI = (() => {
             if (!e.target.closest('.file-item') && !e.target.closest('.folder-header')) closeContextMenu();
         });
 
-        let lastKey = '';
         textarea.addEventListener('keydown', e => {
-            lastKey = e.key;
             if (e.key === 'Tab') {
                 e.preventDefault();
                 const s = textarea.selectionStart, end = textarea.selectionEnd;
@@ -1488,16 +1346,6 @@ const UI = (() => {
                 textarea.value = textarea.value.substring(0, s) + indent + textarea.value.substring(end);
                 textarea.selectionStart = textarea.selectionEnd = s + indent.length;
                 textarea.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-        });
-
-        let enforceTimer;
-        textarea.addEventListener('input', () => {
-            const tab = tabs.find(t => t.id === currentTabId);
-            if (tab && PROSE_EXTENSIONS.test(tab.name)) {
-                if (lastKey === ' ' || lastKey === 'Enter') { lastKey = ''; return; }
-                clearTimeout(enforceTimer);
-                enforceTimer = setTimeout(Logic.reflowCurrentParagraph, 10);
             }
         });
 
@@ -1554,14 +1402,12 @@ const UI = (() => {
         const isMobile = window.innerWidth <= 768;
         if (isMobile) {
             sidebarEl.classList.add('hidden');
-            maxCharsPerLine = 33;
-            document.getElementById('line-value').textContent = '33';
         }
 
         updateSidebarToggle();
 
         if (tabs.length === 0) {
-            createNewTab(null, 'welcome.txt', 'EDITOR is ready.\n\nType. Break. Ship.\n\n66 characters feels right.');
+            createNewTab(null, 'welcome.txt', 'EDITOR is ready.\n\nType. Break. Ship.');
         }
     }
 
