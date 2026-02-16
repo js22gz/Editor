@@ -545,9 +545,9 @@ const FSL = (() => {
 
     // File write helper
 
+    // Callers must ensure directory-level write permission before calling.
     async function writeFile(handle, content) {
-        const h = await ensureWritePermission(handle);
-        const w = await h.createWritable();
+        const w = await handle.createWritable();
         await w.write(content);
         await w.close();
     }
@@ -808,7 +808,6 @@ const Actions = (() => {
             const [handle] = await window.showOpenFilePicker({
                 types: [{ description: 'Text files', accept: { 'text/*': ['.txt','.md','.js','.ts','.json','.html','.css'] } }]
             });
-            await FSL.ensureWritePermission(handle);
             const file = await handle.getFile();
             const content = await file.text();
             UI.createNewTab(handle, file.name, content);
@@ -818,7 +817,7 @@ const Actions = (() => {
 
     async function openFileFromNode(node) {
         try {
-            await FSL.ensureWritePermission(node.handle);
+            if (currentDirHandle) await FSL.ensureWritePermission(currentDirHandle);
             const file = await node.handle.getFile();
             if (!file.type.startsWith('text/') && !TEXT_FILE_EXTENSIONS.test(file.name)) {
                 if (!confirm('This looks like a binary file. Open anyway?')) return;
@@ -847,7 +846,6 @@ const Actions = (() => {
             try { await dirHandle.getFileHandle(trimmed); exists = true; } catch (e) {}
             if (exists) { UI.showToast('File already exists'); return; }
             const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
-            await FSL.ensureWritePermission(fileHandle);
             const writable = await fileHandle.createWritable();
             await writable.write('');
             await writable.close();
@@ -869,6 +867,7 @@ const Actions = (() => {
         }
         const dirHandle = targetDirHandle || currentDirHandle;
         try {
+            await FSL.ensureWritePermission(dirHandle);
             let exists = false;
             try { await dirHandle.getDirectoryHandle(trimmed); exists = true; } catch (e) {}
             if (exists) { UI.showToast('Folder already exists'); return; }
@@ -1024,7 +1023,6 @@ const Actions = (() => {
                             const file = await entry.getFile();
                             const buf = await file.arrayBuffer();
                             const fh = await dest.getFileHandle(entry.name, { create: true });
-                            await FSL.ensureWritePermission(fh);
                             const w = await fh.createWritable(); await w.write(buf); await w.close();
                         } else {
                             const sub = await dest.getDirectoryHandle(entry.name, { create: true });
@@ -1056,7 +1054,6 @@ const Actions = (() => {
                 const file = await oldHandle.getFile();
                 const buf = await file.arrayBuffer();
                 const newHandle = await parentHandle.getFileHandle(trimmed, { create: true });
-                await FSL.ensureWritePermission(newHandle);
                 const w = await newHandle.createWritable(); await w.write(buf); await w.close();
                 await parentHandle.removeEntry(oldName);
 
