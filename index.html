@@ -970,7 +970,6 @@ const Actions = (() => {
     // Menu dispatch
 
     function handleAction(action) {
-        UI.closeActionsDropdown();
         switch (action) {
             case 'openFolder':     openFolder(); break;
             case 'openFile':       openFile(); break;
@@ -1062,8 +1061,18 @@ const UI = (() => {
         contextMenuTarget = node;
         contextMenu = document.createElement('div');
         contextMenu.className = 'context-menu';
-        if (isFolder) {
+        if (!node) {
             contextMenu.innerHTML =
+                '<div class="context-menu-item" onclick="Actions.newFile()">New File</div>' +
+                '<div class="context-menu-item" onclick="Actions.newFolder()">New Folder</div>' +
+                '<div class="context-menu-separator"></div>' +
+                '<div class="context-menu-item" onclick="Actions.openFile()">Open File</div>' +
+                '<div class="context-menu-item" onclick="Actions.openFolder()">Open Folder</div>';
+        } else if (isFolder) {
+            contextMenu.innerHTML =
+                '<div class="context-menu-item" onclick="Actions.newFile()">New File</div>' +
+                '<div class="context-menu-item" onclick="Actions.newFolder()">New Folder</div>' +
+                '<div class="context-menu-separator"></div>' +
                 '<div class="context-menu-item" onclick="Actions.renameItem()">Rename</div>' +
                 '<div class="context-menu-separator"></div>' +
                 '<div class="context-menu-item danger" onclick="Actions.deleteFolder()">Delete Folder</div>';
@@ -1335,13 +1344,18 @@ const UI = (() => {
 
     function bindEvents() {
         document.addEventListener('click', e => {
-            if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) { closeContextMenu(); closeActionsDropdown(); }
+            if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) { closeContextMenu(); }
         });
         document.addEventListener('touchstart', e => {
-            if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) { closeContextMenu(); closeActionsDropdown(); }
+            if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) { closeContextMenu(); }
         }, { passive: true });
         document.addEventListener('contextmenu', e => {
-            if (!e.target.closest('.file-item') && !e.target.closest('.folder-header')) closeContextMenu();
+            if (!e.target.closest('.file-item') && !e.target.closest('.folder-header') && !e.target.closest('.tree-container')) closeContextMenu();
+        });
+        treeContainer.addEventListener('contextmenu', e => {
+            if (!e.target.closest('.file-item') && !e.target.closest('.folder-header')) {
+                showContextMenu(e, null, false);
+            }
         });
 
         textarea.addEventListener('keydown', e => {
@@ -1436,7 +1450,6 @@ const UI = (() => {
     return {
         init, showToast, showInputDialog,
         toggleSidebar, updateSidebarToggle,
-        toggleActionsDropdown, closeActionsDropdown,
         showContextMenu, closeContextMenu,
         renderTree, highlightActiveItems,
         createNewTab, switchToTab, closeTab,
