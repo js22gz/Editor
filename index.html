@@ -27,18 +27,11 @@
             display: flex;
             align-items: center;
             padding: 0 16px;
+            gap: 12px;
             flex-shrink: 0;
-            position: relative; /* Added for logo centering */
         }
      
-        .logo { 
-            font-weight: 700; 
-            font-size: 20px; 
-            letter-spacing: -0.5px;
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
-        }
+        .logo { font-weight: 700; font-size: 20px; letter-spacing: -0.5px; }
      
         .btn {
             background: #27272a;
@@ -75,6 +68,13 @@
             border-right: none;
             opacity: 0;
             pointer-events: none;
+        }
+        .sidebar-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 12px;
+            border-bottom: 1px solid #27272a;
         }
      
         .sidebar-header {
@@ -146,6 +146,9 @@
         .tab .close { margin-left: 12px; opacity: 0.6; font-size: 15px; }
         .tab .close:hover { opacity: 1; color: #e4e4e7; }
         .tab .dirty-indicator { color: #a1a1aa; font-size: 10px; margin-left: 2px; }
+        .tab.drag-over { border-left: 2px solid #a1a1aa; }
+        .tab[draggable] { cursor: grab; }
+        .tab[draggable]:active { cursor: grabbing; }
      
         .toast {
             position: fixed;
@@ -197,6 +200,8 @@
             resize: none;
             overflow: auto;
             white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
             tab-size: 4;
         }
 
@@ -216,6 +221,23 @@
             background: #3f3f46;
             border-radius: 2px;
             outline: none;
+            cursor: pointer;
+        }
+        #line-width-slider input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #a1a1aa;
+            cursor: pointer;
+        }
+        #line-width-slider input[type="range"]::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #a1a1aa;
+            border: none;
             cursor: pointer;
         }
 
@@ -242,7 +264,6 @@
             border-radius: 4px;
             font-weight: 400;
             transition: color 0.2s;
-            z-index: 10;
         }
         .sidebar-toggle:hover { background: #27272a; color: #e4e4e7; }
      
@@ -261,15 +282,40 @@
             cursor: pointer;
             font-size: 13px;
             color: #e4e4e7;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
         .context-menu-item:hover { background: #27272a; }
+        .context-menu-item.submenu-header {
+            padding: 8px 16px 4px;
+            color: #71717a;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: default;
+        }
+        .context-menu-item.sub {
+            padding-left: 40px;
+        }
         .context-menu-item.danger { color: #ef4444; }
+        .context-menu-item.danger:hover { background: #7f1d1d; }
         .context-menu-separator {
             height: 1px;
             background: #27272a;
             margin: 4px 0;
         }
+        @media (hover: none) and (pointer: coarse) {
+            .context-menu-item {
+                padding: 12px 16px;
+                font-size: 14px;
+            }
+            .context-menu {
+                min-width: 200px;
+            }
+        }
      
+        /* Re-authorize bar (Permission Guard) */
         .reauth-bar {
             display: none;
             align-items: center;
@@ -281,12 +327,16 @@
             font-size: 13px;
             color: #a8a29e;
         }
+        .reauth-bar .btn { background: #44403c; color: #fafaf9; }
+        .reauth-bar .btn:hover { background: #57534e; }
     </style>
 </head>
 <body>
     <div class="topbar">
         <button class="sidebar-toggle" id="sidebar-toggle" onclick="UI.toggleSidebar()" title="Toggle Sidebar">›</button>
         <div class="logo">EDITOR</div>
+        <div style="flex:1"></div>
+        <div id="status" class="status">Ready</div>
     </div>
     <div class="main">
         <div id="sidebar" class="sidebar">
@@ -315,48 +365,76 @@
 
 // ═══════════════════════════════════════════════════════════════
 // LAYER 1 — STATE
+// All mutable state, constants, and DOM references.
 // ═══════════════════════════════════════════════════════════════
+
+// File-system handles
 let currentDirHandle = null;
 let fileTree = null;
 let targetDirHandle = null;
+
+// Tabs
 let tabs = [];
 let currentTabId = null;
 let nextTabId = 1;
+
+// IndexedDB
 let db = null;
+
+// UI state
 let expandedFolders = new Set();
 let contextMenu = null;
 let contextMenuTarget = null;
+let actionsDropdown = null;
 let touchTimer = null;
 let touchTarget = null;
+
+// Active file / folder tracking
 let activeFilePath = null;
 let activeFolderPath = null;
+
+// Search
 let searchPanel = null;
 let searchMatches = [];
 let currentMatchIndex = -1;
+
+// Autosave
 let saveTimer = null;
 let saveInProgress = false;
 
+// DOM refs (set once in UI.init)
 let textarea, gutter, tabsContainer, treeContainer,
     sidebarHeader, sidebarEl, statusEl, editorStatusEl;
 
+// Constants
 const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
 const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/;
 
 // ═══════════════════════════════════════════════════════════════
 // LAYER 2 — FSL (File System Layer)
+// Permission Guard, IndexedDB, file-handle helpers.
+//
+// Permission Guard contract:
+//   On page load → queryPermission() only (no user gesture needed).
+//   If not granted → signal UI to show "Re-authorize" button.
+//   requestPermission() fires ONLY from user click on that button.
 // ═══════════════════════════════════════════════════════════════
+
 const FSL = (() => {
+
     async function queryPermission(handle) {
         if (!handle) return 'denied';
         try { return await handle.queryPermission({ mode: 'readwrite' }); }
         catch { return 'denied'; }
     }
+
     async function requestWritePermission(handle) {
         if (!handle) throw new Error('No handle');
         const state = await handle.requestPermission({ mode: 'readwrite' });
         if (state !== 'granted') throw new Error('Write permission denied.');
         return handle;
     }
+
     async function ensureWritePermission(handle) {
         if (!handle) throw new Error('No handle');
         try {
@@ -364,31 +442,39 @@ const FSL = (() => {
             if (state === 'granted') return handle;
             state = await handle.requestPermission({ mode: 'readwrite' });
             if (state === 'granted') return handle;
-            throw new Error('Write permission denied.');
+            throw new Error('Write permission denied. Try opening the folder again.');
         } catch (err) {
+            if (err.name === 'AbortError') throw err;
+            console.error('Permission failed:', err);
             throw new Error('Permission error: ' + (err.message || err));
         }
     }
+
     async function reauthorize(handle) {
         await requestWritePermission(handle);
         currentDirHandle = handle;
         return handle;
     }
+
+    // IndexedDB
+
     async function initDB() {
         return new Promise(resolve => {
             const req = indexedDB.open('FileEditor', 1);
             req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
             req.onsuccess = e => { db = e.target.result; resolve(); };
-            req.onerror = () => resolve();
+            req.onerror = e => { console.error('IndexedDB error:', e); resolve(); };
         });
     }
+
     async function saveFolderHandle(handle) {
         if (!db) await initDB();
         try {
             const tx = db.transaction('handles', 'readwrite');
             tx.objectStore('handles').put(handle, 'main');
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error('Failed to save folder handle:', e); }
     }
+
     async function loadSavedFolder() {
         if (!db) await initDB();
         return new Promise(resolve => {
@@ -399,40 +485,73 @@ const FSL = (() => {
                     if (!request.result) { resolve({ status: 'none' }); return; }
                     const handle = request.result;
                     const perm = await queryPermission(handle);
-                    resolve({ status: perm === 'granted' ? 'granted' : 'needs-auth', handle });
+                    if (perm === 'granted') {
+                        currentDirHandle = handle;
+                        resolve({ status: 'granted', handle });
+                    } else {
+                        resolve({ status: 'needs-auth', handle });
+                    }
                 };
                 request.onerror = () => resolve({ status: 'none' });
-            } catch (e) { resolve({ status: 'none' }); }
+            } catch (e) {
+                console.error('Error in loadSavedFolder:', e);
+                resolve({ status: 'none' });
+            }
         });
     }
+
     async function clearSavedFolder() {
         if (db) {
-            const tx = db.transaction('handles', 'readwrite');
-            tx.objectStore('handles').delete('main');
+            try {
+                const tx = db.transaction('handles', 'readwrite');
+                tx.objectStore('handles').delete('main');
+            } catch (e) { console.error('Failed to clear saved folder:', e); }
         }
         currentDirHandle = null;
         fileTree = null;
         expandedFolders.clear();
         localStorage.removeItem('expandedFolders');
     }
+
+    // Expanded-folder persistence
+
     function loadExpandedState() {
         try {
             const saved = localStorage.getItem('expandedFolders');
             if (saved) expandedFolders = new Set(JSON.parse(saved));
-        } catch (e) {}
+        } catch (e) { console.error('Failed to load expanded state:', e); }
     }
+
     function saveExpandedState() {
-        localStorage.setItem('expandedFolders', JSON.stringify([...expandedFolders]));
+        try { localStorage.setItem('expandedFolders', JSON.stringify([...expandedFolders])); }
+        catch (e) { console.error('Failed to save expanded state:', e); }
     }
+
+    // Handle comparison
+
     async function isSameEntry(h1, h2) {
         if (!h1 || !h2) return false;
-        try { return await h1.isSameEntry(h2); } catch { return false; }
+        if (h1.isSameEntry) {
+            try { return await h1.isSameEntry(h2); } catch (e) { console.error('isSameEntry failed:', e); }
+        }
+        try {
+            if (h1.kind === 'file' && h2.kind === 'file') {
+                const f1 = await h1.getFile(), f2 = await h2.getFile();
+                return f1.name === f2.name && f1.size === f2.size && f1.lastModified === f2.lastModified;
+            }
+            return h1.name === h2.name && h1.kind === h2.kind;
+        } catch { return false; }
     }
+
+    // File write helper
+
+    // Callers must ensure directory-level write permission before calling.
     async function writeFile(handle, content) {
         const w = await handle.createWritable();
         await w.write(content);
         await w.close();
     }
+
     return {
         queryPermission, requestWritePermission, ensureWritePermission,
         reauthorize, initDB, saveFolderHandle, loadSavedFolder,
@@ -443,309 +562,911 @@ const FSL = (() => {
 
 // ═══════════════════════════════════════════════════════════════
 // LAYER 3 — LOGIC
+// Pure business logic: tree building, search.
 // ═══════════════════════════════════════════════════════════════
+
 const Logic = (() => {
-    async function buildTree(dirHandle, basePath = '', maxDepth = 10, currentDepth = 0) {
-        const node = { name: dirHandle.name, kind: 'directory', handle: dirHandle, path: basePath, children: [] };
-        if (currentDepth >= maxDepth) return node;
+
+    // Directory tree
+
+    async function buildTree(dirHandle, basePath, maxDepth, currentDepth) {
+        if (basePath === undefined) basePath = '';
+        if (maxDepth  === undefined) maxDepth  = 10;
+        if (currentDepth === undefined) currentDepth = 0;
+
+        const node = { name: dirHandle.name, kind: 'directory', handle: dirHandle,
+                       path: basePath, children: [], truncated: false };
+        if (currentDepth >= maxDepth) { node.truncated = true; return node; }
         try {
             for await (const [name, handle] of dirHandle.entries()) {
-                if (name.startsWith('.') || name === 'node_modules') continue;
+                if (name.startsWith('.') || name === 'node_modules' || name === '__pycache__') continue;
                 const childPath = basePath ? basePath + '/' + name : name;
                 if (handle.kind === 'directory') {
                     node.children.push(await buildTree(handle, childPath, maxDepth, currentDepth + 1));
                 } else {
-                    node.children.push({ name, kind: 'file', handle, path: childPath });
+                    node.children.push({ name, kind: 'file', handle, path: childPath,
+                                         ext: name.split('.').pop().toLowerCase() });
                 }
             }
-            node.children.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'directory' ? -1 : 1));
-        } catch (err) { console.error(err); }
+            node.children.sort((a, b) => {
+                if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+                return a.name.localeCompare(b.name, undefined, { numeric: true });
+            });
+        } catch (err) {
+            console.error('Error building tree:', err);
+            UI.showToast('Error reading directory: ' + dirHandle.name);
+        }
         return node;
     }
+
     async function buildAndRenderTree() {
         if (!currentDirHandle) return;
-        fileTree = await buildTree(currentDirHandle);
-        sidebarHeader.textContent = 'Directory: ' + fileTree.name;
-        UI.renderTree();
+        try {
+            fileTree = await buildTree(currentDirHandle);
+            sidebarHeader.textContent = 'Directory: ' + fileTree.name;
+            UI.renderTree();
+        } catch (err) { UI.showToast('Failed to build directory tree: ' + err.message); }
     }
+
+    // Path helpers
+
+    async function getDirectoryHandleByPath(path) {
+        if (!path || path === '') return currentDirHandle;
+        const parts = path.split('/');
+        let handle = currentDirHandle;
+        for (const part of parts) { if (part) handle = await handle.getDirectoryHandle(part); }
+        return handle;
+    }
+
     async function setActiveFromPath(path) {
         activeFilePath = path;
-        activeFolderPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
+        const parentPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
+        activeFolderPath = parentPath;
+        targetDirHandle = await getDirectoryHandleByPath(parentPath);
         UI.highlightActiveItems();
     }
+
+    // Markdown / prose helpers
+
+    // Search
+
     function performSearch() {
         const query = document.getElementById('search-input').value;
-        searchMatches = [];
-        if (!query) return;
+        searchMatches = []; currentMatchIndex = -1;
+        if (!query || !textarea.value) { document.getElementById('match-count').textContent = '0 matches'; return; }
+        const lower = textarea.value.toLowerCase(), lq = query.toLowerCase();
         let pos = 0;
-        const text = textarea.value.toLowerCase();
-        const lq = query.toLowerCase();
-        while ((pos = text.indexOf(lq, pos)) !== -1) { searchMatches.push(pos); pos += query.length; }
+        while ((pos = lower.indexOf(lq, pos)) !== -1) { searchMatches.push(pos); pos += query.length; }
+        document.getElementById('match-count').textContent = searchMatches.length + ' matches';
         if (searchMatches.length > 0) { currentMatchIndex = 0; highlightMatch(); }
     }
+
     function findNext() {
         if (!searchMatches.length) return;
         currentMatchIndex = (currentMatchIndex + 1) % searchMatches.length;
         highlightMatch();
     }
+
+    function findPrevious() {
+        if (!searchMatches.length) return;
+        currentMatchIndex = (currentMatchIndex - 1 + searchMatches.length) % searchMatches.length;
+        highlightMatch();
+    }
+
     function highlightMatch() {
+        if (currentMatchIndex < 0 || currentMatchIndex >= searchMatches.length) return;
         const pos = searchMatches[currentMatchIndex];
         const query = document.getElementById('search-input').value;
         textarea.focus();
         textarea.setSelectionRange(pos, pos + query.length);
-        document.getElementById('match-count').textContent = `${currentMatchIndex + 1} of ${searchMatches.length}`;
+        textarea.scrollTop = textarea.scrollHeight * (pos / textarea.value.length) - textarea.clientHeight / 2;
+        document.getElementById('match-count').textContent = (currentMatchIndex + 1) + ' of ' + searchMatches.length;
     }
-    return { buildAndRenderTree, setActiveFromPath, performSearch, findNext };
+
+    return {
+        buildTree, buildAndRenderTree, getDirectoryHandleByPath, setActiveFromPath,
+        performSearch, findNext, findPrevious, highlightMatch
+    };
 })();
 
 // ═══════════════════════════════════════════════════════════════
 // LAYER 4 — ACTIONS
+// User-triggered operations: open, save, create, delete, rename.
 // ═══════════════════════════════════════════════════════════════
+
 const Actions = (() => {
+
+    // Open
+
     async function openFolder() {
         try {
             currentDirHandle = await window.showDirectoryPicker();
             await FSL.saveFolderHandle(currentDirHandle);
+            expandedFolders.clear();
             await Logic.buildAndRenderTree();
-        } catch (e) {}
+        } catch (err) { if (err.name !== 'AbortError') UI.showToast('Failed to open folder: ' + err.message); }
     }
+
+    async function openFile() {
+        try {
+            const [handle] = await window.showOpenFilePicker({
+                types: [{ description: 'Text files', accept: { 'text/*': ['.txt','.md','.js','.ts','.json','.html','.css'] } }]
+            });
+            const file = await handle.getFile();
+            const content = await file.text();
+            UI.createNewTab(handle, file.name, content);
+            UI.showToast('Opened ' + file.name);
+        } catch (err) { if (err.name !== 'AbortError') UI.showToast('Failed to open file: ' + err.message); }
+    }
+
     async function openFileFromNode(node) {
         try {
+            if (currentDirHandle) await FSL.ensureWritePermission(currentDirHandle);
             const file = await node.handle.getFile();
+            if (!file.type.startsWith('text/') && !TEXT_FILE_EXTENSIONS.test(file.name)) {
+                if (!confirm('This looks like a binary file. Open anyway?')) return;
+            }
             const content = await file.text();
             UI.createNewTab(node.handle, node.name, content, node.path);
-        } catch (e) { UI.showToast("Error opening file"); }
+        } catch (err) {
+            UI.showToast(err.message.includes('permission') ? err.message : 'Failed to open file: ' + err.message);
+        }
     }
+
+    // Create
+
+    async function newFile() {
+        if (!currentDirHandle) { UI.showToast('Open a folder first to create a new file'); return; }
+        const name = await UI.showInputDialog('Enter new file name:');
+        if (!name || !name.trim()) return;
+        const trimmed = name.trim();
+        if (INVALID_FILENAME_CHARS.test(trimmed) || trimmed === '.' || trimmed === '..' || /[\/\\]/.test(trimmed)) {
+            UI.showToast('Invalid filename'); return;
+        }
+        const dirHandle = targetDirHandle || currentDirHandle;
+        try {
+            await FSL.ensureWritePermission(dirHandle);
+            let exists = false;
+            try { await dirHandle.getFileHandle(trimmed); exists = true; } catch (e) {}
+            if (exists) { UI.showToast('File already exists'); return; }
+            const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write('');
+            await writable.close();
+            const filePath = activeFolderPath ? activeFolderPath + '/' + trimmed : trimmed;
+            UI.createNewTab(fileHandle, trimmed, '', filePath);
+            await Logic.buildAndRenderTree();
+            statusEl.textContent = 'Created ' + trimmed;
+            setTimeout(() => { statusEl.textContent = 'Ready'; }, 2000);
+        } catch (err) { if (err.name !== 'AbortError') UI.showToast('Failed to create file: ' + err.message); }
+    }
+
+    async function newFolder() {
+        if (!currentDirHandle) { UI.showToast('Open a folder first to create a new folder'); return; }
+        const name = await UI.showInputDialog('Enter new folder name:');
+        if (!name || !name.trim()) return;
+        const trimmed = name.trim();
+        if (INVALID_FILENAME_CHARS.test(trimmed) || trimmed === '.' || trimmed === '..' || /[\/\\]/.test(trimmed)) {
+            UI.showToast('Invalid folder name'); return;
+        }
+        const dirHandle = targetDirHandle || currentDirHandle;
+        try {
+            await FSL.ensureWritePermission(dirHandle);
+            let exists = false;
+            try { await dirHandle.getDirectoryHandle(trimmed); exists = true; } catch (e) {}
+            if (exists) { UI.showToast('Folder already exists'); return; }
+            await dirHandle.getDirectoryHandle(trimmed, { create: true });
+            await Logic.buildAndRenderTree();
+            statusEl.textContent = 'Created folder ' + trimmed;
+            setTimeout(() => { statusEl.textContent = 'Ready'; }, 2000);
+        } catch (err) { if (err.name !== 'AbortError') UI.showToast('Failed to create folder: ' + err.message); }
+    }
+
+    // Save
+
     async function saveTab(tab) {
-        if (!tab || !tab.dirty) return;
+        if (!tab || !tab.handle || !tab.dirty) return;
         try {
             const content = (currentTabId === tab.id) ? textarea.value : tab.content;
             await FSL.writeFile(tab.handle, content);
             tab.content = content;
             tab.dirty = false;
-            if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = 'none';
+            if (tab.element) {
+                const ind = tab.element.querySelector('.dirty-indicator');
+                if (ind) ind.style.display = 'none';
+            }
             UI.updateEditorStatus(tab);
-        } catch (e) { UI.showToast("Save failed"); }
-    }
-    async function saveCurrentFile() {
-        const tab = tabs.find(t => t.id === currentTabId);
-        if (tab) await saveTab(tab);
-    }
-    async function newFile() {
-        const name = await UI.showInputDialog('New File Name:');
-        if (!name) return;
-        try {
-            const handle = await currentDirHandle.getFileHandle(name, { create: true });
-            await Logic.buildAndRenderTree();
-            UI.createNewTab(handle, name, '', name);
-        } catch (e) { UI.showToast("Error creating file"); }
-    }
-    async function renameItem() {
-        const newName = await UI.showInputDialog('Rename to:', contextMenuTarget.name);
-        if (!newName) return;
-        UI.showToast("Rename logic triggered for: " + newName);
-        // Add full move/rename logic here if needed
-    }
-    async function deleteFile() {
-        if (confirm(`Delete ${contextMenuTarget.name}?`)) {
-            await currentDirHandle.removeEntry(contextMenuTarget.name);
-            await Logic.buildAndRenderTree();
+            statusEl.textContent = 'Saved';
+            setTimeout(() => { statusEl.textContent = 'Ready'; }, 1200);
+        } catch (err) {
+            if (err.message.includes('permission')) UI.showToast('Permission issue. Open the folder again from the menu.');
+            else if (err.name !== 'AbortError') UI.showToast('Save failed: ' + err.message);
         }
     }
+
+    async function saveCurrentFile() {
+        if (currentTabId === null) return;
+        await saveTab(tabs.find(t => t.id === currentTabId));
+    }
+
+    async function saveAsCurrentFile() {
+        if (currentTabId === null) return;
+        const tab = tabs.find(t => t.id === currentTabId);
+        if (!tab) return;
+        try {
+            const content = (currentTabId === tab.id) ? textarea.value : tab.content;
+            const newHandle = await window.showSaveFilePicker({ suggestedName: tab.name });
+            await FSL.writeFile(newHandle, content);
+            tab.handle = newHandle; tab.name = newHandle.name; tab.content = content; tab.dirty = false;
+            if (tab.element) {
+                tab.element.querySelector('.tab-name').textContent = newHandle.name;
+                tab.element.querySelector('.dirty-indicator').style.display = 'none';
+            }
+            UI.updateEditorStatus(tab);
+            UI.showToast('Saved as ' + newHandle.name);
+            activeFilePath = null; UI.highlightActiveItems();
+        } catch (err) { if (err.name !== 'AbortError') UI.showToast('Save As failed'); }
+    }
+
     function scheduleSave() {
         clearTimeout(saveTimer);
-        saveTimer = setTimeout(saveCurrentFile, 1000);
+        const id = currentTabId;
+        saveTimer = setTimeout(() => {
+            if (saveInProgress) return;
+            if (id !== null) {
+                const tab = tabs.find(t => t.id === id);
+                if (tab && tab.dirty) {
+                    if (currentTabId === id) tab.content = textarea.value;
+                    saveTab(tab);
+                }
+            }
+        }, 800);
     }
-    return { openFolder, openFileFromNode, saveCurrentFile, newFile, renameItem, deleteFile, scheduleSave };
+
+    async function flushSave() {
+        if (saveInProgress) return;
+        saveInProgress = true;
+        try {
+            for (const tab of tabs) {
+                if (tab.dirty && tab.handle) {
+                    if (currentTabId === tab.id) tab.content = textarea.value;
+                    await saveTab(tab);
+                }
+            }
+        } finally { saveInProgress = false; }
+    }
+
+    // Delete
+
+    async function deleteFile() {
+        if (!contextMenuTarget || contextMenuTarget.kind !== 'file') return;
+        const fileName = contextMenuTarget.name;
+        if (!confirm('Delete "' + fileName + '"? This cannot be undone.')) { UI.closeContextMenu(); return; }
+        try {
+            for (const t of tabs) {
+                if (t.handle && await FSL.isSameEntry(t.handle, contextMenuTarget.handle)) { UI.closeTab(t.id); break; }
+            }
+            const pathParts = contextMenuTarget.path.split('/'); pathParts.pop();
+            let parentHandle = currentDirHandle;
+            for (const part of pathParts) { if (part) parentHandle = await parentHandle.getDirectoryHandle(part); }
+            await parentHandle.removeEntry(fileName);
+            await Logic.buildAndRenderTree();
+            UI.showToast('Deleted ' + fileName);
+        } catch (err) { UI.showToast('Failed to delete file: ' + err.message); }
+        finally { UI.closeContextMenu(); }
+    }
+
+    async function deleteFolder() {
+        if (!contextMenuTarget || contextMenuTarget.kind !== 'directory') return;
+        const folderName = contextMenuTarget.name;
+        if (contextMenuTarget.children && contextMenuTarget.children.length > 0) {
+            UI.showToast('Cannot delete non-empty folder'); UI.closeContextMenu(); return;
+        }
+        if (!confirm('Delete empty folder "' + folderName + '"?')) { UI.closeContextMenu(); return; }
+        try {
+            const pathParts = contextMenuTarget.path.split('/'); pathParts.pop();
+            let parentHandle = currentDirHandle;
+            for (const part of pathParts) { if (part) parentHandle = await parentHandle.getDirectoryHandle(part); }
+            await parentHandle.removeEntry(folderName);
+            expandedFolders.delete(contextMenuTarget.path);
+            FSL.saveExpandedState();
+            await Logic.buildAndRenderTree();
+            UI.showToast('Deleted folder ' + folderName);
+        } catch (err) { UI.showToast('Failed to delete folder: ' + err.message); }
+        finally { UI.closeContextMenu(); }
+    }
+
+    // Rename
+
+    async function renameItem() {
+        if (!contextMenuTarget) return;
+        const oldName = contextMenuTarget.name;
+        const isFolder = contextMenuTarget.kind === 'directory';
+        const newName = await UI.showInputDialog('Rename ' + (isFolder ? 'folder' : 'file') + ':', oldName);
+        if (!newName || !newName.trim() || newName === oldName) { UI.closeContextMenu(); return; }
+        const trimmed = newName.trim();
+        if (INVALID_FILENAME_CHARS.test(trimmed) || trimmed === '.' || trimmed === '..' || /[\/\\]/.test(trimmed)) {
+            UI.showToast('Invalid name'); UI.closeContextMenu(); return;
+        }
+        try {
+            const pathParts = contextMenuTarget.path.split('/'); pathParts.pop();
+            let parentHandle = currentDirHandle;
+            for (const part of pathParts) { if (part) parentHandle = await parentHandle.getDirectoryHandle(part); }
+            await FSL.ensureWritePermission(parentHandle);
+
+            try {
+                if (isFolder) await parentHandle.getDirectoryHandle(trimmed);
+                else await parentHandle.getFileHandle(trimmed);
+                UI.showToast('Name already exists'); UI.closeContextMenu(); return;
+            } catch (e) { /* not found — good */ }
+
+            if (isFolder) {
+                async function copyDir(src, dest) {
+                    for await (const entry of src.values()) {
+                        if (entry.kind === 'file') {
+                            const file = await entry.getFile();
+                            const buf = await file.arrayBuffer();
+                            const fh = await dest.getFileHandle(entry.name, { create: true });
+                            const w = await fh.createWritable(); await w.write(buf); await w.close();
+                        } else {
+                            const sub = await dest.getDirectoryHandle(entry.name, { create: true });
+                            await copyDir(entry, sub);
+                        }
+                    }
+                }
+                const newFH = await parentHandle.getDirectoryHandle(trimmed, { create: true });
+                const oldFH = await parentHandle.getDirectoryHandle(oldName);
+                try { await copyDir(oldFH, newFH); }
+                catch (copyErr) { try { await parentHandle.removeEntry(trimmed, { recursive: true }); } catch (e) {} throw copyErr; }
+                await parentHandle.removeEntry(oldName, { recursive: true });
+
+                const oldPath = contextMenuTarget.path;
+                const newPath = pathParts.length ? pathParts.join('/') + '/' + trimmed : trimmed;
+                const updated = new Set();
+                for (const fp of expandedFolders) {
+                    if (fp === oldPath) updated.add(newPath);
+                    else if (fp.startsWith(oldPath + '/')) updated.add(newPath + fp.substring(oldPath.length));
+                    else updated.add(fp);
+                }
+                expandedFolders.clear();
+                for (const fp of updated) expandedFolders.add(fp);
+                FSL.saveExpandedState();
+                await Logic.buildAndRenderTree();
+                UI.showToast('Renamed folder to ' + trimmed);
+            } else {
+                const oldHandle = await parentHandle.getFileHandle(oldName);
+                const file = await oldHandle.getFile();
+                const buf = await file.arrayBuffer();
+                const newHandle = await parentHandle.getFileHandle(trimmed, { create: true });
+                const w = await newHandle.createWritable(); await w.write(buf); await w.close();
+                await parentHandle.removeEntry(oldName);
+
+                for (const openTab of tabs) {
+                    if (openTab.handle && await FSL.isSameEntry(openTab.handle, contextMenuTarget.handle)) {
+                        openTab.name = trimmed; openTab.handle = newHandle;
+                        if (openTab.element) {
+                            const ns = openTab.element.querySelector('.tab-name');
+                            if (ns) ns.textContent = trimmed;
+                        }
+                        UI.updateEditorStatus(openTab); break;
+                    }
+                }
+                await Logic.buildAndRenderTree();
+                UI.showToast('Renamed to ' + trimmed);
+            }
+        } catch (err) { UI.showToast('Failed to rename: ' + err.message); }
+        finally { UI.closeContextMenu(); }
+    }
+
+    // Clear saved folder
+
+    async function clearSavedFolder() {
+        await FSL.clearSavedFolder();
+        treeContainer.innerHTML = '';
+        sidebarHeader.textContent = 'Directory';
+        UI.showToast('Saved folder cleared');
+    }
+
+    // Menu dispatch
+
+    function handleAction(action) {
+        switch (action) {
+            case 'openFolder':     openFolder(); break;
+            case 'openFile':       openFile(); break;
+            case 'newFile':        newFile(); break;
+            case 'newFolder':      newFolder(); break;
+            case 'saveCurrentFile': saveCurrentFile(); break;
+            case 'saveAs':         saveAsCurrentFile(); break;
+        }
+    }
+
+    return {
+        openFolder, openFile, openFileFromNode,
+        newFile, newFolder,
+        saveTab, saveCurrentFile, saveAsCurrentFile, scheduleSave, flushSave,
+        deleteFile, deleteFolder, renameItem,
+        clearSavedFolder, handleAction
+    };
 })();
 
 // ═══════════════════════════════════════════════════════════════
 // LAYER 5 — UI
+// DOM rendering, event binding, init/boot.
 // ═══════════════════════════════════════════════════════════════
+
 const UI = (() => {
-    function showToast(msg) {
+
+    // Toast
+
+    function showToast(message, duration) {
+        if (duration === undefined) duration = 3000;
         const t = document.createElement('div');
-        t.className = 'toast'; t.textContent = msg;
+        t.className = 'toast';
+        t.textContent = message;
         document.body.appendChild(t);
-        setTimeout(() => t.remove(), 3000);
+        setTimeout(() => t.remove(), duration);
     }
 
-    function showInputDialog(msg, def = '') {
+    // Input dialog
+
+    function showInputDialog(message, defaultValue) {
+        if (defaultValue === undefined) defaultValue = '';
         return new Promise(resolve => {
-            const val = prompt(msg, def);
-            resolve(val);
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:10001;';
+            const dialog = document.createElement('div');
+            dialog.style.cssText = 'background:#18181b;padding:24px;border-radius:8px;min-width:300px;max-width:90%;border:1px solid #27272a;';
+            const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            const escVal = s => esc(s).replace(/"/g,'&quot;');
+            dialog.innerHTML =
+                '<div style="color:#e4e4e7;margin-bottom:12px;font-size:14px;">' + esc(message) + '</div>' +
+                '<input type="text" id="dialog-input" value="' + escVal(defaultValue) + '" style="width:100%;padding:10px;background:#27272a;border:1px solid #3f3f46;color:#e4e4e7;border-radius:4px;font-size:16px;box-sizing:border-box;">' +
+                '<div style="display:flex;gap:8px;margin-top:16px;">' +
+                '<button id="dialog-ok" class="btn accent" style="flex:1;min-height:44px;">OK</button>' +
+                '<button id="dialog-cancel" class="btn" style="flex:1;min-height:44px;">Cancel</button></div>';
+            modal.appendChild(dialog);
+            document.body.appendChild(modal);
+            const input = dialog.querySelector('#dialog-input');
+            input.focus(); input.select();
+            dialog.querySelector('#dialog-ok').onclick = () => { resolve(input.value); modal.remove(); };
+            dialog.querySelector('#dialog-cancel').onclick = () => { resolve(null); modal.remove(); };
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); resolve(input.value); modal.remove(); }
+                else if (e.key === 'Escape') { e.preventDefault(); resolve(null); modal.remove(); }
+            });
+            modal.onclick = e => { if (e.target === modal) { resolve(null); modal.remove(); } };
         });
     }
 
+    // Sidebar
+
     function toggleSidebar() {
         sidebarEl.classList.toggle('hidden');
-        document.getElementById('sidebar-toggle').textContent = sidebarEl.classList.contains('hidden') ? '<' : '>';
+        updateSidebarToggle();
     }
 
-    // FIXED CONTEXT MENU LOGIC
+    function updateSidebarToggle() {
+        const btn = document.getElementById('sidebar-toggle');
+        if (!btn) return;
+        const isHidden = sidebarEl.classList.contains('hidden');
+        btn.textContent = isHidden ? '<' : '>';
+        btn.title = isHidden ? 'Expand Sidebar' : 'Collapse Sidebar';
+    }
+
+    // Context menu
+
     function showContextMenu(e, node, isFolder) {
         e.preventDefault(); e.stopPropagation();
         closeContextMenu();
         contextMenuTarget = node;
         contextMenu = document.createElement('div');
         contextMenu.className = 'context-menu';
-
-        const createItem = (text, action, isDanger = false) => {
-            const item = document.createElement('div');
-            item.className = `context-menu-item ${isDanger ? 'danger' : ''}`;
-            item.textContent = text;
-            item.onclick = () => { action(); closeContextMenu(); };
-            return item;
-        };
-
-        const separator = () => {
-            const s = document.createElement('div');
-            s.className = 'context-menu-separator';
-            return s;
-        };
-
         if (!node) {
-            contextMenu.appendChild(createItem('New File', Actions.newFile));
-            contextMenu.appendChild(createItem('Open Folder', Actions.openFolder));
+            contextMenu.innerHTML =
+                '<div class="context-menu-item" onclick="Actions.newFile()">New File</div>' +
+                '<div class="context-menu-item" onclick="Actions.newFolder()">New Folder</div>' +
+                '<div class="context-menu-separator"></div>' +
+                '<div class="context-menu-item" onclick="Actions.openFile()">Open File</div>' +
+                '<div class="context-menu-item" onclick="Actions.openFolder()">Open Folder</div>';
         } else if (isFolder) {
-            contextMenu.appendChild(createItem('New File', Actions.newFile));
-            contextMenu.appendChild(createItem('Rename', Actions.renameItem));
-            contextMenu.appendChild(separator());
-            contextMenu.appendChild(createItem('Delete Folder', () => {}, true));
+            contextMenu.innerHTML =
+                '<div class="context-menu-item" onclick="Actions.newFile()">New File</div>' +
+                '<div class="context-menu-item" onclick="Actions.newFolder()">New Folder</div>' +
+                '<div class="context-menu-separator"></div>' +
+                '<div class="context-menu-item" onclick="Actions.renameItem()">Rename</div>' +
+                '<div class="context-menu-separator"></div>' +
+                '<div class="context-menu-item danger" onclick="Actions.deleteFolder()">Delete Folder</div>';
         } else {
-            contextMenu.appendChild(createItem('Open', () => Actions.openFileFromNode(node)));
-            contextMenu.appendChild(createItem('Rename', Actions.renameItem));
-            contextMenu.appendChild(separator());
-            contextMenu.appendChild(createItem('Delete File', Actions.deleteFile, true));
+            contextMenu.innerHTML =
+                '<div class="context-menu-item" onclick="Actions.openFileFromNode(contextMenuTarget)">Open</div>' +
+                '<div class="context-menu-item" onclick="Actions.renameItem()">Rename</div>' +
+                '<div class="context-menu-separator"></div>' +
+                '<div class="context-menu-item danger" onclick="Actions.deleteFile()">Delete File</div>';
         }
-
         contextMenu.style.left = e.clientX + 'px';
         contextMenu.style.top = e.clientY + 'px';
         document.body.appendChild(contextMenu);
+        const rect = contextMenu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) contextMenu.style.left = (window.innerWidth - rect.width - 4) + 'px';
+        if (rect.bottom > window.innerHeight) contextMenu.style.top = (window.innerHeight - rect.height - 4) + 'px';
     }
 
     function closeContextMenu() {
-        if (contextMenu) { contextMenu.remove(); contextMenu = null; }
+        if (contextMenu) { contextMenu.remove(); contextMenu = null; contextMenuTarget = null; }
     }
+
+    // Touch handlers
+
+    function setupTouchHandlers(element, node, isFolder) {
+        element.addEventListener('touchstart', e => {
+            const x = e.touches[0].clientX, y = e.touches[0].clientY;
+            touchTarget = { element, node, isFolder, x, y };
+            touchTimer = setTimeout(() => {
+                if (touchTarget) {
+                    showContextMenu({ clientX: touchTarget.x, clientY: touchTarget.y, target: element,
+                        preventDefault(){}, stopPropagation(){} }, node, isFolder);
+                    touchTarget = null;
+                }
+            }, 500);
+        }, { passive: true });
+        element.addEventListener('touchend', () => { if (touchTimer) { clearTimeout(touchTimer); touchTimer = null; } touchTarget = null; }, { passive: true });
+        element.addEventListener('touchmove', () => { if (touchTimer) { clearTimeout(touchTimer); touchTimer = null; } touchTarget = null; }, { passive: true });
+    }
+
+    // File tree rendering
 
     function renderTree() {
         treeContainer.innerHTML = '';
-        if (fileTree) fileTree.children.forEach(c => renderTreeItem(c, treeContainer, 0));
+        if (!fileTree) return;
+        fileTree.children.forEach(child => renderTreeItem(child, treeContainer, 0));
     }
 
-    function renderTreeItem(node, parent, level) {
-        const item = document.createElement('div');
-        item.className = node.kind === 'directory' ? 'folder-header' : 'file-item';
-        item.style.paddingLeft = (level * 14 + (node.kind === 'file' ? 26 : 12)) + 'px';
-        item.textContent = (node.kind === 'directory' ? '▶ ' : '') + node.name;
-        item.dataset.path = node.path;
-        
-        item.onclick = () => node.kind === 'file' ? Actions.openFileFromNode(node) : toggleFolder(node, item);
-        item.oncontextmenu = (e) => showContextMenu(e, node, node.kind === 'directory');
-        
-        parent.appendChild(item);
-        if (node.kind === 'directory' && expandedFolders.has(node.path)) {
-            const container = document.createElement('div');
-            node.children.forEach(c => renderTreeItem(c, container, level + 1));
-            parent.appendChild(container);
-            item.textContent = '▼ ' + node.name;
+    function renderTreeItem(node, parentEl, level) {
+        if (node.kind === 'directory') {
+            const folderDiv = document.createElement('div');
+            folderDiv.className = 'tree-folder';
+            const header = document.createElement('div');
+            header.className = 'folder-header';
+            header.dataset.path = node.path;
+            header.style.paddingLeft = (level * 14) + 'px';
+            header.tabIndex = 0;
+            const toggle = document.createElement('span');
+            toggle.className = 'toggle';
+            toggle.textContent = expandedFolders.has(node.path) ? '▼' : '▶';
+            header.appendChild(toggle);
+            header.appendChild(document.createTextNode(' ' + node.name));
+            const childrenDiv = document.createElement('div');
+            childrenDiv.className = 'tree-children';
+            childrenDiv.style.display = expandedFolders.has(node.path) ? 'block' : 'none';
+            header.onclick = () => toggleFolder(node, header, childrenDiv);
+            header.addEventListener('keydown', e => handleTreeKeydown(e, node, header, childrenDiv));
+            header.addEventListener('contextmenu', e => showContextMenu(e, node, true));
+            setupTouchHandlers(header, node, true);
+            folderDiv.appendChild(header);
+            folderDiv.appendChild(childrenDiv);
+            parentEl.appendChild(folderDiv);
+            node.children.forEach(child => renderTreeItem(child, childrenDiv, level + 1));
+        } else {
+            const fileDiv = document.createElement('div');
+            fileDiv.className = 'file-item';
+            fileDiv.dataset.path = node.path;
+            fileDiv.style.paddingLeft = (level * 14 + 26) + 'px';
+            fileDiv.textContent = node.name;
+            fileDiv.tabIndex = 0;
+            fileDiv.onclick = () => Actions.openFileFromNode(node);
+            fileDiv.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); Actions.openFileFromNode(node); }
+                else navigateTree(e);
+            });
+            fileDiv.addEventListener('contextmenu', e => showContextMenu(e, node, false));
+            setupTouchHandlers(fileDiv, node, false);
+            parentEl.appendChild(fileDiv);
         }
     }
 
-    function toggleFolder(node, el) {
-        if (expandedFolders.has(node.path)) expandedFolders.delete(node.path);
+    function toggleFolder(node, header, childrenDiv) {
+        const isOpen = childrenDiv.style.display !== 'none';
+        childrenDiv.style.display = isOpen ? 'none' : 'block';
+        header.querySelector('.toggle').textContent = isOpen ? '▶' : '▼';
+        if (isOpen) expandedFolders.delete(node.path);
         else expandedFolders.add(node.path);
         FSL.saveExpandedState();
-        renderTree();
+        activeFolderPath = node.path;
+        targetDirHandle = node.handle;
+        highlightActiveItems();
     }
 
     function highlightActiveItems() {
-        document.querySelectorAll('.active').forEach(e => e.classList.remove('active'));
-        const el = document.querySelector(`[data-path="${activeFilePath}"]`);
-        if (el) el.classList.add('active');
+        document.querySelectorAll('.file-item.active, .folder-header.active').forEach(el => el.classList.remove('active'));
+        if (activeFilePath) {
+            const el = treeContainer.querySelector('.file-item[data-path="' + activeFilePath + '"]');
+            if (el) el.classList.add('active');
+        }
+        if (activeFolderPath) {
+            const el = treeContainer.querySelector('.folder-header[data-path="' + activeFolderPath + '"]');
+            if (el) el.classList.add('active');
+        }
     }
 
-    function createNewTab(handle, name, content, path) {
+    function getVisibleTreeItems() {
+        return Array.from(treeContainer.querySelectorAll('.folder-header, .file-item')).filter(el => el.offsetParent !== null);
+    }
+
+    function navigateTree(e) {
+        const items = getVisibleTreeItems();
+        const idx = items.indexOf(e.target);
+        if (idx === -1) return;
+        if (e.key === 'ArrowDown' && idx < items.length - 1) { e.preventDefault(); items[idx + 1].focus(); }
+        else if (e.key === 'ArrowUp' && idx > 0) { e.preventDefault(); items[idx - 1].focus(); }
+    }
+
+    function handleTreeKeydown(e, node, header, childrenDiv) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFolder(node, header, childrenDiv); }
+        else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            if (childrenDiv.style.display === 'none') toggleFolder(node, header, childrenDiv);
+            else { const c = childrenDiv.querySelector('.folder-header, .file-item'); if (c) c.focus(); }
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            if (childrenDiv.style.display !== 'none') toggleFolder(node, header, childrenDiv);
+            else { const p = header.closest('.tree-children'); if (p && p.previousElementSibling) p.previousElementSibling.focus(); }
+        } else navigateTree(e);
+    }
+
+    // Tabs
+
+    async function createNewTab(handle, name, content, path) {
+        if (content === undefined) content = '';
+        if (path === undefined) path = null;
+        if (handle) {
+            for (const t of tabs) {
+                if (t.handle && await FSL.isSameEntry(t.handle, handle)) { switchToTab(t.id); return; }
+            }
+        }
         const id = nextTabId++;
         const tab = { id, name, handle, content, dirty: false, path };
         tabs.push(tab);
 
-        const el = document.createElement('div');
-        el.className = 'tab'; el.textContent = name;
-        const ind = document.createElement('span'); ind.className = 'dirty-indicator';
-        ind.textContent = ' *'; ind.style.display = 'none';
-        el.appendChild(ind);
+        const tabEl = document.createElement('div');
+        tabEl.className = 'tab'; tabEl.dataset.id = id; tabEl.draggable = true;
+        tabEl.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', id); tabEl.style.opacity = '0.5'; });
+        tabEl.addEventListener('dragend', () => { tabEl.style.opacity = ''; document.querySelectorAll('.tab.drag-over').forEach(t => t.classList.remove('drag-over')); });
+        tabEl.addEventListener('dragover', e => { e.preventDefault(); document.querySelectorAll('.tab.drag-over').forEach(t => t.classList.remove('drag-over')); tabEl.classList.add('drag-over'); });
+        tabEl.addEventListener('dragleave', () => tabEl.classList.remove('drag-over'));
+        tabEl.addEventListener('drop', e => {
+            e.preventDefault(); tabEl.classList.remove('drag-over');
+            const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+            if (draggedId === id) return;
+            const fromIdx = tabs.findIndex(t => t.id === draggedId);
+            const toIdx = tabs.findIndex(t => t.id === id);
+            if (fromIdx === -1 || toIdx === -1) return;
+            const [moved] = tabs.splice(fromIdx, 1);
+            tabs.splice(toIdx, 0, moved);
+            const draggedEl = tabsContainer.querySelector('.tab[data-id="' + draggedId + '"]');
+            if (draggedEl) tabsContainer.insertBefore(draggedEl, tabEl);
+        });
 
-        el.onclick = () => switchToTab(id);
-        tabsContainer.appendChild(el);
-        tab.element = el;
+        const nameSpan = document.createElement('span'); nameSpan.className = 'tab-name'; nameSpan.textContent = name;
+        const dirtyInd = document.createElement('span'); dirtyInd.className = 'dirty-indicator'; dirtyInd.style.display = 'none'; dirtyInd.textContent = ' *';
+        const closeBtn = document.createElement('span'); closeBtn.className = 'close'; closeBtn.textContent = '×';
+        closeBtn.onclick = e => { e.stopPropagation(); closeTab(id); };
+
+        tabEl.appendChild(nameSpan); tabEl.appendChild(dirtyInd); tabEl.appendChild(closeBtn);
+        tabEl.onclick = () => switchToTab(id);
+        tabsContainer.appendChild(tabEl);
+        tab.element = tabEl;
         switchToTab(id);
     }
 
     function switchToTab(id) {
-        if (currentTabId) {
-            const prev = tabs.find(t => t.id === currentTabId);
-            if (prev) prev.content = textarea.value;
+        if (currentTabId !== null) {
+            const cur = tabs.find(t => t.id === currentTabId);
+            if (cur) cur.content = textarea.value;
         }
         currentTabId = id;
         const tab = tabs.find(t => t.id === id);
-        textarea.value = tab.content;
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        tab.element.classList.add('active');
+        const el = document.querySelector('.tab[data-id="' + id + '"]');
+        if (el) el.classList.add('active');
+        textarea.value = tab.content;
         updateLineNumbers();
         updateEditorStatus(tab);
+        if (tab.path) Logic.setActiveFromPath(tab.path);
+        else { activeFilePath = null; activeFolderPath = null; highlightActiveItems(); }
     }
 
+    function closeTab(id) {
+        const idx = tabs.findIndex(t => t.id === id);
+        if (idx === -1) return;
+        const tab = tabs[idx];
+        if (currentTabId === id) tab.content = textarea.value;
+        if (tab.dirty && !confirm('"' + tab.name + '" has unsaved changes. Close anyway?')) return;
+        tabs.splice(idx, 1);
+        const el = document.querySelector('.tab[data-id="' + id + '"]');
+        if (el) el.remove();
+        if (tabs.length === 0) { currentTabId = null; textarea.value = ''; gutter.innerHTML = ''; editorStatusEl.textContent = 'No file open'; return; }
+        switchToTab(tabs[Math.min(idx, tabs.length - 1)].id);
+    }
+
+    // Editor helpers
+
     function updateLineNumbers() {
-        const lines = textarea.value.split('\n').length;
-        gutter.innerHTML = Array.from({length: lines}, (_, i) => i + 1).join('<br>');
+        const n = textarea.value.split('\n').length;
+        let h = '';
+        for (let i = 1; i <= n; i++) h += i + '<br>';
+        gutter.innerHTML = h;
     }
 
     function updateEditorStatus(tab) {
-        editorStatusEl.textContent = tab.name + (tab.dirty ? ' (modified)' : '');
+        editorStatusEl.textContent = tab.name + (tab.dirty ? ' • Modified' : '');
     }
+
+    // Search panel
+
+    function showSearchPanel() {
+        if (searchPanel) { document.getElementById('search-input').focus(); return; }
+        searchPanel = document.createElement('div');
+        searchPanel.className = 'search-panel';
+        const input = document.createElement('input'); input.type = 'text'; input.id = 'search-input'; input.placeholder = 'Search...';
+        const mc = document.createElement('span'); mc.className = 'match-count'; mc.id = 'match-count'; mc.textContent = '0 matches';
+        const nb = document.createElement('button'); nb.textContent = 'Next'; nb.addEventListener('click', Logic.findNext);
+        const pb = document.createElement('button'); pb.textContent = 'Previous'; pb.addEventListener('click', Logic.findPrevious);
+        const cb = document.createElement('button'); cb.className = 'close-search'; cb.textContent = '×'; cb.addEventListener('click', closeSearch);
+        searchPanel.appendChild(input); searchPanel.appendChild(mc); searchPanel.appendChild(nb); searchPanel.appendChild(pb); searchPanel.appendChild(cb);
+        document.body.appendChild(searchPanel);
+        input.focus();
+        input.addEventListener('input', Logic.performSearch);
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) Logic.findPrevious(); else Logic.findNext(); }
+            else if (e.key === 'Escape') closeSearch();
+        });
+    }
+
+    function closeSearch() {
+        if (searchPanel) { searchPanel.remove(); searchPanel = null; searchMatches = []; currentMatchIndex = -1; }
+    }
+
+    // Re-authorize button (Permission Guard)
+
+    function showReauthorizeButton(handle) {
+        const container = document.getElementById('reauth-container');
+        container.style.display = 'flex';
+        document.getElementById('reauth-btn').onclick = async () => {
+            try {
+                await FSL.reauthorize(handle);
+                container.style.display = 'none';
+                await Logic.buildAndRenderTree();
+            } catch (err) { showToast('Re-authorize failed: ' + err.message); }
+        };
+    }
+
+    // Global event wiring
 
     function bindEvents() {
-        textarea.oninput = () => {
-            updateLineNumbers();
-            const tab = tabs.find(t => t.id === currentTabId);
-            if (tab) {
-                tab.dirty = true;
-                tab.element.querySelector('.dirty-indicator').style.display = 'inline';
-                updateEditorStatus(tab);
-                Actions.scheduleSave();
+        document.addEventListener('click', e => {
+            if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) { closeContextMenu(); }
+        });
+        document.addEventListener('touchstart', e => {
+            if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) { closeContextMenu(); }
+        }, { passive: true });
+        document.addEventListener('contextmenu', e => {
+            if (!e.target.closest('.file-item') && !e.target.closest('.folder-header') && !e.target.closest('.tree-container')) closeContextMenu();
+        });
+        treeContainer.addEventListener('contextmenu', e => {
+            if (!e.target.closest('.file-item') && !e.target.closest('.folder-header')) {
+                showContextMenu(e, null, false);
             }
-        };
-        textarea.onscroll = () => { gutter.scrollTop = textarea.scrollTop; };
-        document.onclick = (e) => { if (!e.target.closest('.context-menu')) closeContextMenu(); };
-        window.onkeydown = (e) => {
+        });
+
+        textarea.addEventListener('keydown', e => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const s = textarea.selectionStart, end = textarea.selectionEnd;
+                const indent = '    ';
+                textarea.value = textarea.value.substring(0, s) + indent + textarea.value.substring(end);
+                textarea.selectionStart = textarea.selectionEnd = s + indent.length;
+                textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+
+        textarea.addEventListener('input', () => {
+            updateLineNumbers();
+            if (currentTabId !== null) {
+                const tab = tabs.find(t => t.id === currentTabId);
+                if (tab) {
+                    tab.dirty = true;
+                    if (tab.element) { const ind = tab.element.querySelector('.dirty-indicator'); if (ind) ind.style.display = ''; }
+                    updateEditorStatus(tab);
+                    Actions.scheduleSave();
+                }
+            }
+        });
+
+        textarea.addEventListener('scroll', () => { gutter.scrollTop = textarea.scrollTop; });
+
+        const widthSlider = document.getElementById('width-slider');
+        widthSlider.addEventListener('input', () => {
+            const val = parseInt(widthSlider.value, 10);
+            if (val > 90) {
+                textarea.style.maxWidth = 'none';
+                textarea.style.whiteSpace = 'pre';
+                textarea.style.wordWrap = 'normal';
+                textarea.style.overflowWrap = 'normal';
+            } else {
+                textarea.style.maxWidth = val + '%';
+                textarea.style.whiteSpace = 'pre-wrap';
+                textarea.style.wordWrap = 'break-word';
+                textarea.style.overflowWrap = 'break-word';
+            }
+        });
+
+        document.addEventListener('keydown', e => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); Actions.saveCurrentFile(); }
-        };
+            else if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); showSearchPanel(); }
+            else if ((e.ctrlKey || e.metaKey) && e.key === 'w') { e.preventDefault(); if (currentTabId !== null) closeTab(currentTabId); }
+        });
+
+        window.addEventListener('beforeunload', e => {
+            if (tabs.some(t => t.dirty)) { e.preventDefault(); Actions.flushSave(); return e.returnValue = 'Unsaved changes'; }
+        });
     }
 
+    // Boot
+
     async function init() {
-        textarea = document.getElementById('textarea');
-        gutter = document.getElementById('gutter');
+        textarea      = document.getElementById('textarea');
+        gutter        = document.getElementById('gutter');
         tabsContainer = document.getElementById('tabs');
         treeContainer = document.getElementById('tree-container');
         sidebarHeader = document.getElementById('sidebar-header');
-        sidebarEl = document.getElementById('sidebar');
-        statusEl = document.getElementById('status');
+        sidebarEl     = document.getElementById('sidebar');
+        statusEl      = document.getElementById('status');
         editorStatusEl = document.getElementById('editor-status');
 
         bindEvents();
+        await FSL.initDB();
         FSL.loadExpandedState();
-        const res = await FSL.loadSavedFolder();
-        if (res.status === 'granted') {
-            currentDirHandle = res.handle;
+
+        // Permission Guard: query-only, never requestPermission() here
+        const result = await FSL.loadSavedFolder();
+        if (result.status === 'granted') {
             await Logic.buildAndRenderTree();
+        } else if (result.status === 'needs-auth') {
+            showReauthorizeButton(result.handle);
         }
-        createNewTab(null, 'welcome.txt', 'Welcome to EDITOR.');
+
+        const isMobile = window.innerWidth <= 768;
+        if (isMobile) {
+            sidebarEl.classList.add('hidden');
+        }
+
+        updateSidebarToggle();
+
+        if (tabs.length === 0) {
+            createNewTab(null, 'welcome.txt', 'EDITOR is ready.\n\nType. Break. Ship.');
+        }
     }
 
-    return { init, renderTree, highlightActiveItems, createNewTab, updateLineNumbers, updateEditorStatus, showToast, showInputDialog, toggleSidebar, showContextMenu };
+    return {
+        init, showToast, showInputDialog,
+        toggleSidebar, updateSidebarToggle,
+        showContextMenu, closeContextMenu,
+        renderTree, highlightActiveItems,
+        createNewTab, switchToTab, closeTab,
+        updateLineNumbers, updateEditorStatus,
+        showSearchPanel, closeSearch,
+        showReauthorizeButton
+    };
 })();
 
+// Service Worker registration
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+        .then(() => console.log('Service Worker registered'))
+        .catch(err => console.log('SW registration failed', err));
+}
+
+// Launch
 window.onload = () => UI.init();
 </script>
 </body>
