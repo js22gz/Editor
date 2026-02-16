@@ -970,7 +970,6 @@ const Actions = (() => {
     // Menu dispatch
 
     function handleAction(action) {
-        UI.closeActionsDropdown();
         switch (action) {
             case 'openFolder':     openFolder(); break;
             case 'openFile':       openFile(); break;
@@ -1095,9 +1094,6 @@ const UI = (() => {
     function closeContextMenu() {
         if (contextMenu) { contextMenu.remove(); contextMenu = null; contextMenuTarget = null; }
     }
-
-    function toggleActionsDropdown() {}
-    function closeActionsDropdown() {}
 
     // Touch handlers
 
@@ -1348,10 +1344,10 @@ const UI = (() => {
 
     function bindEvents() {
         document.addEventListener('click', e => {
-            if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) { closeContextMenu(); closeActionsDropdown(); }
+            if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) { closeContextMenu(); }
         });
         document.addEventListener('touchstart', e => {
-            if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) { closeContextMenu(); closeActionsDropdown(); }
+            if (!e.target.closest('.context-menu') && !e.target.closest('#menu-btn')) { closeContextMenu(); }
         }, { passive: true });
         document.addEventListener('contextmenu', e => {
             if (!e.target.closest('.file-item') && !e.target.closest('.folder-header') && !e.target.closest('.tree-container')) closeContextMenu();
@@ -1454,7 +1450,6 @@ const UI = (() => {
     return {
         init, showToast, showInputDialog,
         toggleSidebar, updateSidebarToggle,
-        toggleActionsDropdown, closeActionsDropdown,
         showContextMenu, closeContextMenu,
         renderTree, highlightActiveItems,
         createNewTab, switchToTab, closeTab,
