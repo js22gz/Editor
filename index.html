@@ -204,7 +204,43 @@
             overflow-wrap: break-word;
             tab-size: 4;
         }
-     
+
+        #line-width-slider {
+            display: flex;
+            align-items: center;
+            height: 24px;
+            background: #18181b;
+            border-bottom: 1px solid #27272a;
+            padding: 0 16px 0 52px;
+        }
+        #line-width-slider input[type="range"] {
+            width: 100%;
+            height: 4px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #3f3f46;
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+        }
+        #line-width-slider input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #a1a1aa;
+            cursor: pointer;
+        }
+        #line-width-slider input[type="range"]::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #a1a1aa;
+            border: none;
+            cursor: pointer;
+        }
+
         .status {
             height: 28px;
             background: #18181b;
@@ -314,7 +350,7 @@
         </div>
         <div class="editor-area">
             <div id="tabs" class="tabs"></div>
-            <div id="line-width-slider"></div>
+            <div id="line-width-slider"><input type="range" id="width-slider" min="10" max="100" value="100" aria-label="Text area width control"></div>
             <div class="editor-wrapper">
                 <div id="gutter"></div>
                 <textarea id="textarea" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea>
@@ -1364,6 +1400,22 @@ const UI = (() => {
         });
 
         textarea.addEventListener('scroll', () => { gutter.scrollTop = textarea.scrollTop; });
+
+        const widthSlider = document.getElementById('width-slider');
+        widthSlider.addEventListener('input', () => {
+            const val = parseInt(widthSlider.value, 10);
+            if (val > 90) {
+                textarea.style.maxWidth = 'none';
+                textarea.style.whiteSpace = 'pre';
+                textarea.style.wordWrap = 'normal';
+                textarea.style.overflowWrap = 'normal';
+            } else {
+                textarea.style.maxWidth = val + '%';
+                textarea.style.whiteSpace = 'pre-wrap';
+                textarea.style.wordWrap = 'break-word';
+                textarea.style.overflowWrap = 'break-word';
+            }
+        });
 
         document.addEventListener('keydown', e => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); Actions.saveCurrentFile(); }
