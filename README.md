@@ -1,8 +1,5 @@
 # Editor
-A **single-file** HTML-based file-editor that runs locally in the browser.  
-
-No server. No tracking. No bullshit.
+A **single-file** progressive web app file-editor. 
 
 ## License
-
-MIT. Do whatever. Fork it, improve it, ship it.
+MIT. 
