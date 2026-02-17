@@ -602,7 +602,7 @@ async function buildAndRenderTree() {
         return;
     }
     fileTree = await buildTree(currentDirHandle);
-    sidebarHeader.textContent = 'Active directory: ' + fileTree.name + '. <div class="directory-clear" onclick="Actions.clearSavedFolder()">⌫</div>';
+    sidebarHeader.innerHTML = 'Active directory: ' + fileTree.name + '. <div class="directory-clear" onclick="Actions.clearSavedFolder()">⌫</div>';
     UI.renderTree();
 }
 
