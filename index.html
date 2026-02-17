@@ -91,9 +91,10 @@
         .sidebar-header {
             padding: 12px 16px;
             font-size: 11px;
+            font-weight: bold;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            color: #71717a;
+            color: #c1c1cb;
             border-bottom: 1px solid #27272a;
         }
      
@@ -350,7 +351,7 @@
     </div>
     <div class="main">
         <div id="sidebar" class="sidebar">
-            <div id="sidebar-header" class="sidebar-header"  style="cursor: pointer;" onclick="if(!currentDirHandle) Actions.openFolder()"title="Click to open folder">Directory</div>
+            <div id="sidebar-header" class="sidebar-header"  style="cursor: pointer;" onclick="Actions.openFolder()" title="Click to open folder">Directory</div>
             <div id="tree-container" class="tree-container"></div>
             <div style="padding:12px;border-top:1px solid #27272a;font-size:11px;color:#52525b;cursor:pointer" onclick="Actions.clearSavedFolder()">
                 Clear saved folder
