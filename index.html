@@ -97,6 +97,10 @@
             color: #c1c1cb;
             border-bottom: 1px solid #27272a;
         }
+
+        .directory-clear {
+            display:inline-flex;
+        }
      
         .tree-container {
             flex: 1;
@@ -352,7 +356,7 @@
     <div class="main">
         <div id="sidebar" class="sidebar">
             <div id="sidebar-header" class="sidebar-header"  style="cursor: pointer;" onclick="Actions.openFolder()" title="Click to open folder">Active directory:
-                <div style="color:#52525b;cursor:pointer" onclick="Actions.clearSavedFolder()">del</div>
+                <div class="directory-clear" onclick="Actions.clearSavedFolder()">del</div>
             </div>
             <div id="tree-container" class="tree-container"></div>
         </div>
