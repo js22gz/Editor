@@ -20,47 +20,30 @@
             flex-direction: column;
         }
      
-/* Ensure the topbar is the relative anchor */
-.topbar {
-    height: 52px;
-    background: #18181b;
-    border-bottom: 1px solid #27272a;
-    display: flex;
-    align-items: center;
-    justify-content: space-between; /* Space out the toggle button */
-    padding: 0 16px;
-    flex-shrink: 0;
-    position: relative; 
-}
+        /* Ensure the topbar is the relative anchor */
+        .topbar {
+            height: 52px;
+            background: #18181b;
+            border-bottom: 1px solid #27272a;
+            display: flex;
+            align-items: center;
+            justify-content: space-between; /* Space out the toggle button */
+            padding: 0 16px;
+            flex-shrink: 0;
+            position: relative; 
+        }
 
-.logo { 
-    font-weight: 700; 
-    font-size: 20px; 
-    letter-spacing: -0.5px;
-    position: absolute;
-    /* Center exactly in the middle of the topbar */
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    pointer-events: none; /* Prevents logo from blocking clicks on other elements */
-}     
-        .btn {
-            background: #27272a;
-            color: #e4e4e7;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .btn:hover { background: #3f3f46; }
-        .btn.accent {
-            background: #d4d4d8;
-            color: black;
-            font-weight: 600;
-        }
-        .btn.accent:hover { background: #e4e4e7; }
+        .logo { 
+            font-weight: 700; 
+            font-size: 2rem; 
+            letter-spacing: -0.5px;
+            position: absolute;
+            /* Center exactly in the middle of the topbar */
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none; /* Prevents logo from blocking clicks on other elements */
+        }     
      
         .main { flex: 1; display: flex; overflow: hidden; }
      
