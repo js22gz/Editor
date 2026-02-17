@@ -1298,31 +1298,6 @@ const UI = (() => {
         editorStatusEl.textContent = tab.name + (tab.dirty ? ' • Modified' : '');
     }
 
-    // Search panel
-
-    function showSearchPanel() {
-        if (searchPanel) { document.getElementById('search-input').focus(); return; }
-        searchPanel = document.createElement('div');
-        searchPanel.className = 'search-panel';
-        const input = document.createElement('input'); input.type = 'text'; input.id = 'search-input'; input.placeholder = 'Search...';
-        const mc = document.createElement('span'); mc.className = 'match-count'; mc.id = 'match-count'; mc.textContent = '0 matches';
-        const nb = document.createElement('button'); nb.textContent = 'Next'; nb.addEventListener('click', Logic.findNext);
-        const pb = document.createElement('button'); pb.textContent = 'Previous'; pb.addEventListener('click', Logic.findPrevious);
-        const cb = document.createElement('button'); cb.className = 'close-search'; cb.textContent = '×'; cb.addEventListener('click', closeSearch);
-        searchPanel.appendChild(input); searchPanel.appendChild(mc); searchPanel.appendChild(nb); searchPanel.appendChild(pb); searchPanel.appendChild(cb);
-        document.body.appendChild(searchPanel);
-        input.focus();
-        input.addEventListener('input', Logic.performSearch);
-        input.addEventListener('keydown', e => {
-            if (e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) Logic.findPrevious(); else Logic.findNext(); }
-            else if (e.key === 'Escape') closeSearch();
-        });
-    }
-
-    function closeSearch() {
-        if (searchPanel) { searchPanel.remove(); searchPanel = null; searchMatches = []; currentMatchIndex = -1; }
-    }
-
     // Re-authorize button (Permission Guard)
 
     function showReauthorizeButton(handle) {
@@ -1399,7 +1374,6 @@ const UI = (() => {
 
         document.addEventListener('keydown', e => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); Actions.saveCurrentFile(); }
-            else if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); showSearchPanel(); }
             else if ((e.ctrlKey || e.metaKey) && e.key === 'w') { e.preventDefault(); if (currentTabId !== null) closeTab(currentTabId); }
         });
 
@@ -1451,7 +1425,6 @@ const UI = (() => {
         renderTree, highlightActiveItems,
         createNewTab, switchToTab, closeTab,
         updateLineNumbers, updateEditorStatus,
-        showSearchPanel, closeSearch,
         showReauthorizeButton
     };
 })();
