@@ -830,10 +830,7 @@ const App = (() => {
                 fileDiv.textContent = node.name;
                 fileDiv.tabIndex = 0;
                 
-                fileDiv.addEventListener('click', e => {
-                    e.stopImmediatePropagation();   // prevent any parent handlers
-                    Actions.openFileFromNode(node);
-                });
+                fileDiv.onclick = () => Actions.openFileFromNode(node);
                 
                 fileDiv.oncontextmenu = e => UI.showContextMenu(e, node, false);
                 fileDiv.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); fileDiv.click(); } };
