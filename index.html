@@ -352,6 +352,7 @@ const App = (() => {
     let saveTimer = null;
     let saveInProgress = false;
     let isMobile = window.innerWidth <= 768;
+    let longPressTriggered = false;
 
     // Missing vars that caused the errors
     let activeFilePath = null;
@@ -823,6 +824,7 @@ const App = (() => {
                 parentEl.appendChild(folderDiv);
 
                 header.onclick = () => {
+                    if (longPressTriggered) return;
                     const open = childrenDiv.style.display !== 'none';
                     childrenDiv.style.display = open ? 'none' : 'block';
                     header.querySelector('.toggle').textContent = open ? '▶' : '▼';
@@ -842,7 +844,7 @@ const App = (() => {
                 fileDiv.textContent = node.name;
                 fileDiv.tabIndex = 0;
                 
-                fileDiv.onclick = () => Actions.openFileFromNode(node);
+                fileDiv.onclick = () => { if (!longPressTriggered) Actions.openFileFromNode(node); };
                 
                 fileDiv.oncontextmenu = e => UI.showContextMenu(e, node, false);
                 fileDiv.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); fileDiv.click(); } };
@@ -1094,7 +1096,6 @@ const App = (() => {
 
             // Long-press context menu for mobile
             let longPressTimer = null;
-            let longPressTriggered = false;
             treeContainer.addEventListener('touchstart', e => {
                 longPressTriggered = false;
                 const touch = e.touches[0];
@@ -1117,7 +1118,7 @@ const App = (() => {
             }, { passive: true });
             treeContainer.addEventListener('touchend', e => {
                 clearTimeout(longPressTimer);
-                if (longPressTriggered) { e.preventDefault(); longPressTriggered = false; }
+                if (longPressTriggered) e.preventDefault();
             });
             treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); }, { passive: true });
 
