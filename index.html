@@ -908,7 +908,7 @@ const App = (() => {
                 const [moved] = tabs.splice(fromIdx, 1);
                 const rect = tabEl.getBoundingClientRect();
                 const insertAfter = e.clientX > rect.left + rect.width / 2;
-                const targetIdx = tabs.indexOf(tab);
+                const targetIdx = tabs.findIndex(t => t.id === id);
                 tabs.splice(insertAfter ? targetIdx + 1 : targetIdx, 0, moved);
                 if (insertAfter && tabEl.nextSibling) {
                     tabsContainer.insertBefore(moved.element, tabEl.nextSibling);
@@ -1015,7 +1015,11 @@ const App = (() => {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
             sidebarHeader.addEventListener('click', Actions.openFolder);
 
-            window.addEventListener('resize', () => { isMobile = window.innerWidth <= 768; });
+            window.addEventListener('resize', () => {
+                const wasMobile = isMobile;
+                isMobile = window.innerWidth <= 768;
+                if (isMobile && !wasMobile) sidebarEl.classList.add('hidden');
+            });
 
             document.addEventListener('click', e => {
                 if (e.target.id === 'clear-folder') Actions.clearSavedFolder();
