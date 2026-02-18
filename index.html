@@ -184,9 +184,8 @@
             padding: 12px 16px;
             resize: none;
             overflow: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
+            white-space: pre;
+            word-wrap: normal;
             tab-size: 4;
         }
         #line-width-slider {
@@ -788,7 +787,11 @@ const App = (() => {
                 header.dataset.path = node.path;
                 header.style.paddingLeft = (level * 14) + 'px';
                 header.tabIndex = 0;
-                header.innerHTML = `<span class="toggle">${expandedFolders.has(node.path) ? '▼' : '▶'}</span> ${node.name}`;
+                const toggle = document.createElement('span');
+                toggle.className = 'toggle';
+                toggle.textContent = expandedFolders.has(node.path) ? '▼' : '▶';
+                header.appendChild(toggle);
+                header.appendChild(document.createTextNode(' ' + node.name));
                 const childrenDiv = document.createElement('div');
                 childrenDiv.className = 'tree-children';
                 childrenDiv.style.display = expandedFolders.has(node.path) ? 'block' : 'none';
@@ -806,6 +809,7 @@ const App = (() => {
                     UI.highlightActiveItems();
                 };
                 header.oncontextmenu = e => UI.showContextMenu(e, node, true);
+                header.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); header.click(); } };
                 node.children.forEach(c => this._renderTreeItem(c, childrenDiv, level + 1));
             } else {
                 const fileDiv = document.createElement('div');
@@ -816,6 +820,7 @@ const App = (() => {
                 fileDiv.tabIndex = 0;
                 fileDiv.onclick = () => Actions.openFileFromNode(node);
                 fileDiv.oncontextmenu = e => UI.showContextMenu(e, node, false);
+                fileDiv.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileDiv.click(); } };
                 parentEl.appendChild(fileDiv);
             }
         },
@@ -826,29 +831,37 @@ const App = (() => {
             contextMenuTarget = node;
             contextMenu = document.createElement('div');
             contextMenu.className = 'context-menu';
+
+            const addItem = (label, handler, cls) => {
+                const item = document.createElement('div');
+                item.className = 'context-menu-item' + (cls ? ' ' + cls : '');
+                item.textContent = label;
+                item.addEventListener('click', () => { handler(); UI.closeContextMenu(); });
+                contextMenu.appendChild(item);
+            };
+            const addSeparator = () => {
+                const sep = document.createElement('div');
+                sep.className = 'context-menu-separator';
+                contextMenu.appendChild(sep);
+            };
+
             if (!node) {
-                contextMenu.innerHTML = `
-                    <div class="context-menu-item" onclick="App.Actions.newFile()">New File</div>
-                    <div class="context-menu-item" onclick="App.Actions.newFolder()">New Folder</div>
-                    <div class="context-menu-separator"></div>
-                    <div class="context-menu-item" onclick="App.Actions.openFolder()">Open Folder</div>
-                `;
+                addItem('New File', () => Actions.newFile());
+                addItem('New Folder', () => Actions.newFolder());
+                addSeparator();
+                addItem('Open Folder', () => Actions.openFolder());
             } else if (isFolder) {
-                contextMenu.innerHTML = `
-                    <div class="context-menu-item" onclick="App.Actions.newFile()">New File</div>
-                    <div class="context-menu-item" onclick="App.Actions.newFolder()">New Folder</div>
-                    <div class="context-menu-separator"></div>
-                    <div class="context-menu-item" onclick="App.Actions.renameItem()">Rename</div>
-                    <div class="context-menu-separator"></div>
-                    <div class="context-menu-item danger" onclick="App.Actions.deleteFolder()">Delete Folder</div>
-                `;
+                addItem('New File', () => Actions.newFile());
+                addItem('New Folder', () => Actions.newFolder());
+                addSeparator();
+                addItem('Rename', () => Actions.renameItem());
+                addSeparator();
+                addItem('Delete Folder', () => Actions.deleteFolder(), 'danger');
             } else {
-                contextMenu.innerHTML = `
-                    <div class="context-menu-item" onclick="App.Actions.openFileFromNode(contextMenuTarget)">Open</div>
-                    <div class="context-menu-item" onclick="App.Actions.renameItem()">Rename</div>
-                    <div class="context-menu-separator"></div>
-                    <div class="context-menu-item danger" onclick="App.Actions.deleteFile()">Delete File</div>
-                `;
+                addItem('Open', () => Actions.openFileFromNode(contextMenuTarget));
+                addItem('Rename', () => Actions.renameItem());
+                addSeparator();
+                addItem('Delete File', () => Actions.deleteFile(), 'danger');
             }
             contextMenu.style.left = e.clientX + 'px';
             contextMenu.style.top = e.clientY + 'px';
@@ -866,7 +879,7 @@ const App = (() => {
             }
         },
 
-        async createNewTab(handle, name, content = '', path = null) {
+        async createNewTab(handle, name, content = '', path = null, skipSwitch = false) {
             if (handle) {
                 for (const t of tabs) {
                     if (t.handle && await FSL.isSameEntry(t.handle, handle)) {
@@ -883,9 +896,19 @@ const App = (() => {
             tabEl.className = 'tab';
             tabEl.dataset.id = id;
             tabEl.draggable = true;
-            tabEl.innerHTML = `<span class="tab-name">${name}</span><span class="dirty-indicator" style="display:none;"> *</span><span class="close">×</span>`;
+            const tabName = document.createElement('span');
+            tabName.className = 'tab-name';
+            tabName.textContent = name;
+            const dirtyInd = document.createElement('span');
+            dirtyInd.className = 'dirty-indicator';
+            dirtyInd.style.display = 'none';
+            dirtyInd.textContent = ' *';
+            const closeBtn = document.createElement('span');
+            closeBtn.className = 'close';
+            closeBtn.textContent = '×';
+            tabEl.append(tabName, dirtyInd, closeBtn);
             tabEl.onclick = () => UI.switchToTab(id);
-            tabEl.querySelector('.close').onclick = e => { e.stopPropagation(); UI.closeTab(id); };
+            closeBtn.onclick = e => { e.stopPropagation(); UI.closeTab(id); };
 
             tabEl.addEventListener('dragstart', e => {
                 e.dataTransfer.setData('text/plain', String(id));
@@ -908,20 +931,16 @@ const App = (() => {
                 const [moved] = tabs.splice(fromIdx, 1);
                 const rect = tabEl.getBoundingClientRect();
                 const insertAfter = e.clientX > rect.left + rect.width / 2;
-                const targetIdx = tabs.findIndex(t => t.id === id);
-                tabs.splice(insertAfter ? targetIdx + 1 : targetIdx, 0, moved);
-                if (insertAfter && tabEl.nextSibling) {
-                    tabsContainer.insertBefore(moved.element, tabEl.nextSibling);
-                } else if (insertAfter) {
-                    tabsContainer.appendChild(moved.element);
-                } else {
-                    tabsContainer.insertBefore(moved.element, tabEl);
-                }
+                const newToIdx = tabs.findIndex(t => t.id === id);
+                tabs.splice(insertAfter ? newToIdx + 1 : newToIdx, 0, moved);
+                tabsContainer.append(...tabs.map(t => t.element));
+                FSL.saveOpenTabs(currentTabId);
             });
             tabsContainer.appendChild(tabEl);
             tab.element = tabEl;
 
-            this.switchToTab(id);
+            if (!skipSwitch) this.switchToTab(id);
+            return tab;
         },
 
         switchToTab(id) {
@@ -978,7 +997,13 @@ const App = (() => {
         },
 
         updateEditorStatus(tab) {
-            editorStatusEl.textContent = tab.name + (tab.dirty ? ' • Modified' : '');
+            const pos = textarea.selectionStart || 0;
+            const text = textarea.value.substring(0, pos);
+            const line = text.split('\n').length;
+            const col = pos - text.lastIndexOf('\n');
+            const modified = tab.dirty ? ' • Modified' : '';
+            statusEl.textContent = `Ln ${line}, Col ${col}   |   ${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`;
+            editorStatusEl.textContent = tab.name + modified;
         },
 
         highlightActiveItems() {
@@ -1055,6 +1080,16 @@ const App = (() => {
 
             textarea.addEventListener('scroll', () => gutter.scrollTop = textarea.scrollTop);
 
+            const updateCursorStatus = () => {
+                if (currentTabId) {
+                    const tab = tabs.find(t => t.id === currentTabId);
+                    if (tab) this.updateEditorStatus(tab);
+                }
+            };
+            textarea.addEventListener('click', updateCursorStatus);
+            textarea.addEventListener('keyup', updateCursorStatus);
+            textarea.addEventListener('select', updateCursorStatus);
+
             textarea.addEventListener('keydown', e => {if (e.key === 'Tab') {
                 e.preventDefault();
                 const start = textarea.selectionStart;
@@ -1076,15 +1111,7 @@ const App = (() => {
 
             document.getElementById('width-slider').addEventListener('input', e => {
                 const v = parseInt(e.target.value, 10);
-                if (v > 90) {
-                    textarea.style.maxWidth = 'none';
-                    textarea.style.whiteSpace = 'pre';
-                    textarea.style.wordWrap = 'normal';
-                } else {
-                    textarea.style.maxWidth = v + '%';
-                    textarea.style.whiteSpace = 'pre-wrap';
-                    textarea.style.wordWrap = 'break-word';
-                }
+                textarea.style.maxWidth = v > 90 ? 'none' : v + '%';
             });
 
             window.addEventListener('beforeunload', e => {
@@ -1130,13 +1157,15 @@ const App = (() => {
                         const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
                         const file = await fileHandle.getFile();
                         const content = await file.text();
-                        await UI.createNewTab(fileHandle, st.name, content, st.path);
+                        await UI.createNewTab(fileHandle, st.name, content, st.path, true);
                         if (st.active) activeTabPath = st.path;
                     } catch {}
                 }
                 if (activeTabPath) {
                     const activeTab = tabs.find(t => t.path === activeTabPath);
                     if (activeTab) UI.switchToTab(activeTab.id);
+                } else if (tabs.length > 0) {
+                    UI.switchToTab(tabs[tabs.length - 1].id);
                 }
                 if (savedTabs.length > 0) UI.showToast(`Restored ${savedTabs.length} tab${savedTabs.length > 1 ? 's' : ''}`);
             } else if (saved.status === 'needs-auth') {
