@@ -1055,16 +1055,16 @@ const App = (() => {
 
             textarea.addEventListener('scroll', () => gutter.scrollTop = textarea.scrollTop);
 
-            textarea.addEventListener('keydown', e => {
-                if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const start = textarea.selectionStart;
-                    const end = textarea.selectionEnd;
-                    textarea.value = textarea.value.substring(0, start) + '    ' + textarea.value.substring(end);
-                    textarea.selectionStart = textarea.selectionEnd = start + 4;
-                    textarea.dispatchEvent(new Event('input'));
-                }
-                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            textarea.addEventListener('keydown', e => {if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const indent = '    '; // or '\t'
+                textarea.value = textarea.value.substring(0, start) + indent + textarea.value.substring(end);
+                textarea.selectionStart = textarea.selectionEnd = start + indent.length;
+                textarea.dispatchEvent(new Event('input'));
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                     e.preventDefault();
                     Actions.saveCurrentFile();
                 }
