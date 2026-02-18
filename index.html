@@ -417,6 +417,7 @@ const App = (() => {
             fileTree = null;
             expandedFolders.clear();
             localStorage.removeItem('expandedFolders');
+            localStorage.removeItem('openTabs');
         },
 
         loadExpandedState() {
@@ -446,6 +447,24 @@ const App = (() => {
             const writable = await handle.createWritable();
             await writable.write(content);
             await writable.close();
+        },
+
+        saveOpenTabs(currentId) {
+            try {
+                const data = tabs.filter(t => t.path).map(t => ({
+                    path: t.path,
+                    name: t.name,
+                    active: t.id === currentId
+                }));
+                localStorage.setItem('openTabs', JSON.stringify(data));
+            } catch {}
+        },
+
+        loadOpenTabs() {
+            try {
+                const saved = localStorage.getItem('openTabs');
+                return saved ? JSON.parse(saved) : [];
+            } catch { return []; }
         }
     };
 
@@ -453,6 +472,18 @@ const App = (() => {
     // LOGIC
     // ──────────────────────────────────────────────
     const Logic = {
+        findNodeByPath(node, path) {
+            if (!node) return null;
+            if (node.path === path) return node;
+            if (node.children) {
+                for (const child of node.children) {
+                    const found = this.findNodeByPath(child, path);
+                    if (found) return found;
+                }
+            }
+            return null;
+        },
+
         async buildTree(dirHandle, basePath = '', depth = 0) {
             if (depth > 12) return { name: dirHandle.name, kind: 'directory', truncated: true };
             const node = { name: dirHandle.name, kind: 'directory', handle: dirHandle, path: basePath, children: [] };
@@ -518,13 +549,15 @@ const App = (() => {
             if (!name?.trim()) return;
             const trimmed = name.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return UI.showToast('Invalid filename');
-            const dirHandle = currentDirHandle;
+            const targetNode = contextMenuTarget && contextMenuTarget.kind === 'directory' ? contextMenuTarget : null;
+            const dirHandle = targetNode ? targetNode.handle : currentDirHandle;
             await FSL.ensureWritePermission(dirHandle);
             const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
             const w = await fileHandle.createWritable();
             await w.write('');
             await w.close();
-            await UI.createNewTab(fileHandle, trimmed, '');
+            const filePath = targetNode ? `${targetNode.path}/${trimmed}` : trimmed;
+            await UI.createNewTab(fileHandle, trimmed, '', filePath);
             await Logic.buildAndRenderTree();
         },
 
@@ -534,7 +567,8 @@ const App = (() => {
             if (!name?.trim()) return;
             const trimmed = name.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return UI.showToast('Invalid folder name');
-            const dirHandle = currentDirHandle;
+            const targetNode = contextMenuTarget && contextMenuTarget.kind === 'directory' ? contextMenuTarget : null;
+            const dirHandle = targetNode ? targetNode.handle : currentDirHandle;
             await FSL.ensureWritePermission(dirHandle);
             await dirHandle.getDirectoryHandle(trimmed, { create: true });
             await Logic.buildAndRenderTree();
@@ -649,8 +683,13 @@ const App = (() => {
                 } else {
                     // fallback
                     if (isFolder) {
+                        if (contextMenuTarget.children && contextMenuTarget.children.length > 0) {
+                            UI.showToast('Cannot rename non-empty folder (move not supported)');
+                            UI.closeContextMenu();
+                            return;
+                        }
                         await parent.getDirectoryHandle(trimmed, { create: true });
-                        await parent.removeEntry(oldName, { recursive: true });
+                        await parent.removeEntry(oldName);
                     } else {
                         const oldH = await parent.getFileHandle(oldName);
                         const file = await oldH.getFile();
@@ -843,6 +882,29 @@ const App = (() => {
             tabEl.innerHTML = `<span class="tab-name">${name}</span><span class="dirty-indicator" style="display:none;"> *</span><span class="close">×</span>`;
             tabEl.onclick = () => UI.switchToTab(id);
             tabEl.querySelector('.close').onclick = e => { e.stopPropagation(); UI.closeTab(id); };
+
+            tabEl.addEventListener('dragstart', e => {
+                e.dataTransfer.setData('text/plain', String(id));
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            tabEl.addEventListener('dragover', e => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                tabEl.classList.add('drag-over');
+            });
+            tabEl.addEventListener('dragleave', () => tabEl.classList.remove('drag-over'));
+            tabEl.addEventListener('drop', e => {
+                e.preventDefault();
+                tabEl.classList.remove('drag-over');
+                const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                if (draggedId === id) return;
+                const fromIdx = tabs.findIndex(t => t.id === draggedId);
+                const toIdx = tabs.findIndex(t => t.id === id);
+                if (fromIdx === -1 || toIdx === -1) return;
+                const [moved] = tabs.splice(fromIdx, 1);
+                tabs.splice(toIdx, 0, moved);
+                tabsContainer.insertBefore(moved.element, toIdx < fromIdx ? tabEl : tabEl.nextSibling);
+            });
             tabsContainer.appendChild(tabEl);
             tab.element = tabEl;
 
@@ -873,6 +935,7 @@ const App = (() => {
                 activeFilePath = tab.path;
                 this.highlightActiveItems();
             }
+            FSL.saveOpenTabs(id);
         },
 
         closeTab(id) {
@@ -887,6 +950,7 @@ const App = (() => {
                 textarea.value = '';
                 gutter.innerHTML = '';
                 editorStatusEl.textContent = 'No file open';
+                FSL.saveOpenTabs(null);
                 return;
             }
             this.switchToTab(tabs[Math.min(idx, tabs.length - 1)].id);
@@ -939,10 +1003,10 @@ const App = (() => {
                 const folder = e.target.closest('.folder-header');
                 const file = e.target.closest('.file-item');
                 if (folder) {
-                    const node = fileTree.children.find(c => c.path === folder.dataset.path) || null;
+                    const node = Logic.findNodeByPath(fileTree, folder.dataset.path);
                     if (node) UI.showContextMenu(e, node, true);
                 } else if (file) {
-                    const node = fileTree.children.find(c => c.path === file.dataset.path) || null;
+                    const node = Logic.findNodeByPath(fileTree, file.dataset.path);
                     if (node) UI.showContextMenu(e, node, false);
                 } else {
                     UI.showContextMenu(e, null, false);
@@ -1025,6 +1089,28 @@ const App = (() => {
             if (saved.status === 'granted') {
                 currentDirHandle = saved.handle;
                 await Logic.buildAndRenderTree();
+
+                // Restore persisted tabs
+                const savedTabs = FSL.loadOpenTabs();
+                let activeTabPath = null;
+                for (const st of savedTabs) {
+                    try {
+                        const parts = st.path.split('/');
+                        let handle = currentDirHandle;
+                        for (let i = 0; i < parts.length - 1; i++) {
+                            handle = await handle.getDirectoryHandle(parts[i]);
+                        }
+                        const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
+                        const file = await fileHandle.getFile();
+                        const content = await file.text();
+                        await UI.createNewTab(fileHandle, st.name, content, st.path);
+                        if (st.active) activeTabPath = st.path;
+                    } catch {}
+                }
+                if (activeTabPath) {
+                    const activeTab = tabs.find(t => t.path === activeTabPath);
+                    if (activeTab) UI.switchToTab(activeTab.id);
+                }
             } else if (saved.status === 'needs-auth') {
                 UI.showReauthorizeButton(saved.handle);
             }
