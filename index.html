@@ -288,6 +288,17 @@
         }
         .reauth-bar .btn { background: #44403c; color: #fafaf9; }
         .reauth-bar .btn:hover { background: #57534e; }
+        
+/* Mobile */
+.file-item,
+.folder-header {
+    touch-action: manipulation;   /* This is the magic line */
+}
+
+.tree-container {
+    -webkit-overflow-scrolling: touch;   /* iOS momentum scroll */
+}
+        
     </style>
 </head>
 <body>
@@ -818,9 +829,14 @@ const App = (() => {
                 fileDiv.style.paddingLeft = (level * 14 + 26) + 'px';
                 fileDiv.textContent = node.name;
                 fileDiv.tabIndex = 0;
-                fileDiv.onclick = () => Actions.openFileFromNode(node);
+                
+                fileDiv.addEventListener('click', e => {
+                    e.stopImmediatePropagation();   // prevent any parent handlers
+                    Actions.openFileFromNode(node);
+                });
+                
                 fileDiv.oncontextmenu = e => UI.showContextMenu(e, node, false);
-                fileDiv.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); fileDiv.click(); } };
+                fileDiv.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); fileDiv.click(); } };
                 parentEl.appendChild(fileDiv);
             }
         },
