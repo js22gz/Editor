@@ -558,7 +558,9 @@ const App = (() => {
             await w.close();
             const filePath = targetNode ? `${targetNode.path}/${trimmed}` : trimmed;
             await UI.createNewTab(fileHandle, trimmed, '', filePath);
+            if (targetNode) { expandedFolders.add(targetNode.path); FSL.saveExpandedState(); }
             await Logic.buildAndRenderTree();
+            UI.closeContextMenu();
         },
 
         async newFolder() {
@@ -571,8 +573,10 @@ const App = (() => {
             const dirHandle = targetNode ? targetNode.handle : currentDirHandle;
             await FSL.ensureWritePermission(dirHandle);
             await dirHandle.getDirectoryHandle(trimmed, { create: true });
+            if (targetNode) { expandedFolders.add(targetNode.path); FSL.saveExpandedState(); }
             await Logic.buildAndRenderTree();
             UI.showToast('Folder created');
+            UI.closeContextMenu();
         },
 
         async saveTab(tab) {
@@ -902,8 +906,17 @@ const App = (() => {
                 const toIdx = tabs.findIndex(t => t.id === id);
                 if (fromIdx === -1 || toIdx === -1) return;
                 const [moved] = tabs.splice(fromIdx, 1);
-                tabs.splice(toIdx, 0, moved);
-                tabsContainer.insertBefore(moved.element, toIdx < fromIdx ? tabEl : tabEl.nextSibling);
+                const rect = tabEl.getBoundingClientRect();
+                const insertAfter = e.clientX > rect.left + rect.width / 2;
+                const targetIdx = tabs.indexOf(tab);
+                tabs.splice(insertAfter ? targetIdx + 1 : targetIdx, 0, moved);
+                if (insertAfter && tabEl.nextSibling) {
+                    tabsContainer.insertBefore(moved.element, tabEl.nextSibling);
+                } else if (insertAfter) {
+                    tabsContainer.appendChild(moved.element);
+                } else {
+                    tabsContainer.insertBefore(moved.element, tabEl);
+                }
             });
             tabsContainer.appendChild(tabEl);
             tab.element = tabEl;
@@ -951,6 +964,7 @@ const App = (() => {
                 gutter.innerHTML = '';
                 editorStatusEl.textContent = 'No file open';
                 FSL.saveOpenTabs(null);
+                localStorage.removeItem('openTabs');
                 return;
             }
             this.switchToTab(tabs[Math.min(idx, tabs.length - 1)].id);
@@ -972,6 +986,13 @@ const App = (() => {
             if (activeFilePath) {
                 const el = treeContainer.querySelector(`.file-item[data-path="${activeFilePath.replace(/"/g, '\\"')}"]`);
                 if (el) el.classList.add('active');
+                // Highlight all parent folders
+                const parts = activeFilePath.split('/');
+                for (let i = 1; i < parts.length; i++) {
+                    const parentPath = parts.slice(0, i).join('/');
+                    const folderEl = treeContainer.querySelector(`.folder-header[data-path="${parentPath.replace(/"/g, '\\"')}"]`);
+                    if (folderEl) folderEl.classList.add('active');
+                }
             }
             if (activeFolderPath) {
                 const el = treeContainer.querySelector(`.folder-header[data-path="${activeFolderPath.replace(/"/g, '\\"')}"]`);
@@ -993,6 +1014,8 @@ const App = (() => {
         bindEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
             sidebarHeader.addEventListener('click', Actions.openFolder);
+
+            window.addEventListener('resize', () => { isMobile = window.innerWidth <= 768; });
 
             document.addEventListener('click', e => {
                 if (e.target.id === 'clear-folder') Actions.clearSavedFolder();
@@ -1111,6 +1134,7 @@ const App = (() => {
                     const activeTab = tabs.find(t => t.path === activeTabPath);
                     if (activeTab) UI.switchToTab(activeTab.id);
                 }
+                if (savedTabs.length > 0) UI.showToast(`Restored ${savedTabs.length} tab${savedTabs.length > 1 ? 's' : ''}`);
             } else if (saved.status === 'needs-auth') {
                 UI.showReauthorizeButton(saved.handle);
             }
