@@ -1262,7 +1262,12 @@ const UI = (() => {
     function switchToTab(id) {
         if (currentTabId !== null) {
             const cur = tabs.find(t => t.id === currentTabId);
-            if (cur) cur.content = textarea.value;
+            if (cur) {
+                cur.content = textarea.value;
+                cur.scrollTop = textarea.scrollTop;
+                cur.selectionStart = textarea.selectionStart;
+                cur.selectionEnd = textarea.selectionEnd;
+            }
         }
         currentTabId = id;
         const tab = tabs.find(t => t.id === id);
@@ -1270,7 +1275,15 @@ const UI = (() => {
         const el = document.querySelector('.tab[data-id="' + id + '"]');
         if (el) el.classList.add('active');
         textarea.value = tab.content;
+        if (tab.selectionStart !== undefined && tab.selectionEnd !== undefined) {
+            textarea.selectionStart = tab.selectionStart;
+            textarea.selectionEnd = tab.selectionEnd;
+        }
         updateLineNumbers();
+        if (tab.scrollTop !== undefined) {
+            textarea.scrollTop = tab.scrollTop;
+            gutter.scrollTop = tab.scrollTop;
+        }
         updateEditorStatus(tab);
         if (tab.path) Logic.setActiveFromPath(tab.path);
         else { activeFilePath = null; activeFolderPath = null; highlightActiveItems(); }
