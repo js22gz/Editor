@@ -998,11 +998,12 @@ const App = (() => {
 
         updateEditorStatus(tab) {
             const pos = textarea.selectionStart || 0;
-            const text = textarea.value.substring(0, pos);
-            const line = text.split('\n').length;
-            const col = pos - text.lastIndexOf('\n');
+            const before = textarea.value.substring(0, textarea.selectionStart || 0);
+            const lines = before.split('\n');
+            const line = lines.length;
+            const col = lines[lines.length - 1].length + 1;   // 1-based column
             const modified = tab.dirty ? ' • Modified' : '';
-            statusEl.textContent = `Ln ${line}, Col ${col}   |   ${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`;
+            statusEl.textContent = `Ln ${line}, Col ${col} | ${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`;
             editorStatusEl.textContent = tab.name + modified;
         },
 
