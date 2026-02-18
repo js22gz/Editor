@@ -908,8 +908,8 @@ const App = (() => {
                 const [moved] = tabs.splice(fromIdx, 1);
                 const rect = tabEl.getBoundingClientRect();
                 const insertAfter = e.clientX > rect.left + rect.width / 2;
-                const newIdx = tabs.indexOf(tab);
-                tabs.splice(insertAfter ? newIdx + 1 : newIdx, 0, moved);
+                const targetIdx = tabs.indexOf(tab);
+                tabs.splice(insertAfter ? targetIdx + 1 : targetIdx, 0, moved);
                 if (insertAfter && tabEl.nextSibling) {
                     tabsContainer.insertBefore(moved.element, tabEl.nextSibling);
                 } else if (insertAfter) {
@@ -1134,7 +1134,7 @@ const App = (() => {
                     const activeTab = tabs.find(t => t.path === activeTabPath);
                     if (activeTab) UI.switchToTab(activeTab.id);
                 }
-                if (savedTabs.length > 0) UI.showToast(`Restored ${savedTabs.length} file${savedTabs.length > 1 ? 's' : ''}`);
+                if (savedTabs.length > 0) UI.showToast(`Restored ${savedTabs.length} tab${savedTabs.length > 1 ? 's' : ''}`);
             } else if (saved.status === 'needs-auth') {
                 UI.showReauthorizeButton(saved.handle);
             }
