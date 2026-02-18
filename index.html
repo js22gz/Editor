@@ -769,7 +769,6 @@ const App = (() => {
                 const oldPath = contextMenuTarget.path;
                 const newPath = parts.length ? parts.join('/') + '/' + trimmed : trimmed;
                 const parentPath = parts.join('/') || '/';
-
                 nodeByPath.delete(oldPath);
                 contextMenuTarget.name = trimmed;
                 contextMenuTarget.path = newPath;
