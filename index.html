@@ -170,6 +170,7 @@
             overflow: hidden;
             border-right: 1px solid #1f1f22;
             flex-shrink: 0;
+            white-space: pre;
         }
     
         #textarea {
@@ -352,6 +353,7 @@ const App = (() => {
     let saveTimer = null;
     let saveInProgress = false;
     let isMobile = window.innerWidth <= 768;
+    let lastLineCount = 1;
     let longPressTriggered = false;
     let activeFilePath = null;
     let activeFolderPath = null;
@@ -1102,7 +1104,8 @@ const App = (() => {
             tab.element.classList.add('active');
 
             textarea.value = tab.content || '';
-            this.updateLineNumbers();          // ← FIXED: proper internal call
+            lastLineCount = 0;                    // force refresh
+            this.updateLineNumbers();
             if (tab.scrollTop !== undefined) {
                 textarea.scrollTop = tab.scrollTop;
                 gutter.scrollTop = tab.scrollTop;
@@ -1134,13 +1137,17 @@ const App = (() => {
             this.switchToTab(tabs[Math.min(idx, tabs.length - 1)].id);
         },
 
-        updateLineNumbers() {
-            const lines = textarea.value.split('\n').length;
-            let html = '';
-            for (let i = 1; i <= lines; i++) html += i + '<br>';
-            gutter.innerHTML = html;
-        },
-
+updateLineNumbers() {
+    const lineCount = (textarea.value.match(/\n/g) || []).length + 1;
+    if (lineCount === lastLineCount) return;
+    lastLineCount = lineCount;
+    let numbers = '';
+    for (let i = 1; i <= lineCount; i++) {
+        numbers += i + '\n';
+    }
+gutter.textContent = numbers;
+},
+        
         updateEditorStatus(tab) {
             const pos = textarea.selectionStart || 0;
             const before = textarea.value.substring(0, textarea.selectionStart || 0);
