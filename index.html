@@ -331,9 +331,8 @@
 'use strict';
 
 // ================================================
-// SUPREME SINGLE-FILE EDITOR – FIXED & POLISHED
-// All previous bugs eliminated. Zero ReferenceErrors.
-// Full state, clean internal calls, proper async checks.
+// SINGLE-FILE EDITOR. Version 1
+    
 // ================================================
 
 const App = (() => {
@@ -353,8 +352,6 @@ const App = (() => {
     let saveInProgress = false;
     let isMobile = window.innerWidth <= 768;
     let longPressTriggered = false;
-
-    // Missing vars that caused the errors
     let activeFilePath = null;
     let activeFolderPath = null;
 
@@ -1243,7 +1240,11 @@ const App = (() => {
             if (isMobile) sidebarEl.classList.add('hidden');
 
             if (tabs.length === 0) {
-                await UI.createNewTab(null, 'welcome.txt', 'EDITOR is ready.\n\nType. Break. Ship.\n\nAll changes auto-saved.\nFolder access is persistent.');
+            await UI.createNewTab(null, 'welcome.txt', 
+            `EDITOR version 1. 
+            ──────────
+                        
+            `);
             }
         }
     };
