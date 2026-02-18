@@ -683,7 +683,7 @@ const App = (() => {
                 } else {
                     // fallback
                     if (isFolder) {
-                        if (contextMenuTarget.children && contextMenuTarget.children.length > 0) {
+                        if (contextMenuTarget.children?.length > 0) {
                             UI.showToast('Cannot rename non-empty folder (move not supported)');
                             UI.closeContextMenu();
                             return;
