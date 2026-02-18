@@ -1141,11 +1141,7 @@ updateLineNumbers() {
     const lineCount = (textarea.value.match(/\n/g) || []).length + 1;
     if (lineCount === lastLineCount) return;
     lastLineCount = lineCount;
-    let numbers = '';
-    for (let i = 1; i <= lineCount; i++) {
-        numbers += i + '\n';
-    }
-gutter.textContent = numbers;
+    gutter.textContent = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
 },
         
         updateEditorStatus(tab) {
