@@ -3,15 +3,18 @@
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-A **single-file** progressive web app file-editor.
+Single-file progressive web app (PWA) file editor
+File and folder browsing via the File System Access API
+Tabbed editing with syntax-aware indentation
+Sidebar file tree with expand/collapse support
+Light and dark theme support
+Mobile-responsive layout
+Service Worker for offline capability
+Installable as a PWA
 
 ## Version
 
 **v1.0.0** — Initial release.
-
-## Deployment
-
-This app is deployed via [GitHub Pages](https://pages.github.com/). Any push to the `main` branch triggers an automatic deployment through the GitHub Actions workflow defined in `.github/workflows/deploy.yml`.
 
 ## License
 
