@@ -833,7 +833,6 @@ const App = (() => {
                     activeFolderPath = node.path;
                     UI.highlightActiveItems();
                 };
-                header.oncontextmenu = e => UI.showContextMenu(e, node, true);
                 header.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); header.click(); } };
                 node.children.forEach(c => this._renderTreeItem(c, childrenDiv, level + 1));
             } else {
@@ -846,7 +845,6 @@ const App = (() => {
                 
                 fileDiv.onclick = () => { if (!longPressTriggered) Actions.openFileFromNode(node); };
                 
-                fileDiv.oncontextmenu = e => UI.showContextMenu(e, node, false);
                 fileDiv.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); fileDiv.click(); } };
                 parentEl.appendChild(fileDiv);
             }
@@ -1094,10 +1092,12 @@ const App = (() => {
                 }
             });
 
-            // Long-press context menu for mobile
+            // Long-press context menu and tap handling for mobile
             let longPressTimer = null;
+            let touchMoved = false;
             treeContainer.addEventListener('touchstart', e => {
                 longPressTriggered = false;
+                touchMoved = false;
                 const touch = e.touches[0];
                 const target = e.target;
                 longPressTimer = setTimeout(() => {
@@ -1118,9 +1118,20 @@ const App = (() => {
             }, { passive: true });
             treeContainer.addEventListener('touchend', e => {
                 clearTimeout(longPressTimer);
-                if (longPressTriggered) e.preventDefault();
+                if (longPressTriggered) {
+                    e.preventDefault();
+                    return;
+                }
+                if (!touchMoved) {
+                    const target = e.target;
+                    const el = target.closest('.folder-header') || target.closest('.file-item');
+                    if (el) {
+                        e.preventDefault();
+                        el.click();
+                    }
+                }
             });
-            treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); }, { passive: true });
+            treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); touchMoved = true; }, { passive: true });
 
             textarea.addEventListener('input', () => {
                 this.updateLineNumbers();
