@@ -809,7 +809,7 @@ const App = (() => {
                     UI.highlightActiveItems();
                 };
                 header.oncontextmenu = e => UI.showContextMenu(e, node, true);
-                header.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); header.click(); } };
+                header.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); header.click(); } };
                 node.children.forEach(c => this._renderTreeItem(c, childrenDiv, level + 1));
             } else {
                 const fileDiv = document.createElement('div');
@@ -820,7 +820,7 @@ const App = (() => {
                 fileDiv.tabIndex = 0;
                 fileDiv.onclick = () => Actions.openFileFromNode(node);
                 fileDiv.oncontextmenu = e => UI.showContextMenu(e, node, false);
-                fileDiv.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileDiv.click(); } };
+                fileDiv.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); fileDiv.click(); } };
                 parentEl.appendChild(fileDiv);
             }
         },
@@ -1165,7 +1165,7 @@ const App = (() => {
                     const activeTab = tabs.find(t => t.path === activeTabPath);
                     if (activeTab) UI.switchToTab(activeTab.id);
                 } else if (tabs.length > 0) {
-                    UI.switchToTab(tabs[tabs.length - 1].id);
+                    UI.switchToTab(tabs[0].id);
                 }
                 if (savedTabs.length > 0) UI.showToast(`Restored ${savedTabs.length} tab${savedTabs.length > 1 ? 's' : ''}`);
             } else if (saved.status === 'needs-auth') {
