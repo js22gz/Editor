@@ -734,8 +734,8 @@ const Actions = (() => {
             const filePath = activeFolderPath ? activeFolderPath + '/' + trimmed : trimmed;
             UI.createNewTab(fileHandle, trimmed, '', filePath);
             await Logic.buildAndRenderTree();
-            statusEl.textContent = 'Created ' + trimmed;
-            setTimeout(() => { statusEl.textContent = 'Ready'; }, 2000);
+            if (statusEl) statusEl.textContent = 'Created ' + trimmed;
+            setTimeout(() => { if (statusEl) statusEl.textContent = 'Ready'; }, 2000);
         } catch (err) { if (err.name !== 'AbortError') UI.showToast('Failed to create file: ' + err.message); }
     }
 
@@ -755,8 +755,8 @@ const Actions = (() => {
             if (exists) { UI.showToast('Folder already exists'); return; }
             await dirHandle.getDirectoryHandle(trimmed, { create: true });
             await Logic.buildAndRenderTree();
-            statusEl.textContent = 'Created folder ' + trimmed;
-            setTimeout(() => { statusEl.textContent = 'Ready'; }, 2000);
+            if (statusEl) statusEl.textContent = 'Created folder ' + trimmed;
+            setTimeout(() => { if (statusEl) statusEl.textContent = 'Ready'; }, 2000);
         } catch (err) { if (err.name !== 'AbortError') UI.showToast('Failed to create folder: ' + err.message); }
     }
 
@@ -774,8 +774,8 @@ const Actions = (() => {
                 if (ind) ind.style.display = 'none';
             }
             UI.updateEditorStatus(tab);
-            statusEl.textContent = 'Saved';
-            setTimeout(() => { statusEl.textContent = 'Ready'; }, 1200);
+            if (statusEl) statusEl.textContent = 'Saved';
+            setTimeout(() => { if (statusEl) statusEl.textContent = 'Ready'; }, 1200);
         } catch (err) {
             if (err.message.includes('permission')) UI.showToast('Permission issue. Open the folder again from the menu.');
             else if (err.name !== 'AbortError') UI.showToast('Save failed: ' + err.message);
@@ -1284,7 +1284,7 @@ const UI = (() => {
         tabs.splice(idx, 1);
         const el = document.querySelector('.tab[data-id="' + id + '"]');
         if (el) el.remove();
-        if (tabs.length === 0) { currentTabId = null; textarea.value = ''; gutter.innerHTML = ''; editorStatusEl.textContent = 'No file open'; return; }
+        if (tabs.length === 0) { currentTabId = null; textarea.value = ''; gutter.innerHTML = ''; if (editorStatusEl) editorStatusEl.textContent = 'No file open'; return; }
         switchToTab(tabs[Math.min(idx, tabs.length - 1)].id);
     }
 
@@ -1298,7 +1298,7 @@ const UI = (() => {
     }
 
     function updateEditorStatus(tab) {
-        editorStatusEl.textContent = tab.name + (tab.dirty ? ' • Modified' : '');
+        if (editorStatusEl) editorStatusEl.textContent = tab.name + (tab.dirty ? ' • Modified' : '');
     }
 
     // Re-authorize button (Permission Guard)
