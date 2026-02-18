@@ -539,15 +539,27 @@ const App = (() => {
             } catch (e) { if (e.name !== 'AbortError') UI.showToast('Open folder cancelled or failed'); }
         },
 
+        async openFile() {
+            try {
+                const [fileHandle] = await window.showOpenFilePicker();
+                const file = await fileHandle.getFile();
+                if (!file.type.startsWith('text/') && !TEXT_FILE_EXTENSIONS.test(file.name)) {
+                    if (!confirm('Binary file detected. Open anyway?')) return;
+                }
+                const content = await file.text();
+                await UI.createNewTab(fileHandle, file.name, content);
+            } catch (e) { if (e.name !== 'AbortError') UI.showToast('Open file cancelled or failed'); }
+        },
+
         async openFileFromNode(node) {
             try {
-                await FSL.ensureWritePermission(currentDirHandle);
                 const file = await node.handle.getFile();
                 if (!file.type.startsWith('text/') && !TEXT_FILE_EXTENSIONS.test(file.name)) {
                     if (!confirm('Binary file detected. Open anyway?')) return;
                 }
                 const content = await file.text();
                 await UI.createNewTab(node.handle, node.name, content, node.path);
+                if (isMobile) { sidebarEl.classList.add('hidden'); document.getElementById('sidebar-toggle').textContent = '‹'; }
             } catch (e) {
                 UI.showToast(e.message.includes('permission') ? 'Re-open folder to grant write access' : 'Failed to open file');
             }
@@ -862,6 +874,7 @@ const App = (() => {
                 addItem('New File', () => Actions.newFile());
                 addItem('New Folder', () => Actions.newFolder());
                 addSeparator();
+                addItem('Open File', () => Actions.openFile());
                 addItem('Open Folder', () => Actions.openFolder());
             } else if (isFolder) {
                 addItem('New File', () => Actions.newFile());
@@ -1078,6 +1091,35 @@ const App = (() => {
                     UI.showContextMenu(e, null, false);
                 }
             });
+
+            // Long-press context menu for mobile
+            let longPressTimer = null;
+            let longPressTriggered = false;
+            treeContainer.addEventListener('touchstart', e => {
+                longPressTriggered = false;
+                const touch = e.touches[0];
+                const target = e.target;
+                longPressTimer = setTimeout(() => {
+                    longPressTriggered = true;
+                    const folder = target.closest('.folder-header');
+                    const file = target.closest('.file-item');
+                    const fakeEvent = { preventDefault() {}, clientX: touch.clientX, clientY: touch.clientY };
+                    if (folder) {
+                        const node = Logic.findNodeByPath(fileTree, folder.dataset.path);
+                        if (node) UI.showContextMenu(fakeEvent, node, true);
+                    } else if (file) {
+                        const node = Logic.findNodeByPath(fileTree, file.dataset.path);
+                        if (node) UI.showContextMenu(fakeEvent, node, false);
+                    } else {
+                        UI.showContextMenu(fakeEvent, null, false);
+                    }
+                }, 600);
+            }, { passive: true });
+            treeContainer.addEventListener('touchend', e => {
+                clearTimeout(longPressTimer);
+                if (longPressTriggered) { e.preventDefault(); longPressTriggered = false; }
+            });
+            treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); }, { passive: true });
 
             textarea.addEventListener('input', () => {
                 this.updateLineNumbers();
