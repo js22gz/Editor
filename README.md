@@ -1,7 +1,5 @@
 # Editor 
-##Version 1
-
-
+## Version 1
 ## Single-file progressive web app (PWA) file editor
 * File and folder browsing via the File System Access API
 * Sidebar file tree with expand/collapse support
