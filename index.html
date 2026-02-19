@@ -487,8 +487,8 @@ const App = (() => {
 
         async resolvePath(baseHandle, pathStr = '') {
             if (!baseHandle) throw new Error('No base handle');
-            if (!pathStr || pathStr === '' || pathStr === '/') {
-                return { handle: baseHandle, parent: null, name: '', path: '/' };
+            if (!pathStr || pathStr === '/') {
+                return { handle: baseHandle, parent: baseHandle, name: baseHandle.name, path: '/' };
             }
             const parts = pathStr.split('/').filter(Boolean);
             let current = baseHandle;
@@ -665,7 +665,6 @@ const App = (() => {
                 if (!currentDirHandle) return;
                 await this.build(currentDirHandle);
                 this.render();
-                this.highlightActive();
             },
             highlightActive() {
                 treeContainer.querySelectorAll('.file-item.active,.folder-header.active,.folder-header.active-dir,.folder-header.active-ancestor').forEach(el => el.classList.remove('active','active-dir','active-ancestor'));
@@ -1350,12 +1349,14 @@ const App = (() => {
             FS.loadExpandedState();
 
             const saved = await FS.loadSavedFolder();
+            let hadSavedTabs = false;
             if (saved.status === 'granted') {
                 currentDirHandle = saved.handle;
                 await TreeManager.build(currentDirHandle);
                 TreeManager.render();
                 TreeManager.updateHeader();
                 const savedTabs = FS.loadOpenTabs();
+                hadSavedTabs = savedTabs.length > 0;
                 let activeTabPath = null;
                 for (const st of savedTabs) {
                     try {
@@ -1383,8 +1384,8 @@ const App = (() => {
             }
 
             if (isMobile) sidebarEl.classList.add('hidden');
-            if (tabs.length === 0) {
-                await UI.createNewTab(null, 'welcome.txt', `EDITOR v1.1\nRefactored. Clean. Fast.\n\n`);
+            if (!hadSavedTabs && tabs.length === 0) {
+                await UI.createNewTab(null, 'welcome.txt', `EDITOR\nA minimal, fast text editor.\n\n`);
             }
         }
     };
