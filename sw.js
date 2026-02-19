@@ -1,66 +1,29 @@
-const CACHE_NAME = 'Editor-v2';
-
+const CACHE_NAME = 'Editor-v1';
 const urlsToCache = [
   './',
-  'manifest.json'
+  'index.html',     // explicit
+  'manifest.json',
+  // logos if you keep them
 ];
 
-// Install - cache static assets
-self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
-      .then(() => self.skipWaiting()) // Activate immediately
-  );
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(urlsToCache)).then(() => self.skipWaiting()));
 });
 
-// Activate - clean up old caches
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames
-          .filter(name => name !== CACHE_NAME)
-          .map(name => caches.delete(name))
-      );
-    }).then(() => self.clients.claim())
-  );
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(names => Promise.all(names.filter(n => n !== CACHE_NAME).map(caches.delete))).then(() => self.clients.claim()));
 });
 
-// Fetch - stale-while-revalidate strategy
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request).then(cachedResponse => {
-      // Return cached version immediately
-      if (cachedResponse) {
-        // But also fetch fresh version in background
-        const fetchPromise = fetch(event.request)
-          .then(freshResponse => {
-            // Update cache with fresh response
-            if (freshResponse && freshResponse.ok) {
-              caches.open(CACHE_NAME).then(cache => {
-                cache.put(event.request, freshResponse.clone());
-              });
-            }
-            return freshResponse;
-          })
-          .catch(() => cachedResponse); // Fallback to cached on error
-        
-        return cachedResponse;
-      }
-      
-      // No cache - fetch from network
-      return fetch(event.request)
-        .then(response => {
-          // Cache successful responses
-          if (response && response.ok && event.request.method === 'GET') {
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then(cache => {
-              cache.put(event.request, responseToCache);
-            });
-          }
-          return response;
-        });
-    })
+self.addEventListener('fetch', e => {
+  if (e.request.mode === 'navigate') {
+    // HTML network-first, fallback to cache (true offline)
+    e.respondWith(fetch(e.request).catch(() => caches.match('index.html')));
+    return;
+  }
+  e.respondWith(
+    caches.match(e.request).then(cached => cached || fetch(e.request).then(fresh => {
+      if (fresh.ok) caches.open(CACHE_NAME).then(c => c.put(e.request, fresh.clone()));
+      return fresh;
+    }))
   );
 });
