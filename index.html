@@ -1015,13 +1015,11 @@ const App = (() => {
                 addItem('New Folder', () => Actions.newFolder());
                 addSeparator();
                 addItem('Rename', () => Actions.renameItem());
-                addItem('Move to…', () => Actions.showMoveDialog());
                 addSeparator();
                 addItem('Delete Folder', () => Actions.deleteFolder(), 'danger');
             } else {
                 addItem('Open', () => Actions.openFileFromNode(contextMenuTarget));
                 addItem('Rename', () => Actions.renameItem());
-                addItem('Move to…', () => Actions.showMoveDialog());
                 addSeparator();
                 addItem('Delete File', () => Actions.deleteFile(), 'danger');
             }
@@ -1365,7 +1363,7 @@ const App = (() => {
                         const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
                         const file = await fileHandle.getFile();
                         const content = await file.text();
-                        await UI.createNewTab(fileHandle, st.name, content, st.path, true);
+                        await UI.createNewTab(fileHandle, st.name, content, st.path);
                         if (st.active) activeTabPath = st.path;
                     } catch {}
                 }
