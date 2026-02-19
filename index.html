@@ -61,14 +61,25 @@
         }
     
         .sidebar-header {
-            padding: 12px 16px;
+            padding: 0;
             font-size: 0.7rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: #c1c1cb;
             border-bottom: 1px solid #27272a;
-            cursor: pointer;
         }
+        .sidebar-header-row {
+            padding: 8px 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .sidebar-header-row:first-child {
+            border-bottom: 1px solid #1f1f22;
+        }
+        .sidebar-header-row:hover { color: #e4e4e7; }
+        .sidebar-header-label { color: #52525b; margin-right: 6px; }
         .directory-clear { cursor: pointer; margin-left: 8px; }
     
         .tree-container {
@@ -85,22 +96,30 @@
             gap: 6px;
             cursor: pointer;
             user-select: none;
+            color: #71717a;
+            background: #18181b;
+            border: 1px solid #27272a;
+            border-left: none;
+            border-right: none;
+            margin-bottom: -1px;
         }
-        .folder-header:hover { background: #27272a; }
-        .folder-header.active { background: #27272a; color: #bae6fd; font-weight: 500; }
-    
-        .toggle { display: inline-block; width: 14px; font-size: 11px; color: #71717a; }
+        .folder-header:hover { background: #1f1f23; color: #a1a1aa; }
+        .folder-header.active { background: #1c1c20; color: #a1a1aa; font-weight: 500; }
+        .folder-header.active-dir { border-left: 2px solid #52525b; }
+
+        .toggle { display: inline-block; width: 14px; font-size: 11px; color: #52525b; }
         .tree-children { padding-left: 20px; }
-    
+
         .file-item {
             padding: 4px 12px 4px 32px;
             cursor: pointer;
+            color: #a1a1aa;
         }
         .file-item:hover,
-        .file-item:focus { background: #27272a; }
+        .file-item:focus { background: #1a1a1e; color: #d4d4d8; }
         .file-item.active {
-            background: #27272a !important;
-            color: #bae6fd;
+            background: none;
+            color: #f4f4f5;
             font-weight: 500;
         }
     
@@ -310,7 +329,15 @@
     </div>
     <div class="main">
         <div id="sidebar" class="sidebar">
-            <div id="sidebar-header" class="sidebar-header" title="Click to open folder">Active directory:</div>
+            <div id="sidebar-header" class="sidebar-header">
+                <div id="sidebar-active-row" class="sidebar-header-row" title="Click to set active directory">
+                    <span><span class="sidebar-header-label">ACTIVE:</span> <span id="active-dir-name">/</span></span>
+                </div>
+                <div id="sidebar-root-row" class="sidebar-header-row" title="Click to open folder">
+                    <span><span class="sidebar-header-label">ROOT:</span> <span id="root-dir-name">Click to open folder</span></span>
+                    <span id="sidebar-header-actions"></span>
+                </div>
+            </div>
             <div id="tree-container" class="tree-container"></div>
         </div>
         <div class="editor-area">
@@ -354,10 +381,12 @@ const App = (() => {
     let lastLineCount = 1;
     let longPressTriggered = false;
     let activeFilePath = null;
+    let activeDirectoryPath = null;
 
     // DOM references
     let textarea, gutter, tabsContainer, treeContainer,
-        sidebarHeader, sidebarEl, statusEl, editorStatusEl, reauthContainer, reauthBtn;
+        sidebarHeader, sidebarEl, statusEl, editorStatusEl, reauthContainer, reauthBtn,
+        activeDirNameEl, rootDirNameEl, sidebarHeaderActionsEl;
 
     const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
     const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/;
@@ -422,6 +451,7 @@ const App = (() => {
                 tx.objectStore('handles').delete('main');
             }
             currentDirHandle = null;
+            activeDirectoryPath = null;
             expandedFolders.clear();
             localStorage.removeItem('expandedFolders');
             localStorage.removeItem('openTabs');
@@ -515,7 +545,9 @@ const App = (() => {
                     if (wasOpen) expandedFolders.delete(node.path);
                     else expandedFolders.add(node.path);
                     FSL.saveExpandedState();
+                    activeDirectoryPath = node.path;
                     TreeManager.highlightActive();
+                    TreeManager.updateHeader();
                 };
                 header.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); header.click(); } };
 
@@ -558,11 +590,20 @@ const App = (() => {
 
             updateHeader() {
                 if (!fileTree || !currentDirHandle) {
-                    sidebarHeader.textContent = 'Click to open folder';
+                    activeDirNameEl.textContent = '/';
+                    rootDirNameEl.textContent = 'Click to open folder';
+                    sidebarHeaderActionsEl.innerHTML = '';
                     return;
                 }
                 const safeName = currentDirHandle.name.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m] || m));
-                sidebarHeader.innerHTML = `Active directory: ${safeName} <span class="directory-clear" id="refresh-folder" title="Refresh tree">⟳</span> <span class="directory-clear" id="clear-folder">⌫</span>`;
+                rootDirNameEl.textContent = safeName;
+                if (activeDirectoryPath != null && activeDirectoryPath !== '') {
+                    const parts = activeDirectoryPath.split('/');
+                    activeDirNameEl.textContent = parts[parts.length - 1] || safeName;
+                } else {
+                    activeDirNameEl.textContent = safeName;
+                }
+                sidebarHeaderActionsEl.innerHTML = `<span class="directory-clear" id="refresh-folder" title="Refresh tree">&#x27F3;</span> <span class="directory-clear" id="clear-folder">&#x232B;</span>`;
             },
 
             async mutateAndRebuild() {
@@ -573,7 +614,9 @@ const App = (() => {
             },
 
             highlightActive() {
-                document.querySelectorAll('.file-item.active, .folder-header.active').forEach(el => el.classList.remove('active'));
+                treeContainer.querySelectorAll('.file-item.active').forEach(el => el.classList.remove('active'));
+                treeContainer.querySelectorAll('.folder-header.active').forEach(el => el.classList.remove('active'));
+                treeContainer.querySelectorAll('.folder-header.active-dir').forEach(el => el.classList.remove('active-dir'));
                 if (activeFilePath) {
                     const el = treeContainer.querySelector(`.file-item[data-path="${activeFilePath.replace(/"/g, '\\"')}"]`);
                     if (el) el.classList.add('active');
@@ -583,6 +626,10 @@ const App = (() => {
                         const folderEl = treeContainer.querySelector(`.folder-header[data-path="${p.replace(/"/g, '\\"')}"]`);
                         if (folderEl) folderEl.classList.add('active');
                     }
+                }
+                if (activeDirectoryPath) {
+                    const dirEl = treeContainer.querySelector(`.folder-header[data-path="${activeDirectoryPath.replace(/"/g, '\\"')}"]`);
+                    if (dirEl) dirEl.classList.add('active-dir');
                 }
             },
 
@@ -650,6 +697,7 @@ const App = (() => {
                 currentDirHandle = await window.showDirectoryPicker();
                 await FSL.saveFolderHandle(currentDirHandle);
                 expandedFolders.clear();
+                activeDirectoryPath = null;
                 await TreeManager.build(currentDirHandle);
                 TreeManager.render();
                 TreeManager.updateHeader();
@@ -689,7 +737,11 @@ const App = (() => {
             if (!name?.trim()) return;
             const trimmed = name.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return UI.showToast('Invalid filename');
-            const targetNode = contextMenuTarget && contextMenuTarget.kind === 'directory' ? contextMenuTarget : null;
+            let targetNode = contextMenuTarget && contextMenuTarget.kind === 'directory' ? contextMenuTarget : null;
+            if (!targetNode && activeDirectoryPath) {
+                targetNode = TreeManager.getNode(activeDirectoryPath);
+                if (targetNode && targetNode.kind !== 'directory') targetNode = null;
+            }
             const dirHandle = targetNode ? targetNode.handle : currentDirHandle;
             await FSL.ensureWritePermission(dirHandle);
             const fileHandle = await dirHandle.getFileHandle(trimmed, { create: true });
@@ -709,7 +761,11 @@ const App = (() => {
             if (!name?.trim()) return;
             const trimmed = name.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return UI.showToast('Invalid folder name');
-            const targetNode = contextMenuTarget && contextMenuTarget.kind === 'directory' ? contextMenuTarget : null;
+            let targetNode = contextMenuTarget && contextMenuTarget.kind === 'directory' ? contextMenuTarget : null;
+            if (!targetNode && activeDirectoryPath) {
+                targetNode = TreeManager.getNode(activeDirectoryPath);
+                if (targetNode && targetNode.kind !== 'directory') targetNode = null;
+            }
             const dirHandle = targetNode ? targetNode.handle : currentDirHandle;
             await FSL.ensureWritePermission(dirHandle);
             await dirHandle.getDirectoryHandle(trimmed, { create: true });
@@ -1106,7 +1162,12 @@ updateLineNumbers() {
 
         bindEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
-            sidebarHeader.addEventListener('click', Actions.openFolder);
+            document.getElementById('sidebar-root-row').addEventListener('click', Actions.openFolder);
+            document.getElementById('sidebar-active-row').addEventListener('click', () => {
+                activeDirectoryPath = null;
+                TreeManager.highlightActive();
+                TreeManager.updateHeader();
+            });
 
             window.addEventListener('resize', () => {
                 const wasMobile = isMobile;
@@ -1115,8 +1176,9 @@ updateLineNumbers() {
             });
 
             document.addEventListener('click', e => {
-                if (e.target.id === 'clear-folder') Actions.clearSavedFolder();
+                if (e.target.id === 'clear-folder') { e.stopPropagation(); Actions.clearSavedFolder(); return; }
                 if (e.target.id === 'refresh-folder') {
+                    e.stopPropagation();
                     if (currentDirHandle) {
                         TreeManager.build(currentDirHandle).then(() => {
                             TreeManager.render();
@@ -1249,6 +1311,9 @@ updateLineNumbers() {
             editorStatusEl = document.getElementById('editor-status');
             reauthContainer = document.getElementById('reauth-container');
             reauthBtn = document.getElementById('reauth-btn');
+            activeDirNameEl = document.getElementById('active-dir-name');
+            rootDirNameEl = document.getElementById('root-dir-name');
+            sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions');
 
             UI.bindEvents();
             await FSL.initDB();
