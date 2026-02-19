@@ -1257,7 +1257,7 @@ const App = (() => {
                 }
             });
             
-            const slider = document.getElementById('width-slider');
+const slider = document.getElementById('width-slider');
             const valueEl = document.getElementById('width-value');
             const MAX_CHARS = 200;
             slider.addEventListener('input', e => {
@@ -1273,6 +1273,8 @@ const App = (() => {
                     textarea.style.wordWrap = 'break-word';
                 }
             });
+            slider.dispatchEvent(new Event('input')); // set initial state
+            
             window.addEventListener('beforeunload', e => {
                 if (tabs.some(t => t.dirty)) {
                     Actions.flushSave();
