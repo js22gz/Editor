@@ -1198,8 +1198,8 @@ updateLineNumbers() {
 
             textarea.addEventListener('scroll', () => gutter.scrollTop = textarea.scrollTop);
 
-            document.addEventListener('selectionchange', () => {
-                if (currentTabId && document.activeElement === textarea) {
+            textarea.addEventListener('selectionchange', () => {
+                if (currentTabId) {
                     const tab = tabs.find(t => t.id === currentTabId);
                     if (tab) this.updateEditorStatus(tab);
                 }
