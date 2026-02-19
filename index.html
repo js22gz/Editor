@@ -697,7 +697,7 @@ const App = (() => {
                 await UI.createNewTab(node.handle, node.name, content, node.path);
                 if (isMobile) {
                     sidebarEl.classList.add('hidden');
-                    document.getElementById('sidebar-toggle').textContent = '‹';
+                    document.getElementById('sidebar-toggle').textContent = '>';
                 }
             } catch (e) {
                 UI.showToast(e.message.includes('permission') ? 'Re-open folder to grant write access' : 'Failed to open file');
@@ -942,7 +942,7 @@ const App = (() => {
         toggleSidebar() {
             sidebarEl.classList.toggle('hidden');
             const btn = document.getElementById('sidebar-toggle');
-            btn.textContent = sidebarEl.classList.contains('hidden') ? '‹' : '›';
+            btn.textContent = sidebarEl.classList.contains('hidden') ? '›' : '‹';
         },
         showContextMenu(e, node) {
             e.preventDefault();
