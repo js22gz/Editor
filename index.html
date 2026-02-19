@@ -1273,7 +1273,7 @@ const slider = document.getElementById('width-slider');
             const MAX_CHARS = 200;
             slider.addEventListener('input', e => {
                 const v = +e.target.value;
-                valueEl.textContent = (v === MAX_CHARS + 'ch') ? '∞' : v;
+                valueEl.textContent = (v === MAX_CHARS) ? '∞' : v + 'char/line';
                 if (v === MAX_CHARS) {
                     textarea.style.maxWidth = 'none';
                     textarea.style.whiteSpace = 'pre';
@@ -1284,7 +1284,7 @@ const slider = document.getElementById('width-slider');
                     textarea.style.wordWrap = 'break-word';
                 }
             });
-            slider.dispatchEvent(new Event('input')); // set initial state
+            slider.dispatchEvent(new Event('input'));
             
             window.addEventListener('beforeunload', e => {
                 if (tabs.some(t => t.dirty)) {
