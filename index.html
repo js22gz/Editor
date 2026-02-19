@@ -1014,16 +1014,24 @@ const App = (() => {
                     }
                 }
 
-                // Update open tab paths
+                // Update open tab paths and re-resolve handles
                 const oldPath = srcPath;
                 const newPath = destFolderPath ? `${destFolderPath}/${srcName}` : srcName;
                 for (const tab of tabs) {
                     if (tab.path === oldPath) {
                         tab.path = newPath;
-                        // Re-resolve handle
                         if (srcNode.kind === 'file') tab.handle = await destHandle.getFileHandle(srcName);
                     } else if (tab.path && tab.path.startsWith(oldPath + '/')) {
-                        tab.path = newPath + tab.path.substring(oldPath.length);
+                        const relPath = tab.path.substring(oldPath.length);
+                        tab.path = newPath + relPath;
+                        // Re-resolve file handle by walking the new path
+                        try {
+                            const parts = tab.path.split('/');
+                            const fileName = parts.pop();
+                            let dir = currentDirHandle;
+                            for (const p of parts) if (p) dir = await dir.getDirectoryHandle(p);
+                            tab.handle = await dir.getFileHandle(fileName);
+                        } catch { /* handle will be stale but tab path is updated */ }
                     }
                 }
 
@@ -1361,7 +1369,7 @@ updateLineNumbers() {
                 treeContainer.classList.add('drop-target');
             });
             treeContainer.addEventListener('dragleave', e => {
-                if (!treeContainer.contains(e.relatedTarget)) treeContainer.classList.remove('drop-target');
+                if (!e.relatedTarget || !treeContainer.contains(e.relatedTarget)) treeContainer.classList.remove('drop-target');
             });
             treeContainer.addEventListener('drop', e => {
                 treeContainer.classList.remove('drop-target');
