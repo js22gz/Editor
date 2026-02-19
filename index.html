@@ -18,7 +18,7 @@
             display: flex;
             flex-direction: column;
         }
-    
+   
         .topbar {
             height: 52px;
             background: #18181b;
@@ -40,9 +40,9 @@
             transform: translate(-50%, -50%);
             pointer-events: none;
         }
-    
+   
         .main { flex: 1; display: flex; overflow: hidden; }
-    
+   
         .sidebar {
             width: 280px;
             background: #111113;
@@ -59,7 +59,7 @@
             opacity: 0;
             pointer-events: none;
         }
-    
+   
         .sidebar-header {
             padding: 0;
             font-size: 0.7rem;
@@ -89,17 +89,18 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            margin-left: auto;
         }
         #topbar-active-row:hover { color: #e4e4e7; }
         .directory-clear { cursor: pointer; margin-left: 8px; }
-    
+   
         .tree-container {
             flex: 1;
             overflow-y: auto;
             padding: 8px 0;
             font-size: 13px;
         }
-    
+   
         .folder-header {
             padding: 4px 12px;
             display: flex;
@@ -120,10 +121,8 @@
         .folder-header.top-level.active { font-weight: 700; }
         .folder-header.active-ancestor { color: #a1a1aa; }
         .folder-header.active-dir { border-left: 2px solid #52525b; color: #f4f4f5; }
-
         .toggle { display: inline-block; width: 14px; font-size: 11px; color: #52525b; }
         .tree-children { padding-left: 20px; }
-
         .file-item {
             padding: 4px 12px 4px 32px;
             cursor: pointer;
@@ -140,9 +139,9 @@
         .tree-container.drop-target { background: #27272a; outline: 1px dashed #52525b; }
         .file-item.dragging,
         .folder-header.dragging { opacity: 0.4; }
-    
+   
         .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-    
+   
         .tabs {
             display: flex;
             background: #18181b;
@@ -150,7 +149,7 @@
             overflow-x: auto;
             flex-shrink: 0;
         }
-    
+   
         .tab {
             padding: 10px 20px 8px;
             white-space: nowrap;
@@ -171,7 +170,7 @@
         .tab.drag-over { border-left: 2px solid #a1a1aa; }
         .tab[draggable] { cursor: grab; }
         .tab[draggable]:active { cursor: grabbing; }
-    
+   
         .toast {
             position: fixed;
             top: 16px;
@@ -185,7 +184,7 @@
             z-index: 9999;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
         }
-    
+   
         .editor-wrapper {
             flex: 1;
             display: flex;
@@ -193,7 +192,7 @@
             background: #0a0a0b;
             overflow: hidden;
         }
-    
+   
         #gutter {
             width: 52px;
             background: #0f0f11;
@@ -209,7 +208,7 @@
             flex-shrink: 0;
             white-space: pre;
         }
-    
+   
         #textarea {
             flex: 1;
             background: transparent;
@@ -226,7 +225,7 @@
             word-wrap: normal;
             tab-size: 4;
         }
-        
+       
 #line-width-slider {
             display: flex;
             align-items: center;
@@ -254,7 +253,7 @@
             font-size: 0.7rem;
             text-align: right;
         }
-        
+       
         .status {
             height: 28px;
             background: #18181b;
@@ -266,7 +265,7 @@
             padding: 0 16px;
             font-family: ui-monospace, monospace;
         }
-    
+   
         .sidebar-toggle {
             background: none;
             border: none;
@@ -280,7 +279,15 @@
             transition: color 0.2s;
         }
         .sidebar-toggle:hover { background: #27272a; color: #e4e4e7; }
-    
+   
+        .editor-wrapper .sidebar-toggle {
+            position: absolute;
+            left: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+        }
+   
         .context-menu {
             position: fixed;
             background: #18181b;
@@ -306,22 +313,20 @@
             background: #27272a;
             margin: 4px 0;
         }
-        
+       
 /* Mobile */
 .file-item,
 .folder-header {
-    touch-action: manipulation;   /* This is the magic line */
+    touch-action: manipulation; /* This is the magic line */
 }
-
 .tree-container {
-    -webkit-overflow-scrolling: touch;   /* iOS momentum scroll */
+    -webkit-overflow-scrolling: touch; /* iOS momentum scroll */
 }
-        
+       
     </style>
 </head>
 <body>
     <div class="topbar">
-        <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle Sidebar">›</button>
         <div class="logo">EDITOR</div>
         <div id="topbar-active-row" title="Click to reset active directory"><span class="sidebar-header-label">ACTIVE:</span> <span id="active-dir-name">/</span></div>
     </div>
@@ -342,16 +347,15 @@
                 <span id="width-value">120</span>
             </div>
             <div class="editor-wrapper">
+                <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle Sidebar">›</button>
                 <div id="gutter"></div>
                 <textarea id="textarea" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea>
             </div>
             <div class="status"><span id="status"></span><span style="flex:1"></span><span id="editor-status">No file open</span></div>
         </div>
     </div>
-
 <script>
 'use strict';
-
 const App = (() => {
     // ──────────────────────────────────────────────
     // STATE
@@ -370,19 +374,15 @@ const App = (() => {
     let longPressTriggered = false;
     let activeFilePath = null;
     let activeDirectoryPath = null;
-
     // DOM references
     let textarea, gutter, tabsContainer, treeContainer, sidebarHeader, sidebarEl, statusEl, editorStatusEl, activeDirNameEl, rootDirNameEl, sidebarHeaderActionsEl;
-
     const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
     const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/;
-
     // ──────────────────────────────────────────────
     // FS – single unified FileSystem object
     // ──────────────────────────────────────────────
     const FS = {
         db: null,
-
         async initDB() {
             if (this.db) return;
             return new Promise(resolve => {
@@ -392,12 +392,10 @@ const App = (() => {
                 req.onerror = () => resolve();
             });
         },
-
         async queryPermission(handle) {
             if (!handle) return 'denied';
             try { return await handle.queryPermission({ mode: 'readwrite' }); } catch { return 'denied'; }
         },
-
         async ensureRW(handle) {
             if (!handle) throw new Error('No handle');
             let state = await this.queryPermission(handle);
@@ -406,19 +404,16 @@ const App = (() => {
             if (state !== 'granted') throw new Error('Write permission denied');
             return handle;
         },
-
         async reauthorize(handle) {
             await this.ensureRW(handle);
             currentDirHandle = handle;
             return handle;
         },
-
         async saveFolderHandle(handle) {
             await this.initDB();
             const tx = this.db.transaction('handles', 'readwrite');
             tx.objectStore('handles').put(handle, 'main');
         },
-
         async loadSavedFolder() {
             await this.initDB();
             return new Promise(resolve => {
@@ -433,7 +428,6 @@ const App = (() => {
                 req.onerror = () => resolve({ status: 'none' });
             });
         },
-
         async clearSavedFolder() {
             if (this.db) {
                 const tx = this.db.transaction('handles', 'readwrite');
@@ -447,7 +441,6 @@ const App = (() => {
             TreeManager.clear();
             TreeManager.updateHeader();
         },
-
         async isSameEntry(h1, h2) {
             if (!h1 || !h2) return false;
             if (h1.isSameEntry) return await h1.isSameEntry(h2);
@@ -459,13 +452,11 @@ const App = (() => {
                 return h1.name === h2.name && h1.kind === h2.kind;
             } catch { return false; }
         },
-
         async writeFile(handle, content) {
             const writable = await handle.createWritable();
             await writable.write(content);
             await writable.close();
         },
-
         async resolvePath(baseHandle, pathStr = '') {
             if (!baseHandle) throw new Error('No base handle');
             if (!pathStr || pathStr === '/') {
@@ -481,7 +472,6 @@ const App = (() => {
             }
             return { handle: current, parent, name, path: pathStr };
         },
-
         async buildTree(dirHandle, basePath = '', depth = 0) {
             if (depth > 12) return { name: dirHandle.name, kind: 'directory', truncated: true };
             const node = { name: dirHandle.name, kind: 'directory', handle: dirHandle, path: basePath || '/', children: [] };
@@ -502,18 +492,15 @@ const App = (() => {
             } catch (e) { console.error('Tree build error:', e); }
             return node;
         },
-
         loadExpandedState() {
             try {
                 const saved = localStorage.getItem('expandedFolders');
                 if (saved) expandedFolders = new Set(JSON.parse(saved));
             } catch {}
         },
-
         saveExpandedState() {
             try { localStorage.setItem('expandedFolders', JSON.stringify([...expandedFolders])); } catch {}
         },
-
         saveOpenTabs(currentId) {
             try {
                 const data = tabs.filter(t => t.path).map(t => ({
@@ -524,7 +511,6 @@ const App = (() => {
                 localStorage.setItem('openTabs', JSON.stringify(data));
             } catch {}
         },
-
         loadOpenTabs() {
             try {
                 const saved = localStorage.getItem('openTabs');
@@ -532,14 +518,12 @@ const App = (() => {
             } catch { return []; }
         }
     };
-
     // ──────────────────────────────────────────────
     // TREE MANAGER – owns data + DOM + updates
     // ──────────────────────────────────────────────
     const TreeManager = (() => {
         let fileTree = null;
         const nodeByPath = new Map();
-
         const _renderTreeItem = (node, parentEl, level) => {
             if (node.kind === 'directory') {
                 const folderDiv = document.createElement('div');
@@ -612,7 +596,6 @@ const App = (() => {
                 parentEl.appendChild(fileDiv);
             }
         };
-
         return {
             getNode(path) { return nodeByPath.get(path); },
             registerNode(path, node) { nodeByPath.set(path, node); },
@@ -677,7 +660,6 @@ const App = (() => {
             }
         };
     })();
-
     // ──────────────────────────────────────────────
     // ACTIONS – slimmed using FS helpers (no legacyRename)
     // ──────────────────────────────────────────────
@@ -694,7 +676,6 @@ const App = (() => {
                 UI.showToast('Folder opened successfully');
             } catch (e) { if (e.name !== 'AbortError') UI.showToast('Open folder cancelled or failed'); }
         },
-
         async openFile() {
             try {
                 const [fileHandle] = await window.showOpenFilePicker();
@@ -706,7 +687,6 @@ const App = (() => {
                 await UI.createNewTab(fileHandle, file.name, content);
             } catch (e) { if (e.name !== 'AbortError') UI.showToast('Open file cancelled or failed'); }
         },
-
         async openFileFromNode(node) {
             try {
                 const file = await node.handle.getFile();
@@ -723,7 +703,6 @@ const App = (() => {
                 UI.showToast(e.message.includes('permission') ? 'Re-open folder to grant write access' : 'Failed to open file');
             }
         },
-
         async newFile() {
             if (!currentDirHandle) return UI.showToast('Open a folder first');
             const name = await UI.showInputDialog('New file name:');
@@ -740,7 +719,6 @@ const App = (() => {
             await UI.createNewTab(fileHandle, trimmed, '', targetPath ? `${targetPath}/${trimmed}` : trimmed);
             UI.closeContextMenu();
         },
-
         async newFolder() {
             if (!currentDirHandle) return UI.showToast('Open a folder first');
             const name = await UI.showInputDialog('New folder name:');
@@ -756,7 +734,6 @@ const App = (() => {
             UI.showToast('Folder created');
             UI.closeContextMenu();
         },
-
         async saveTab(tab) {
             if (!tab || !tab.handle || !tab.dirty) return;
             try {
@@ -774,13 +751,11 @@ const App = (() => {
                 UI.showToast(err.message.includes('permission') ? 'Re-authorize folder' : 'Save failed');
             }
         },
-
         saveCurrentFile() {
             if (currentTabId === null) return;
             const tab = tabs.find(t => t.id === currentTabId);
             if (tab) this.saveTab(tab);
         },
-
         scheduleSave() {
             clearTimeout(saveTimer);
             saveTimer = setTimeout(() => {
@@ -789,7 +764,6 @@ const App = (() => {
                 if (tab?.dirty) this.saveTab(tab);
             }, 750);
         },
-
         async flushSave() {
             if (saveInProgress) return;
             saveInProgress = true;
@@ -797,7 +771,6 @@ const App = (() => {
                 await Promise.allSettled(tabs.filter(t => t.dirty).map(t => this.saveTab(t)));
             } finally { saveInProgress = false; }
         },
-
         async deleteFile() {
             const target = contextMenuTarget;
             if (!target || target.kind !== 'file') return;
@@ -817,7 +790,6 @@ const App = (() => {
             } catch (e) { UI.showToast('Delete failed'); }
             UI.closeContextMenu();
         },
-
         async deleteFolder() {
             const target = contextMenuTarget;
             if (!target || target.kind !== 'directory') return;
@@ -838,7 +810,6 @@ const App = (() => {
             } catch (e) { UI.showToast('Delete failed'); }
             UI.closeContextMenu();
         },
-
         async renameItem() {
             if (!contextMenuTarget) return;
             const oldName = contextMenuTarget.name;
@@ -881,7 +852,6 @@ const App = (() => {
             } catch (e) { UI.showToast('Rename failed'); }
             UI.closeContextMenu();
         },
-
         async moveEntry(srcPath, destFolderPath) {
             const srcNode = TreeManager.getNode(srcPath);
             if (!srcNode) return;
@@ -928,10 +898,8 @@ const App = (() => {
             } catch (e) { UI.showToast('Move failed'); }
             UI.closeContextMenu();
         },
-
         clearSavedFolder: () => FS.clearSavedFolder()
     };
-
     // ──────────────────────────────────────────────
     // UI
     // ──────────────────────────────────────────────
@@ -943,7 +911,6 @@ const App = (() => {
             document.body.appendChild(t);
             setTimeout(() => t.remove(), duration);
         },
-
         showInputDialog(title, defaultValue = '') {
             return new Promise(resolve => {
                 const modal = document.createElement('div');
@@ -972,13 +939,11 @@ const App = (() => {
                 modal.onclick = e => { if (e.target === modal) { resolve(null); modal.remove(); } };
             });
         },
-
         toggleSidebar() {
             sidebarEl.classList.toggle('hidden');
             const btn = document.getElementById('sidebar-toggle');
             btn.textContent = sidebarEl.classList.contains('hidden') ? '‹' : '›';
         },
-
         showContextMenu(e, node) {
             e.preventDefault();
             UI.closeContextMenu();
@@ -1023,7 +988,6 @@ const App = (() => {
             if (rect.right > window.innerWidth) contextMenu.style.left = (window.innerWidth - rect.width - 8) + 'px';
             if (rect.bottom > window.innerHeight) contextMenu.style.top = (window.innerHeight - rect.height - 8) + 'px';
         },
-
         closeContextMenu() {
             if (contextMenu) {
                 contextMenu.remove();
@@ -1031,7 +995,6 @@ const App = (() => {
                 contextMenuTarget = null;
             }
         },
-
         async createNewTab(handle, name, content = '', path = null) {
             if (handle) {
                 for (const t of tabs) {
@@ -1091,7 +1054,6 @@ const App = (() => {
             this.switchToTab(id);
             return tab;
         },
-
         switchToTab(id) {
             if (currentTabId !== null) {
                 const cur = tabs.find(t => t.id === currentTabId);
@@ -1118,7 +1080,6 @@ const App = (() => {
             }
             FS.saveOpenTabs(id);
         },
-
         closeTab(id) {
             const idx = tabs.findIndex(t => t.id === id);
             if (idx === -1) return;
@@ -1137,14 +1098,12 @@ const App = (() => {
             }
             this.switchToTab(tabs[Math.min(idx, tabs.length - 1)].id);
         },
-
         updateLineNumbers() {
             const lineCount = (textarea.value.match(/\n/g) || []).length + 1;
             if (lineCount === lastLineCount) return;
             lastLineCount = lineCount;
             gutter.textContent = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
         },
-
         updateEditorStatus(tab) {
             const pos = textarea.selectionStart || 0;
             const before = textarea.value.substring(0, pos);
@@ -1155,7 +1114,6 @@ const App = (() => {
             statusEl.textContent = `Ln ${line}, Col ${col} | ${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`;
             editorStatusEl.textContent = tab.name + modified;
         },
-
         bindEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
             document.getElementById('sidebar-root-row').addEventListener('click', Actions.openFolder);
@@ -1269,7 +1227,7 @@ const App = (() => {
                     e.preventDefault();
                     const start = textarea.selectionStart;
                     const end = textarea.selectionEnd;
-                    const indent = '    ';
+                    const indent = ' ';
                     textarea.value = textarea.value.substring(0, start) + indent + textarea.value.substring(end);
                     textarea.selectionStart = textarea.selectionEnd = start + indent.length;
                     textarea.dispatchEvent(new Event('input'));
@@ -1283,7 +1241,7 @@ const App = (() => {
                     if (currentTabId) this.closeTab(currentTabId);
                 }
             });
-            
+           
 const slider = document.getElementById('width-slider');
             const valueEl = document.getElementById('width-value');
             const MAX_CHARS = 200;
@@ -1301,7 +1259,7 @@ const slider = document.getElementById('width-slider');
                 }
             });
             slider.dispatchEvent(new Event('input'));
-            
+           
             window.addEventListener('beforeunload', e => {
                 if (tabs.some(t => t.dirty)) {
                     Actions.flushSave();
@@ -1310,7 +1268,6 @@ const slider = document.getElementById('width-slider');
                 }
             });
         },
-
         init: async () => {
             textarea = document.getElementById('textarea');
             gutter = document.getElementById('gutter');
@@ -1323,11 +1280,9 @@ const slider = document.getElementById('width-slider');
             activeDirNameEl = document.getElementById('active-dir-name');
             rootDirNameEl = document.getElementById('root-dir-name');
             sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions');
-
             UI.bindEvents();
             await FS.initDB();
             FS.loadExpandedState();
-
             const saved = await FS.loadSavedFolder();
             let hadSavedTabs = false;
             if (saved.status === 'granted') {
@@ -1363,22 +1318,18 @@ const slider = document.getElementById('width-slider');
                 await FS.clearSavedFolder();
                 UI.showToast('Saved folder access expired – open folder again', 4000);
             }
-
             if (isMobile) sidebarEl.classList.add('hidden');
             if (!hadSavedTabs && tabs.length === 0) {
                 await UI.createNewTab(null, 'welcome.txt', `EDITOR\nA minimal, fast text editor.\n\n`);
             }
         }
     };
-
     return { init: UI.init };
 })();
-
 // Service Worker
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-
 // Launch
 window.onload = App.init;
 </script>
