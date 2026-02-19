@@ -1288,7 +1288,17 @@ updateLineNumbers() {
 
             document.getElementById('width-slider').addEventListener('input', e => {
                 const v = parseInt(e.target.value, 10);
-                textarea.style.maxWidth = v > 90 ? 'none' : v + '%';
+                if (v > 90) {
+                    textarea.style.maxWidth = 'none';
+                    textarea.style.whiteSpace = 'pre';
+                    textarea.style.wordWrap = 'normal';
+                    textarea.style.overflowWrap = 'normal';
+                } else {
+                    textarea.style.maxWidth = v + '%';
+                    textarea.style.whiteSpace = 'pre-wrap';
+                    textarea.style.wordWrap = 'break-word';
+                    textarea.style.overflowWrap = 'break-word';
+                }
             });
 
             window.addEventListener('beforeunload', e => {
