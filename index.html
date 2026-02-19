@@ -302,20 +302,6 @@
             background: #27272a;
             margin: 4px 0;
         }
-    
-        .reauth-bar {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            padding: 10px 16px;
-            background: #1c1917;
-            border-bottom: 1px solid #44403c;
-            font-size: 13px;
-            color: #a8a29e;
-        }
-        .reauth-bar .btn { background: #44403c; color: #fafaf9; }
-        .reauth-bar .btn:hover { background: #57534e; }
         
 /* Mobile */
 .file-item,
@@ -358,10 +344,6 @@
             <div class="status"><span id="status"></span><span style="flex:1"></span><span id="editor-status">No file open</span></div>
         </div>
     </div>
-    <div id="reauth-container" class="reauth-bar">
-        Saved folder needs re-authorization
-        <button id="reauth-btn" class="btn">Re-authorize</button>
-    </div>
 
 <script>
 'use strict';
@@ -386,9 +368,7 @@ const App = (() => {
     let activeDirectoryPath = null;
 
     // DOM references
-    let textarea, gutter, tabsContainer, treeContainer,
-        sidebarHeader, sidebarEl, statusEl, editorStatusEl, reauthContainer, reauthBtn,
-        activeDirNameEl, rootDirNameEl, sidebarHeaderActionsEl;
+    let textarea, gutter, tabsContainer, treeContainer, sidebarHeader, sidebarEl, statusEl, editorStatusEl, activeDirNameEl, rootDirNameEl, sidebarHeaderActionsEl;
 
     const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
     const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/;
@@ -1163,19 +1143,6 @@ const App = (() => {
             editorStatusEl.textContent = tab.name + modified;
         },
 
-        showReauthorizeButton(handle) {
-            reauthContainer.style.display = 'flex';
-            reauthBtn.onclick = async () => {
-                try {
-                    await FS.reauthorize(handle);
-                    reauthContainer.style.display = 'none';
-                    await TreeManager.build(currentDirHandle);
-                    TreeManager.render();
-                    TreeManager.updateHeader();
-                } catch (e) { UI.showToast('Re-authorize failed'); }
-            };
-        },
-
         bindEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
             document.getElementById('sidebar-root-row').addEventListener('click', Actions.openFolder);
@@ -1333,8 +1300,6 @@ const App = (() => {
             sidebarEl = document.getElementById('sidebar');
             statusEl = document.getElementById('status');
             editorStatusEl = document.getElementById('editor-status');
-            reauthContainer = document.getElementById('reauth-container');
-            reauthBtn = document.getElementById('reauth-btn');
             activeDirNameEl = document.getElementById('active-dir-name');
             rootDirNameEl = document.getElementById('root-dir-name');
             sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions');
@@ -1375,7 +1340,8 @@ const App = (() => {
                 }
                 if (savedTabs.length > 0) UI.showToast(`Restored ${savedTabs.length} tab${savedTabs.length > 1 ? 's' : ''}`);
             } else if (saved.status === 'needs-auth') {
-                UI.showReauthorizeButton(saved.handle);
+                await FS.clearSavedFolder();
+                UI.showToast('Saved folder access expired – open folder again', 4000);
             }
 
             if (isMobile) sidebarEl.classList.add('hidden');
