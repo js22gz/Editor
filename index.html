@@ -75,12 +75,22 @@
             align-items: center;
             justify-content: space-between;
         }
-        .sidebar-header-row:first-child {
-            border-bottom: 1px solid #1f1f22;
-        }
         .sidebar-header-row:hover { color: #e4e4e7; }
         .sidebar-header-label { color: #52525b; margin-right: 6px; }
-        #active-dir-name { font-size: 0.6rem; }
+        #topbar-active-row {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #c1c1cb;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            max-width: 50%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        #topbar-active-row:hover { color: #e4e4e7; }
         .directory-clear { cursor: pointer; margin-left: 8px; }
     
         .tree-container {
@@ -313,14 +323,11 @@
     <div class="topbar">
         <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle Sidebar">›</button>
         <div class="logo">EDITOR</div>
-        <div style="flex:1"></div>
+        <div id="topbar-active-row" title="Click to reset active directory"><span class="sidebar-header-label">ACTIVE:</span> <span id="active-dir-name">/</span></div>
     </div>
     <div class="main">
         <div id="sidebar" class="sidebar">
             <div id="sidebar-header" class="sidebar-header">
-                <div id="sidebar-active-row" class="sidebar-header-row" title="Click to set active directory">
-                    <span><span class="sidebar-header-label">ACTIVE:</span> <span id="active-dir-name">/</span></span>
-                </div>
                 <div id="sidebar-root-row" class="sidebar-header-row" title="Click to open folder">
                     <span><span class="sidebar-header-label">ROOT:</span> <span id="root-dir-name">Click to open folder</span></span>
                     <span id="sidebar-header-actions"></span>
@@ -544,7 +551,7 @@ const App = (() => {
                 const toggle = document.createElement('span');
                 toggle.className = 'toggle';
                 toggle.textContent = expandedFolders.has(node.path) ? '▼' : '▶';
-                header.append(toggle, document.createTextNode(' ' + node.name));
+                header.append(toggle, document.createTextNode(' ' + node.name + '/'));
                 const childrenDiv = document.createElement('div');
                 childrenDiv.className = 'tree-children';
                 childrenDiv.style.display = expandedFolders.has(node.path) ? 'block' : 'none';
@@ -1152,7 +1159,7 @@ const App = (() => {
         bindEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
             document.getElementById('sidebar-root-row').addEventListener('click', Actions.openFolder);
-            document.getElementById('sidebar-active-row').addEventListener('click', () => {
+            document.getElementById('topbar-active-row').addEventListener('click', () => {
                 activeDirectoryPath = null;
                 TreeManager.highlightActive();
                 TreeManager.updateHeader();
