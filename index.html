@@ -105,7 +105,10 @@
             margin-bottom: -1px;
         }
         .folder-header:hover { background: #1f1f23; color: #a1a1aa; }
+        .folder-header.top-level { font-weight: 700; }
         .folder-header.active { background: #1c1c20; color: #a1a1aa; font-weight: 500; }
+        .folder-header.top-level.active { font-weight: 700; }
+        .folder-header.active-ancestor { color: #a1a1aa; }
         .folder-header.active-dir { border-left: 2px solid #52525b; color: #f4f4f5; }
 
         .toggle { display: inline-block; width: 14px; font-size: 11px; color: #52525b; }
@@ -524,7 +527,7 @@ const App = (() => {
             if (node.kind === 'directory') {
                 const folderDiv = document.createElement('div');
                 const header = document.createElement('div');
-                header.className = 'folder-header';
+                header.className = 'folder-header' + (level === 0 ? ' top-level' : '');
                 header.dataset.path = node.path;
                 header.style.paddingLeft = (level * 14) + 'px';
                 header.tabIndex = 0;
@@ -655,6 +658,7 @@ const App = (() => {
                 treeContainer.querySelectorAll('.file-item.active').forEach(el => el.classList.remove('active'));
                 treeContainer.querySelectorAll('.folder-header.active').forEach(el => el.classList.remove('active'));
                 treeContainer.querySelectorAll('.folder-header.active-dir').forEach(el => el.classList.remove('active-dir'));
+                treeContainer.querySelectorAll('.folder-header.active-ancestor').forEach(el => el.classList.remove('active-ancestor'));
                 if (activeFilePath) {
                     const el = treeContainer.querySelector(`.file-item[data-path="${activeFilePath.replace(/"/g, '\\"')}"]`);
                     if (el) el.classList.add('active');
@@ -668,6 +672,12 @@ const App = (() => {
                 if (activeDirectoryPath) {
                     const dirEl = treeContainer.querySelector(`.folder-header[data-path="${activeDirectoryPath.replace(/"/g, '\\"')}"]`);
                     if (dirEl) dirEl.classList.add('active-dir');
+                    const parts = activeDirectoryPath.split('/');
+                    for (let i = 1; i < parts.length; i++) {
+                        const p = parts.slice(0, i).join('/');
+                        const folderEl = treeContainer.querySelector(`.folder-header[data-path="${p.replace(/"/g, '\\"')}"]`);
+                        if (folderEl) folderEl.classList.add('active-ancestor');
+                    }
                 }
             },
 
@@ -1005,12 +1015,54 @@ const App = (() => {
                         await w.close();
                         await srcParent.removeEntry(srcName);
                     } else {
-                        // For folders, only support empty or use move() API
-                        if (srcNode.children && srcNode.children.length > 0) {
-                            return UI.showToast('Cannot move non-empty folder (browser limitation)');
+                        // For folders, recursively copy + delete
+                        const countEntries = (node) => {
+                            let c = 0;
+                            if (node.children) node.children.forEach(child => {
+                                c += 1 + (child.kind === 'directory' ? countEntries(child) : 0);
+                            });
+                            return c;
+                        };
+                        const totalEntries = srcNode.children ? countEntries(srcNode) : 0;
+                        if (totalEntries > 0) {
+                            const confirmed = await new Promise(resolve => {
+                                const modal = document.createElement('div');
+                                modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10001;';
+                                const box = document.createElement('div');
+                                box.style.cssText = 'background:#18181b;padding:24px;border-radius:8px;min-width:320px;border:1px solid #27272a;';
+                                box.innerHTML = `
+                                    <div style="margin-bottom:12px;font-size:14px;">Move folder "${srcName}" with ${totalEntries} item${totalEntries !== 1 ? 's' : ''} inside?</div>
+                                    <div style="display:flex;gap:8px;margin-top:16px;">
+                                        <button id="move-yes" style="flex:1;min-height:44px;background:#a1a1aa;color:#09090b;border:none;border-radius:4px;cursor:pointer;">Yes</button>
+                                        <button id="move-no" style="flex:1;min-height:44px;background:#27272a;color:#e4e4e7;border:none;border-radius:4px;cursor:pointer;">No</button>
+                                    </div>
+                                `;
+                                modal.appendChild(box);
+                                document.body.appendChild(modal);
+                                box.querySelector('#move-yes').onclick = () => { resolve(true); modal.remove(); };
+                                box.querySelector('#move-no').onclick = () => { resolve(false); modal.remove(); };
+                                modal.onclick = e => { if (e.target === modal) { resolve(false); modal.remove(); } };
+                            });
+                            if (!confirmed) return;
                         }
-                        await destHandle.getDirectoryHandle(srcName, { create: true });
-                        await srcParent.removeEntry(srcName);
+                        const copyDir = async (srcDirHandle, destParent, dirName) => {
+                            const newDir = await destParent.getDirectoryHandle(dirName, { create: true });
+                            for await (const [name, handle] of srcDirHandle.entries()) {
+                                if (handle.kind === 'file') {
+                                    const file = await handle.getFile();
+                                    const buf = await file.arrayBuffer();
+                                    const newH = await newDir.getFileHandle(name, { create: true });
+                                    const w = await newH.createWritable();
+                                    await w.write(buf);
+                                    await w.close();
+                                } else {
+                                    await copyDir(handle, newDir, name);
+                                }
+                            }
+                            return newDir;
+                        };
+                        await copyDir(srcNode.handle, destHandle, srcName);
+                        await srcParent.removeEntry(srcName, { recursive: true });
                     }
                 }
 
