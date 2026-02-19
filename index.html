@@ -880,19 +880,28 @@ const App = (() => {
             if (!srcNode) return;
             if (srcNode.kind === 'directory' && destFolderPath.startsWith(srcPath + '/')) return UI.showToast('Cannot move folder into itself');
             const { parent: srcParent } = await FS.resolvePath(currentDirHandle, srcPath);
-            const { handle: destHandle } = await FS.resolvePath(currentDirHandle, destFolderPath);
+            const destNode = TreeManager.getNode(destFolderPath || '/');
+            if (!destNode) return UI.showToast('Destination folder not found');
+            const destHandle = destNode.handle;
             if (await FS.isSameEntry(srcParent, destHandle)) return;
-            try {
-                await destHandle.getFileHandle(srcNode.name);
-                return UI.showToast(`"${srcNode.name}" already exists`);
-            } catch {}
             try {
                 await FS.ensureRW(srcParent);
                 await FS.ensureRW(destHandle);
+                let nameExists = false;
+                try { await destHandle.getFileHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; }
+                if (!nameExists) { try { await destHandle.getDirectoryHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; } }
+                if (nameExists) { UI.showToast(`"${srcNode.name}" already exists in destination`); return; }
                 if (srcNode.handle.move) {
-                    try {
-                        await srcNode.handle.move(destHandle, srcNode.name);
-                    } catch {}
+                    await srcNode.handle.move(destHandle, srcNode.name);
+                } else if (srcNode.kind === 'file') {
+                    const file = await srcNode.handle.getFile();
+                    const newHandle = await destHandle.getFileHandle(srcNode.name, { create: true });
+                    const writable = await newHandle.createWritable();
+                    await writable.write(file);
+                    await writable.close();
+                    await srcParent.removeEntry(srcNode.name);
+                } else {
+                    throw new Error('Moving folders requires Chrome/Edge 122+ or another browser with FileSystemHandle.move() support');
                 }
                 const newPath = destFolderPath ? `${destFolderPath}/${srcNode.name}` : srcNode.name;
                 for (const tab of tabs) {
