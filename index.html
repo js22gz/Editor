@@ -719,11 +719,25 @@ const App = (() => {
 
     async function legacyRename(parent, oldName, newName, isFolder, node) {
         if (isFolder) {
-            if (node.children?.length > 0) {
-                throw new Error('Cannot rename non-empty folder (move not supported)');
-            }
-            await parent.getDirectoryHandle(newName, { create: true });
-            await parent.removeEntry(oldName);
+            const copyDir = async (srcDirHandle, destParent, dirName) => {
+                const newDir = await destParent.getDirectoryHandle(dirName, { create: true });
+                for await (const [name, handle] of srcDirHandle.entries()) {
+                    if (handle.kind === 'file') {
+                        const file = await handle.getFile();
+                        const buf = await file.arrayBuffer();
+                        const newH = await newDir.getFileHandle(name, { create: true });
+                        const w = await newH.createWritable();
+                        await w.write(buf);
+                        await w.close();
+                    } else {
+                        await copyDir(handle, newDir, name);
+                    }
+                }
+                return newDir;
+            };
+            const oldH = await parent.getDirectoryHandle(oldName);
+            await copyDir(oldH, parent, newName);
+            await parent.removeEntry(oldName, { recursive: true });
         } else {
             const oldH = await parent.getFileHandle(oldName);
             const file = await oldH.getFile();
@@ -928,9 +942,14 @@ const App = (() => {
                 for (const p of parts) if (p) parent = await parent.getDirectoryHandle(p);
                 await FSL.ensureWritePermission(parent);
 
+                let moved = false;
                 if (contextMenuTarget.handle.move) {
-                    await contextMenuTarget.handle.move(parent, trimmed);
-                } else {
+                    try {
+                        await contextMenuTarget.handle.move(parent, trimmed);
+                        moved = true;
+                    } catch { /* move() not supported for this handle, fall back */ }
+                }
+                if (!moved) {
                     await legacyRename(parent, oldName, trimmed, isFolder, contextMenuTarget);
                 }
 
@@ -1001,10 +1020,15 @@ const App = (() => {
                 await FSL.ensureWritePermission(srcParent);
                 await FSL.ensureWritePermission(destHandle);
 
+                let moved = false;
                 if (srcNode.handle.move) {
-                    // Modern API: FileSystemHandle.move()
-                    await srcNode.handle.move(destHandle, srcName);
-                } else {
+                    try {
+                        // Modern API: FileSystemHandle.move()
+                        await srcNode.handle.move(destHandle, srcName);
+                        moved = true;
+                    } catch { /* move() not supported for this handle, fall back */ }
+                }
+                if (!moved) {
                     // Fallback: copy + delete
                     if (srcNode.kind === 'file') {
                         const file = await srcNode.handle.getFile();
@@ -1070,8 +1094,18 @@ const App = (() => {
                             }
                             return newDir;
                         };
-                        await copyDir(srcNode.handle, destHandle, srcName);
-                        await srcParent.removeEntry(srcName, { recursive: true });
+                        try {
+                            await copyDir(srcNode.handle, destHandle, srcName);
+                        } catch (copyErr) {
+                            try { await destHandle.removeEntry(srcName, { recursive: true }); } catch {}
+                            throw copyErr;
+                        }
+                        try {
+                            await srcParent.removeEntry(srcName, { recursive: true });
+                        } catch (removeErr) {
+                            try { await destHandle.removeEntry(srcName, { recursive: true }); } catch {}
+                            throw removeErr;
+                        }
                     }
                 }
 
