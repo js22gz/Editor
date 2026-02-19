@@ -1,7 +1,6 @@
-# Editor
+# Editor 
+##Version 1
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Single-file progressive web app (PWA) file editor
 * File and folder browsing via the File System Access API
@@ -9,10 +8,4 @@
 * Service Worker for offline capability
 * Installable as a PWA
 
-## Version
-
-**v1.0.0** — Initial release.
-
-## License
-
-MIT.
+Copyright © 2026 Jonatan Skäryd. All rights reserved.
