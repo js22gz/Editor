@@ -20,24 +20,22 @@
         }
    
         .topbar {
-            height: 52px;
+            height: auto;
+            min-height: 76px;
             background: #18181b;
             border-bottom: 1px solid #27272a;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: space-between;
-            padding: 0 16px;
+            justify-content: center;
+            padding: 10px 16px;
             flex-shrink: 0;
-            position: relative;
+            gap: 3px;
         }
         .logo {
             font-weight: 700;
             font-size: 1.5rem;
             letter-spacing: -0.5px;
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
             pointer-events: none;
         }
    
@@ -78,18 +76,18 @@
         .sidebar-header-row:hover { color: #e4e4e7; }
         .sidebar-header-label { color: #52525b; margin-right: 6px; }
         #topbar-active-row {
-            font-size: 0.65rem;
+            font-size: 0.7rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: #c1c1cb;
             cursor: pointer;
-            padding: 4px 8px;
+            padding: 2px 8px;
             border-radius: 4px;
-            max-width: 50%;
+            width: 100%;
+            text-align: center;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            margin-left: auto;
         }
         #topbar-active-row:hover { color: #e4e4e7; }
         .directory-clear { cursor: pointer; margin-left: 8px; }
@@ -317,10 +315,10 @@
 /* Mobile */
 .file-item,
 .folder-header {
-    touch-action: manipulation; /* This is the magic line */
+    touch-action: manipulation;
 }
 .tree-container {
-    -webkit-overflow-scrolling: touch; /* iOS momentum scroll */
+    -webkit-overflow-scrolling: touch;
 }
        
     </style>
