@@ -80,6 +80,7 @@
         }
         .sidebar-header-row:hover { color: #e4e4e7; }
         .sidebar-header-label { color: #52525b; margin-right: 6px; }
+        #active-dir-name { font-size: 0.6rem; }
         .directory-clear { cursor: pointer; margin-left: 8px; }
     
         .tree-container {
@@ -105,7 +106,7 @@
         }
         .folder-header:hover { background: #1f1f23; color: #a1a1aa; }
         .folder-header.active { background: #1c1c20; color: #a1a1aa; font-weight: 500; }
-        .folder-header.active-dir { border-left: 2px solid #52525b; }
+        .folder-header.active-dir { border-left: 2px solid #52525b; color: #f4f4f5; }
 
         .toggle { display: inline-block; width: 14px; font-size: 11px; color: #52525b; }
         .tree-children { padding-left: 20px; }
@@ -598,8 +599,7 @@ const App = (() => {
                 const safeName = currentDirHandle.name.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m] || m));
                 rootDirNameEl.textContent = safeName;
                 if (activeDirectoryPath != null && activeDirectoryPath !== '') {
-                    const parts = activeDirectoryPath.split('/');
-                    activeDirNameEl.textContent = parts[parts.length - 1] || safeName;
+                    activeDirNameEl.textContent = safeName + '/' + activeDirectoryPath;
                 } else {
                     activeDirNameEl.textContent = safeName;
                 }
@@ -817,16 +817,17 @@ const App = (() => {
         },
 
         async deleteFile() {
-            if (!contextMenuTarget || contextMenuTarget.kind !== 'file') return;
-            if (!confirm(`Delete "${contextMenuTarget.name}"?`)) { UI.closeContextMenu(); return; }
+            const target = contextMenuTarget;
+            if (!target || target.kind !== 'file') return;
+            if (!confirm(`Delete "${target.name}"?`)) { UI.closeContextMenu(); return; }
             try {
                 for (let i = 0; i < tabs.length; i++) {
-                    if (tabs[i].handle && await FSL.isSameEntry(tabs[i].handle, contextMenuTarget.handle)) {
+                    if (tabs[i].handle && await FSL.isSameEntry(tabs[i].handle, target.handle)) {
                         UI.closeTab(tabs[i].id);
                         break;
                     }
                 }
-                const parts = contextMenuTarget.path.split('/');
+                const parts = target.path.split('/');
                 const name = parts.pop();
                 let parent = currentDirHandle;
                 for (const p of parts) if (p) parent = await parent.getDirectoryHandle(p);
@@ -838,20 +839,21 @@ const App = (() => {
         },
 
         async deleteFolder() {
-            if (!contextMenuTarget || contextMenuTarget.kind !== 'directory') return;
-            if (contextMenuTarget.children && contextMenuTarget.children.length) {
+            const target = contextMenuTarget;
+            if (!target || target.kind !== 'directory') return;
+            if (target.children && target.children.length) {
                 UI.showToast('Cannot delete non-empty folder');
                 UI.closeContextMenu();
                 return;
             }
-            if (!confirm(`Delete folder "${contextMenuTarget.name}"?`)) { UI.closeContextMenu(); return; }
+            if (!confirm(`Delete folder "${target.name}"?`)) { UI.closeContextMenu(); return; }
             try {
-                const parts = contextMenuTarget.path.split('/');
+                const parts = target.path.split('/');
                 const name = parts.pop();
                 let parent = currentDirHandle;
                 for (const p of parts) if (p) parent = await parent.getDirectoryHandle(p);
                 await parent.removeEntry(name);
-                expandedFolders.delete(contextMenuTarget.path);
+                expandedFolders.delete(target.path);
                 FSL.saveExpandedState();
                 await TreeManager.mutateAndRebuild();
                 UI.showToast('Folder deleted');
