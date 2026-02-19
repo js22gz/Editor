@@ -1273,7 +1273,7 @@ const slider = document.getElementById('width-slider');
             const MAX_CHARS = 200;
             slider.addEventListener('input', e => {
                 const v = +e.target.value;
-                valueEl.textContent = (v === MAX_CHARS) ? '∞' : v;
+                valueEl.textContent = (v === MAX_CHARS + 'ch') ? '∞' : v;
                 if (v === MAX_CHARS) {
                     textarea.style.maxWidth = 'none';
                     textarea.style.whiteSpace = 'pre';
