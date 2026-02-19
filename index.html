@@ -341,8 +341,6 @@ const App = (() => {
     // STATE
     // ──────────────────────────────────────────────
     let currentDirHandle = null;
-    let fileTree = null;
-    let nodeByPath = new Map();
     let tabs = [];
     let currentTabId = null;
     let nextTabId = 1;
@@ -425,10 +423,11 @@ const App = (() => {
                 tx.objectStore('handles').delete('main');
             }
             currentDirHandle = null;
-            fileTree = null;
             expandedFolders.clear();
             localStorage.removeItem('expandedFolders');
             localStorage.removeItem('openTabs');
+            TreeManager.clear();
+            TreeManager.updateHeader();
         },
 
         loadExpandedState() {
@@ -441,6 +440,8 @@ const App = (() => {
         saveExpandedState() {
             try { localStorage.setItem('expandedFolders', JSON.stringify([...expandedFolders])); } catch {}
         },
+
+        getExpandedFolders() { return [...expandedFolders]; }, 
 
         async isSameEntry(h1, h2) {
             if (!h1 || !h2) return false;
@@ -480,6 +481,206 @@ const App = (() => {
     };
 
     // ──────────────────────────────────────────────
+    // TREE MANAGER – owns data + DOM + updates
+    // ──────────────────────────────────────────────
+    const TreeManager = (() => {
+        let fileTree = null;
+        const nodeByPath = new Map();
+
+        const _renderTreeItem = (node, parentEl, level) => {
+            if (node.kind === 'directory') {
+                const folderDiv = document.createElement('div');
+                const header = document.createElement('div');
+                header.className = 'folder-header';
+                header.dataset.path = node.path;
+                header.style.paddingLeft = (level * 14) + 'px';
+                header.tabIndex = 0;
+
+                const toggle = document.createElement('span');
+                toggle.className = 'toggle';
+                toggle.textContent = expandedFolders.has(node.path) ? '▼' : '▶';
+
+                header.append(toggle, document.createTextNode(' ' + node.name));
+
+                const childrenDiv = document.createElement('div');
+                childrenDiv.className = 'tree-children';
+                childrenDiv.style.display = expandedFolders.has(node.path) ? 'block' : 'none';
+
+                folderDiv.append(header, childrenDiv);
+                parentEl.appendChild(folderDiv);
+
+                header.onclick = (e) => {
+                    if (longPressTriggered) return;
+                    const wasOpen = childrenDiv.style.display !== 'none';
+                    childrenDiv.style.display = wasOpen ? 'none' : 'block';
+                    toggle.textContent = wasOpen ? '▶' : '▼';
+                    if (wasOpen) expandedFolders.delete(node.path);
+                    else expandedFolders.add(node.path);
+                    FSL.saveExpandedState();
+                    activeFolderPath = node.path;
+                    TreeManager.highlightActive();
+                };
+                header.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); header.click(); } };
+
+                node.children.forEach(c => _renderTreeItem(c, childrenDiv, level + 1));
+            } else {
+                const fileDiv = document.createElement('div');
+                fileDiv.className = 'file-item';
+                fileDiv.dataset.path = node.path;
+                fileDiv.style.paddingLeft = (level * 14 + 26) + 'px';
+                fileDiv.textContent = node.name;
+                fileDiv.tabIndex = 0;
+
+                fileDiv.onclick = () => { if (!longPressTriggered) Actions.openFileFromNode(node); };
+                fileDiv.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); fileDiv.click(); } };
+
+                parentEl.appendChild(fileDiv);
+            }
+        };
+
+        return {
+            getNode(path) { return nodeByPath.get(path); },
+
+            registerNode(path, node) { nodeByPath.set(path, node); },
+
+            async build(rootHandle) {
+                nodeByPath.clear();
+                fileTree = await Logic.buildTree(rootHandle);   // keep buildTree in Logic for now (pure recursion)
+                return fileTree;
+            },
+
+            render() {
+                treeContainer.innerHTML = '';
+                if (!fileTree) {
+                    treeContainer.innerHTML = '<div style="padding:20px;color:#52525b;text-align:center;font-size:12px">No folder open</div>';
+                    return;
+                }
+                fileTree.children.forEach(child => _renderTreeItem(child, treeContainer, 0));
+                this.highlightActive();
+            },
+
+            updateHeader() {
+                if (!fileTree || !currentDirHandle) {
+                    sidebarHeader.textContent = 'Click to open folder';
+                    return;
+                }
+                const safeName = currentDirHandle.name.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m] || m));
+                sidebarHeader.innerHTML = `Active directory: ${safeName} <span class="directory-clear" id="refresh-folder" title="Refresh tree">⟳</span> <span class="directory-clear" id="clear-folder">⌫</span>`;
+            },
+
+            refreshNode(path) {
+                const node = nodeByPath.get(path);
+                if (!node) return;
+
+                if (node.kind === 'directory') {
+                    const escaped = path.replace(/"/g, '\\"');
+                    const existingHeader = treeContainer.querySelector(`.folder-header[data-path="${escaped}"]`);
+                    if (existingHeader) {
+                        const childrenDiv = existingHeader.parentElement.querySelector('.tree-children');
+                        if (childrenDiv) {
+                            childrenDiv.innerHTML = '';
+                            node.children.forEach(c => _renderTreeItem(c, childrenDiv, path.split('/').length));
+                        }
+                    } else {
+                        // new folder – find parent and append
+                        const parentPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
+                        const parentEl = parentPath === '/' ? treeContainer :
+                            treeContainer.querySelector(`.folder-header[data-path="${parentPath.replace(/"/g, '\\"')}"]`)?.parentElement.querySelector('.tree-children') || treeContainer;
+                        _renderTreeItem(node, parentEl, parentPath.split('/').length);
+                    }
+                } else {
+                    // file refresh logic (same as before, but now centralized)
+                    const escaped = path.replace(/"/g, '\\"');
+                    let fileEl = treeContainer.querySelector(`.file-item[data-path="${escaped}"]`);
+                    if (fileEl) {
+                        fileEl.textContent = node.name;
+                    } else {
+                        const parentPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
+                        const parentEl = parentPath === '/' ? treeContainer :
+                            treeContainer.querySelector(`.folder-header[data-path="${parentPath.replace(/"/g, '\\"')}"]`)?.parentElement.querySelector('.tree-children') || treeContainer;
+                        const level = parentPath.split('/').length;
+                        _renderTreeItem(node, parentEl, level);
+                    }
+                }
+                this.highlightActive();
+            },
+
+            addNode(parentPath, newNode) {
+                const parent = nodeByPath.get(parentPath) || fileTree;
+                if (!parent.children) parent.children = [];
+                parent.children.push(newNode);
+                parent.children.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : (a.kind === 'directory' ? -1 : 1));
+                nodeByPath.set(newNode.path, newNode);
+                this.refreshNode(parentPath);
+            },
+
+            removeNode(path) {
+                const node = nodeByPath.get(path);
+                if (!node) return;
+                const parentPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) || '/' : '/';
+                const parent = nodeByPath.get(parentPath);
+                if (parent) {
+                    parent.children = parent.children.filter(c => c.path !== path);
+                }
+                nodeByPath.delete(path);
+                this.refreshNode(parentPath);
+            },
+
+            renameNode(oldPath, newNode) {
+                nodeByPath.delete(oldPath);
+                nodeByPath.set(newNode.path, newNode);
+                // update children paths if folder
+                if (newNode.kind === 'directory' && newNode.children) {
+                    const oldPrefix = oldPath;
+                    const newPrefix = newNode.path;
+                    const updatePaths = (node) => {
+                        if (!node.children) return;
+                        node.children.forEach(child => {
+                            const oldChild = child.path;
+                            child.path = newPrefix + oldChild.substring(oldPrefix.length);
+                            nodeByPath.delete(oldChild);
+                            nodeByPath.set(child.path, child);
+                            updatePaths(child);
+                        });
+                    };
+                    updatePaths(newNode);
+                }
+                const parentPath = newNode.path.includes('/') ? newNode.path.substring(0, newNode.path.lastIndexOf('/')) || '/' : '/';
+                const parent = nodeByPath.get(parentPath);
+                if (parent) {
+                    parent.children.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : (a.kind === 'directory' ? -1 : 1));
+                }
+                this.refreshNode(parentPath);
+            },
+
+            highlightActive() {
+                document.querySelectorAll('.file-item.active, .folder-header.active').forEach(el => el.classList.remove('active'));
+                if (activeFilePath) {
+                    const el = treeContainer.querySelector(`.file-item[data-path="${activeFilePath.replace(/"/g, '\\"')}"]`);
+                    if (el) el.classList.add('active');
+                    const parts = activeFilePath.split('/');
+                    for (let i = 1; i < parts.length; i++) {
+                        const p = parts.slice(0, i).join('/');
+                        const folderEl = treeContainer.querySelector(`.folder-header[data-path="${p.replace(/"/g, '\\"')}"]`);
+                        if (folderEl) folderEl.classList.add('active');
+                    }
+                }
+                if (activeFolderPath) {
+                    const el = treeContainer.querySelector(`.folder-header[data-path="${activeFolderPath.replace(/"/g, '\\"')}"]`);
+                    if (el) el.classList.add('active');
+                }
+            },
+
+            clear() {
+                fileTree = null;
+                nodeByPath.clear();
+                treeContainer.innerHTML = '';
+            }
+        };
+    })();
+
+
+    // ──────────────────────────────────────────────
     // LOGIC
     // ──────────────────────────────────────────────
     const Logic = {
@@ -498,7 +699,7 @@ const App = (() => {
         async buildTree(dirHandle, basePath = '', depth = 0) {
             if (depth > 12) return { name: dirHandle.name, kind: 'directory', truncated: true };
             const node = { name: dirHandle.name, kind: 'directory', handle: dirHandle, path: basePath, children: [] };
-            nodeByPath.set(basePath || '/', node);
+            TreeManager.registerNode(basePath || '/', node);
             try {
                 for await (const [name, handle] of dirHandle.entries()) {
                     if (name.startsWith('.') || name === 'node_modules' || name === '__pycache__') continue;
@@ -507,7 +708,7 @@ const App = (() => {
                         node.children.push(await this.buildTree(handle, childPath, depth + 1));
                     } else {
                         const childNode = { name, kind: 'file', handle, path: childPath };
-                        nodeByPath.set(childPath, childNode);
+                        TreeManager.registerNode(childPath, childNode);
                         node.children.push(childNode);
                     }
                 }
@@ -515,21 +716,6 @@ const App = (() => {
             } catch (e) { console.error('Tree build error:', e); }
             return node;
         },
-
-        async buildAndRenderTree() {
-            if (!currentDirHandle) {
-                sidebarHeader.textContent = 'Click to open folder';
-                treeContainer.innerHTML = '<div style="padding:20px;color:#52525b;text-align:center;font-size:12px">No folder open</div>';
-                return;
-            }
-            nodeByPath.clear();
-            fileTree = await this.buildTree(currentDirHandle);
-            const safeName = fileTree.name.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m] || m));
-            sidebarHeader.innerHTML = `Active directory: ${safeName} <span class="directory-clear" id="refresh-folder" title="Refresh tree">⟳</span> <span class="directory-clear" id="clear-folder">⌫</span>`;
-            treeContainer.innerHTML = '';
-            fileTree.children.forEach(child => UI._renderTreeItem(child, treeContainer, 0));
-            UI.highlightActiveItems();
-        }
     };
 
     // ──────────────────────────────────────────────
@@ -541,7 +727,9 @@ const App = (() => {
                 currentDirHandle = await window.showDirectoryPicker();
                 await FSL.saveFolderHandle(currentDirHandle);
                 expandedFolders.clear();
-                await Logic.buildAndRenderTree();
+                await TreeManager.build(currentDirHandle);
+                TreeManager.render();
+                TreeManager.updateHeader();
                 UI.showToast('Folder opened successfully');
             } catch (e) { if (e.name !== 'AbortError') UI.showToast('Open folder cancelled or failed'); }
         },
@@ -587,14 +775,10 @@ const App = (() => {
             await w.close();
             const filePath = targetNode ? `${targetNode.path}/${trimmed}` : trimmed;
             const parentPath = targetNode ? targetNode.path : '/';
-            const parentNode = nodeByPath.get(parentPath);
             const newNode = { name: trimmed, kind: 'file', handle: fileHandle, path: filePath };
-            parentNode.children.push(newNode);
-            parentNode.children.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : (a.kind === 'directory' ? -1 : 1));
-            nodeByPath.set(filePath, newNode);
+            TreeManager.addNode(parentPath, newNode);
             await UI.createNewTab(fileHandle, trimmed, '', filePath);
             if (targetNode) { expandedFolders.add(targetNode.path); FSL.saveExpandedState(); }
-            UI.updateTreeNode(parentPath);
             UI.closeContextMenu();
         },
 
@@ -610,13 +794,10 @@ const App = (() => {
             const newDirHandle = await dirHandle.getDirectoryHandle(trimmed, { create: true });
             const parentPath = targetNode ? targetNode.path : '/';
             const folderPath = targetNode ? `${targetNode.path}/${trimmed}` : trimmed;
-            const parentNode = nodeByPath.get(parentPath);
             const newNode = { name: trimmed, kind: 'directory', handle: newDirHandle, path: folderPath, children: [] };
-            parentNode.children.push(newNode);
-            parentNode.children.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : (a.kind === 'directory' ? -1 : 1));
-            nodeByPath.set(folderPath, newNode);
+            TreeManager.addNode(parentPath, newNode);
             if (targetNode) { expandedFolders.add(targetNode.path); FSL.saveExpandedState(); }
-            UI.updateTreeNode(parentPath);
+            TreeManager.refreshNode(parentPath);
             UI.showToast('Folder created');
             UI.closeContextMenu();
         },
@@ -678,12 +859,7 @@ const App = (() => {
                 for (const p of parts) if (p) parent = await parent.getDirectoryHandle(p);
                 await parent.removeEntry(name);
                 const parentPath = parts.join('/') || '/';
-                const parentNode = nodeByPath.get(parentPath);
-                if (parentNode) {
-                    parentNode.children = parentNode.children.filter(c => c.path !== contextMenuTarget.path);
-                }
-                nodeByPath.delete(contextMenuTarget.path);
-                UI.updateTreeNode(parentPath);
+                TreeManager.removeNode(contextMenuTarget.path);
                 UI.showToast('File deleted');
             } catch (e) { UI.showToast('Delete failed'); }
             UI.closeContextMenu();
@@ -706,18 +882,13 @@ const App = (() => {
                 expandedFolders.delete(contextMenuTarget.path);
                 FSL.saveExpandedState();
                 const parentPath = parts.join('/') || '/';
-                const parentNode = nodeByPath.get(parentPath);
-                if (parentNode) {
-                    parentNode.children = parentNode.children.filter(c => c.path !== contextMenuTarget.path);
-                }
-                nodeByPath.delete(contextMenuTarget.path);
-                UI.updateTreeNode(parentPath);
+                TreeManager.removeNode(contextMenuTarget.path);
                 UI.showToast('Folder deleted');
             } catch (e) { UI.showToast('Delete failed'); }
             UI.closeContextMenu();
         },
 
-        async renameItem() {
+                async renameItem() {
             if (!contextMenuTarget) return;
             const oldName = contextMenuTarget.name;
             const isFolder = contextMenuTarget.kind === 'directory';
@@ -739,7 +910,6 @@ const App = (() => {
                 if (contextMenuTarget.handle.move) {
                     await contextMenuTarget.handle.move(parent, trimmed);
                 } else {
-                    // fallback
                     if (isFolder) {
                         if (contextMenuTarget.children?.length > 0) {
                             UI.showToast('Cannot rename non-empty folder (move not supported)');
@@ -770,31 +940,10 @@ const App = (() => {
 
                 const oldPath = contextMenuTarget.path;
                 const newPath = parts.length ? parts.join('/') + '/' + trimmed : trimmed;
-                const parentPath = parts.join('/') || '/';
-                nodeByPath.delete(oldPath);
                 contextMenuTarget.name = trimmed;
                 contextMenuTarget.path = newPath;
-                nodeByPath.set(newPath, contextMenuTarget);
 
-                if (isFolder && contextMenuTarget.children) {
-                    const updateChildPaths = (node, oldPrefix, newPrefix) => {
-                        if (!node.children) return;
-                        node.children.forEach(c => {
-                            const oldChildPath = c.path;
-                            c.path = newPrefix + oldChildPath.substring(oldPrefix.length);
-                            nodeByPath.delete(oldChildPath);
-                            nodeByPath.set(c.path, c);
-                            updateChildPaths(c, oldPrefix, newPrefix);
-                        });
-                    };
-                    updateChildPaths(contextMenuTarget, oldPath, newPath);
-                }
-
-                const parentNode = nodeByPath.get(parentPath);
-                if (parentNode) {
-                    parentNode.children.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : (a.kind === 'directory' ? -1 : 1));
-                }
-                UI.updateTreeNode(parentPath);
+                TreeManager.renameNode(oldPath, contextMenuTarget);
                 UI.showToast(`Renamed to ${trimmed}`);
             } catch (e) { UI.showToast('Rename failed: ' + e.message); }
             UI.closeContextMenu();
@@ -802,10 +951,6 @@ const App = (() => {
 
         clearSavedFolder: async () => {
             await FSL.clearSavedFolder();
-            nodeByPath.clear();
-            fileTree = null;
-            treeContainer.innerHTML = '';
-            sidebarHeader.textContent = 'No active directory';
             UI.showToast('Saved folder cleared');
         }
     };
@@ -855,120 +1000,6 @@ const App = (() => {
             sidebarEl.classList.toggle('hidden');
             const btn = document.getElementById('sidebar-toggle');
             btn.textContent = sidebarEl.classList.contains('hidden') ? '‹' : '›';
-        },
-
-        renderTree() {
-            treeContainer.innerHTML = '';
-            if (!fileTree) return;
-            fileTree.children.forEach(child => this._renderTreeItem(child, treeContainer, 0));
-        },
-
-        updateTreeNode(path) {
-            const node = nodeByPath.get(path);
-            if (!node) return;
-
-            const level = path === '/' ? 0 : path.split('/').length - 1;
-
-            if (node.kind === 'directory') {
-                const escapedPath = path.replace(/"/g, '\\"');
-                const existingEl = path === '/'
-                    ? null
-                    : treeContainer.querySelector(`.folder-header[data-path="${escapedPath}"]`);
-
-                if (path === '/') {
-                    // Root level: re-render all children into treeContainer
-                    treeContainer.innerHTML = '';
-                    node.children.forEach(c => this._renderTreeItem(c, treeContainer, 0));
-                } else if (existingEl) {
-                    // Existing folder – refresh its children container
-                    const folderDiv = existingEl.parentElement;
-                    const childrenDiv = folderDiv.querySelector('.tree-children');
-                    if (childrenDiv) {
-                        childrenDiv.innerHTML = '';
-                        node.children.forEach(c => this._renderTreeItem(c, childrenDiv, level + 1));
-                    }
-                } else {
-                    // New folder – find parent and append
-                    const parentPath = path.substring(0, path.lastIndexOf('/')) || '/';
-                    const parentEscaped = parentPath.replace(/"/g, '\\"');
-                    let parentChildrenEl;
-                    if (parentPath === '/') {
-                        parentChildrenEl = treeContainer;
-                    } else {
-                        const parentHeader = treeContainer.querySelector(`.folder-header[data-path="${parentEscaped}"]`);
-                        parentChildrenEl = parentHeader ? parentHeader.parentElement.querySelector('.tree-children') : treeContainer;
-                    }
-                    const parentLevel = parentPath === '/' ? 0 : parentPath.split('/').length;
-                    this._renderTreeItem(node, parentChildrenEl, parentLevel);
-                }
-            } else {
-                // File node
-                const escapedPath = path.replace(/"/g, '\\"');
-                const existingEl = treeContainer.querySelector(`.file-item[data-path="${escapedPath}"]`);
-                if (existingEl) {
-                    existingEl.textContent = node.name;
-                } else {
-                    const parentPath = path.substring(0, path.lastIndexOf('/')) || '/';
-                    const parentEscaped = parentPath.replace(/"/g, '\\"');
-                    let parentChildrenEl;
-                    if (parentPath === '/') {
-                        parentChildrenEl = treeContainer;
-                    } else {
-                        const parentHeader = treeContainer.querySelector(`.folder-header[data-path="${parentEscaped}"]`);
-                        parentChildrenEl = parentHeader ? parentHeader.parentElement.querySelector('.tree-children') : treeContainer;
-                    }
-                    const parentLevel = parentPath === '/' ? 0 : parentPath.split('/').length;
-                    this._renderTreeItem(node, parentChildrenEl, parentLevel);
-                }
-            }
-            this.highlightActiveItems();
-        },
-
-        _renderTreeItem(node, parentEl, level) {
-            if (node.kind === 'directory') {
-                const folderDiv = document.createElement('div');
-                const header = document.createElement('div');
-                header.className = 'folder-header';
-                header.dataset.path = node.path;
-                header.style.paddingLeft = (level * 14) + 'px';
-                header.tabIndex = 0;
-                const toggle = document.createElement('span');
-                toggle.className = 'toggle';
-                toggle.textContent = expandedFolders.has(node.path) ? '▼' : '▶';
-                header.appendChild(toggle);
-                header.appendChild(document.createTextNode(' ' + node.name));
-                const childrenDiv = document.createElement('div');
-                childrenDiv.className = 'tree-children';
-                childrenDiv.style.display = expandedFolders.has(node.path) ? 'block' : 'none';
-                folderDiv.appendChild(header);
-                folderDiv.appendChild(childrenDiv);
-                parentEl.appendChild(folderDiv);
-
-                header.onclick = () => {
-                    if (longPressTriggered) return;
-                    const open = childrenDiv.style.display !== 'none';
-                    childrenDiv.style.display = open ? 'none' : 'block';
-                    header.querySelector('.toggle').textContent = open ? '▶' : '▼';
-                    if (open) expandedFolders.delete(node.path); else expandedFolders.add(node.path);
-                    FSL.saveExpandedState();
-                    activeFolderPath = node.path;
-                    UI.highlightActiveItems();
-                };
-                header.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); header.click(); } };
-                node.children.forEach(c => this._renderTreeItem(c, childrenDiv, level + 1));
-            } else {
-                const fileDiv = document.createElement('div');
-                fileDiv.className = 'file-item';
-                fileDiv.dataset.path = node.path;
-                fileDiv.style.paddingLeft = (level * 14 + 26) + 'px';
-                fileDiv.textContent = node.name;
-                fileDiv.tabIndex = 0;
-                
-                fileDiv.onclick = () => { if (!longPressTriggered) Actions.openFileFromNode(node); };
-                
-                fileDiv.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); fileDiv.click(); } };
-                parentEl.appendChild(fileDiv);
-            }
         },
 
         showContextMenu(e, node, isFolder) {
@@ -1113,7 +1144,7 @@ const App = (() => {
             this.updateEditorStatus(tab);
             if (tab.path) {
                 activeFilePath = tab.path;
-                this.highlightActiveItems();
+                TreeManager.highlightActive();
             }
             FSL.saveOpenTabs(id);
         },
@@ -1155,32 +1186,15 @@ updateLineNumbers() {
             editorStatusEl.textContent = tab.name + modified;
         },
 
-        highlightActiveItems() {
-            document.querySelectorAll('.file-item.active, .folder-header.active').forEach(el => el.classList.remove('active'));
-            if (activeFilePath) {
-                const el = treeContainer.querySelector(`.file-item[data-path="${activeFilePath.replace(/"/g, '\\"')}"]`);
-                if (el) el.classList.add('active');
-                // Highlight all parent folders
-                const parts = activeFilePath.split('/');
-                for (let i = 1; i < parts.length; i++) {
-                    const parentPath = parts.slice(0, i).join('/');
-                    const folderEl = treeContainer.querySelector(`.folder-header[data-path="${parentPath.replace(/"/g, '\\"')}"]`);
-                    if (folderEl) folderEl.classList.add('active');
-                }
-            }
-            if (activeFolderPath) {
-                const el = treeContainer.querySelector(`.folder-header[data-path="${activeFolderPath.replace(/"/g, '\\"')}"]`);
-                if (el) el.classList.add('active');
-            }
-        },
-
         showReauthorizeButton(handle) {
             reauthContainer.style.display = 'flex';
             reauthBtn.onclick = async () => {
                 try {
                     await FSL.reauthorize(handle);
                     reauthContainer.style.display = 'none';
-                    await Logic.buildAndRenderTree();
+                    await TreeManager.build(currentDirHandle);
+                    TreeManager.render();
+                    TreeManager.updateHeader();
                 } catch (e) { UI.showToast('Re-authorize failed'); }
             };
         },
@@ -1197,7 +1211,15 @@ updateLineNumbers() {
 
             document.addEventListener('click', e => {
                 if (e.target.id === 'clear-folder') Actions.clearSavedFolder();
-                if (e.target.id === 'refresh-folder') { Logic.buildAndRenderTree(); return; }
+                if (e.target.id === 'refresh-folder') {
+                    if (currentDirHandle) {
+                        TreeManager.build(currentDirHandle).then(() => {
+                            TreeManager.render();
+                            TreeManager.updateHeader();
+                        });
+                    }
+                    return;
+                }
                 if (!e.target.closest('.context-menu')) UI.closeContextMenu();
             });
 
@@ -1205,10 +1227,10 @@ updateLineNumbers() {
                 const folder = e.target.closest('.folder-header');
                 const file = e.target.closest('.file-item');
                 if (folder) {
-                    const node = nodeByPath.get(folder.dataset.path);
+                    const node = TreeManager.getNode(folder.dataset.path);
                     if (node) UI.showContextMenu(e, node, true);
                 } else if (file) {
-                    const node = nodeByPath.get(file.dataset.path);
+                    const node = TreeManager.getNode(file.dataset.path);
                     if (node) UI.showContextMenu(e, node, false);
                 } else {
                     UI.showContextMenu(e, null, false);
@@ -1229,10 +1251,10 @@ updateLineNumbers() {
                     const file = target.closest('.file-item');
                     const fakeEvent = { preventDefault() {}, clientX: touch.clientX, clientY: touch.clientY };
                     if (folder) {
-                        const node = nodeByPath.get(folder.dataset.path);
+                        const node = TreeManager.getNode(folder.dataset.path);
                         if (node) UI.showContextMenu(fakeEvent, node, true);
                     } else if (file) {
-                        const node = nodeByPath.get(file.dataset.path);
+                        const node = TreeManager.getNode(file.dataset.path);
                         if (node) UI.showContextMenu(fakeEvent, node, false);
                     } else {
                         UI.showContextMenu(fakeEvent, null, false);
@@ -1333,9 +1355,9 @@ updateLineNumbers() {
             const saved = await FSL.loadSavedFolder();
             if (saved.status === 'granted') {
                 currentDirHandle = saved.handle;
-                await Logic.buildAndRenderTree();
-
-                // Restore persisted tabs
+                await TreeManager.build(currentDirHandle);
+                TreeManager.render();
+                TreeManager.updateHeader();
                 const savedTabs = FSL.loadOpenTabs();
                 let activeTabPath = null;
                 for (const st of savedTabs) {
