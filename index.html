@@ -565,89 +565,11 @@ const App = (() => {
                 sidebarHeader.innerHTML = `Active directory: ${safeName} <span class="directory-clear" id="refresh-folder" title="Refresh tree">⟳</span> <span class="directory-clear" id="clear-folder">⌫</span>`;
             },
 
-            refreshNode(path) {
-                const node = nodeByPath.get(path);
-                if (!node) return;
-
-                if (node.kind === 'directory') {
-                    const escaped = path.replace(/"/g, '\\"');
-                    const existingHeader = treeContainer.querySelector(`.folder-header[data-path="${escaped}"]`);
-                    if (existingHeader) {
-                        const childrenDiv = existingHeader.parentElement.querySelector('.tree-children');
-                        if (childrenDiv) {
-                            childrenDiv.innerHTML = '';
-                            node.children.forEach(c => _renderTreeItem(c, childrenDiv, path.split('/').length));
-                        }
-                    } else {
-                        // new folder – find parent and append
-                        const parentPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
-                        const parentEl = parentPath === '/' ? treeContainer :
-                            treeContainer.querySelector(`.folder-header[data-path="${parentPath.replace(/"/g, '\\"')}"]`)?.parentElement.querySelector('.tree-children') || treeContainer;
-                        _renderTreeItem(node, parentEl, parentPath.split('/').length);
-                    }
-                } else {
-                    // file refresh logic (same as before, but now centralized)
-                    const escaped = path.replace(/"/g, '\\"');
-                    let fileEl = treeContainer.querySelector(`.file-item[data-path="${escaped}"]`);
-                    if (fileEl) {
-                        fileEl.textContent = node.name;
-                    } else {
-                        const parentPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
-                        const parentEl = parentPath === '/' ? treeContainer :
-                            treeContainer.querySelector(`.folder-header[data-path="${parentPath.replace(/"/g, '\\"')}"]`)?.parentElement.querySelector('.tree-children') || treeContainer;
-                        const level = parentPath.split('/').length;
-                        _renderTreeItem(node, parentEl, level);
-                    }
-                }
+            async mutateAndRebuild() {
+                if (!currentDirHandle) return;
+                await this.build(currentDirHandle);
+                this.render();
                 this.highlightActive();
-            },
-
-            addNode(parentPath, newNode) {
-                const parent = nodeByPath.get(parentPath) || fileTree;
-                if (!parent.children) parent.children = [];
-                parent.children.push(newNode);
-                parent.children.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : (a.kind === 'directory' ? -1 : 1));
-                nodeByPath.set(newNode.path, newNode);
-                this.refreshNode(parentPath);
-            },
-
-            removeNode(path) {
-                const node = nodeByPath.get(path);
-                if (!node) return;
-                const parentPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) || '/' : '/';
-                const parent = nodeByPath.get(parentPath);
-                if (parent) {
-                    parent.children = parent.children.filter(c => c.path !== path);
-                }
-                nodeByPath.delete(path);
-                this.refreshNode(parentPath);
-            },
-
-            renameNode(oldPath, newNode) {
-                nodeByPath.delete(oldPath);
-                nodeByPath.set(newNode.path, newNode);
-                // update children paths if folder
-                if (newNode.kind === 'directory' && newNode.children) {
-                    const oldPrefix = oldPath;
-                    const newPrefix = newNode.path;
-                    const updatePaths = (node) => {
-                        if (!node.children) return;
-                        node.children.forEach(child => {
-                            const oldChild = child.path;
-                            child.path = newPrefix + oldChild.substring(oldPrefix.length);
-                            nodeByPath.delete(oldChild);
-                            nodeByPath.set(child.path, child);
-                            updatePaths(child);
-                        });
-                    };
-                    updatePaths(newNode);
-                }
-                const parentPath = newNode.path.includes('/') ? newNode.path.substring(0, newNode.path.lastIndexOf('/')) || '/' : '/';
-                const parent = nodeByPath.get(parentPath);
-                if (parent) {
-                    parent.children.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : (a.kind === 'directory' ? -1 : 1));
-                }
-                this.refreshNode(parentPath);
             },
 
             highlightActive() {
@@ -699,6 +621,25 @@ const App = (() => {
             return node;
         },
     };
+
+    async function legacyRename(parent, oldName, newName, isFolder, node) {
+        if (isFolder) {
+            if (node.children?.length > 0) {
+                throw new Error('Cannot rename non-empty folder (move not supported)');
+            }
+            await parent.getDirectoryHandle(newName, { create: true });
+            await parent.removeEntry(oldName);
+        } else {
+            const oldH = await parent.getFileHandle(oldName);
+            const file = await oldH.getFile();
+            const buf = await file.arrayBuffer();
+            const newH = await parent.getFileHandle(newName, { create: true });
+            const w = await newH.createWritable();
+            await w.write(buf);
+            await w.close();
+            await parent.removeEntry(oldName);
+        }
+    }
 
     // ──────────────────────────────────────────────
     // ACTIONS
@@ -756,11 +697,9 @@ const App = (() => {
             await w.write('');
             await w.close();
             const filePath = targetNode ? `${targetNode.path}/${trimmed}` : trimmed;
-            const parentPath = targetNode ? targetNode.path : '/';
-            const newNode = { name: trimmed, kind: 'file', handle: fileHandle, path: filePath };
-            TreeManager.addNode(parentPath, newNode);
-            await UI.createNewTab(fileHandle, trimmed, '', filePath);
             if (targetNode) { expandedFolders.add(targetNode.path); FSL.saveExpandedState(); }
+            await TreeManager.mutateAndRebuild();
+            await UI.createNewTab(fileHandle, trimmed, '', filePath);
             UI.closeContextMenu();
         },
 
@@ -773,13 +712,9 @@ const App = (() => {
             const targetNode = contextMenuTarget && contextMenuTarget.kind === 'directory' ? contextMenuTarget : null;
             const dirHandle = targetNode ? targetNode.handle : currentDirHandle;
             await FSL.ensureWritePermission(dirHandle);
-            const newDirHandle = await dirHandle.getDirectoryHandle(trimmed, { create: true });
-            const parentPath = targetNode ? targetNode.path : '/';
-            const folderPath = targetNode ? `${targetNode.path}/${trimmed}` : trimmed;
-            const newNode = { name: trimmed, kind: 'directory', handle: newDirHandle, path: folderPath, children: [] };
-            TreeManager.addNode(parentPath, newNode);
+            await dirHandle.getDirectoryHandle(trimmed, { create: true });
             if (targetNode) { expandedFolders.add(targetNode.path); FSL.saveExpandedState(); }
-            TreeManager.refreshNode(parentPath);
+            await TreeManager.mutateAndRebuild();
             UI.showToast('Folder created');
             UI.closeContextMenu();
         },
@@ -840,8 +775,7 @@ const App = (() => {
                 let parent = currentDirHandle;
                 for (const p of parts) if (p) parent = await parent.getDirectoryHandle(p);
                 await parent.removeEntry(name);
-                const parentPath = parts.join('/') || '/';
-                TreeManager.removeNode(contextMenuTarget.path);
+                await TreeManager.mutateAndRebuild();
                 UI.showToast('File deleted');
             } catch (e) { UI.showToast('Delete failed'); }
             UI.closeContextMenu();
@@ -863,8 +797,7 @@ const App = (() => {
                 await parent.removeEntry(name);
                 expandedFolders.delete(contextMenuTarget.path);
                 FSL.saveExpandedState();
-                const parentPath = parts.join('/') || '/';
-                TreeManager.removeNode(contextMenuTarget.path);
+                await TreeManager.mutateAndRebuild();
                 UI.showToast('Folder deleted');
             } catch (e) { UI.showToast('Delete failed'); }
             UI.closeContextMenu();
@@ -892,40 +825,30 @@ const App = (() => {
                 if (contextMenuTarget.handle.move) {
                     await contextMenuTarget.handle.move(parent, trimmed);
                 } else {
-                    if (isFolder) {
-                        if (contextMenuTarget.children?.length > 0) {
-                            UI.showToast('Cannot rename non-empty folder (move not supported)');
-                            UI.closeContextMenu();
-                            return;
-                        }
-                        await parent.getDirectoryHandle(trimmed, { create: true });
-                        await parent.removeEntry(oldName);
-                    } else {
-                        const oldH = await parent.getFileHandle(oldName);
-                        const file = await oldH.getFile();
-                        const buf = await file.arrayBuffer();
-                        const newH = await parent.getFileHandle(trimmed, { create: true });
-                        const w = await newH.createWritable();
-                        await w.write(buf);
-                        await w.close();
-                        await parent.removeEntry(oldName);
-                    }
-                }
-
-                for (const tab of tabs) {
-                    if (tab.handle && await FSL.isSameEntry(tab.handle, contextMenuTarget.handle)) {
-                        tab.name = trimmed;
-                        tab.handle = await parent.getFileHandle(trimmed);
-                        if (tab.element) tab.element.querySelector('.tab-name').textContent = trimmed;
-                    }
+                    await legacyRename(parent, oldName, trimmed, isFolder, contextMenuTarget);
                 }
 
                 const oldPath = contextMenuTarget.path;
                 const newPath = parts.length ? parts.join('/') + '/' + trimmed : trimmed;
-                contextMenuTarget.name = trimmed;
-                contextMenuTarget.path = newPath;
 
-                TreeManager.renameNode(oldPath, contextMenuTarget);
+                for (const tab of tabs) {
+                    if (tab.handle && await FSL.isSameEntry(tab.handle, contextMenuTarget.handle)) {
+                        tab.name = trimmed;
+                        tab.path = newPath;
+                        tab.handle = await parent.getFileHandle(trimmed);
+                        if (tab.element) tab.element.querySelector('.tab-name').textContent = trimmed;
+                    }
+                    if (isFolder && tab.path && tab.path.startsWith(oldPath + '/')) {
+                        tab.path = newPath + tab.path.substring(oldPath.length);
+                    }
+                }
+
+                if (activeFilePath === oldPath) activeFilePath = newPath;
+                else if (isFolder && activeFilePath && activeFilePath.startsWith(oldPath + '/')) {
+                    activeFilePath = newPath + activeFilePath.substring(oldPath.length);
+                }
+
+                await TreeManager.mutateAndRebuild();
                 UI.showToast(`Renamed to ${trimmed}`);
             } catch (e) { UI.showToast('Rename failed: ' + e.message); }
             UI.closeContextMenu();
@@ -1275,15 +1198,12 @@ updateLineNumbers() {
 
             textarea.addEventListener('scroll', () => gutter.scrollTop = textarea.scrollTop);
 
-            const updateCursorStatus = () => {
-                if (currentTabId) {
+            document.addEventListener('selectionchange', () => {
+                if (currentTabId && document.activeElement === textarea) {
                     const tab = tabs.find(t => t.id === currentTabId);
                     if (tab) this.updateEditorStatus(tab);
                 }
-            };
-            textarea.addEventListener('click', updateCursorStatus);
-            textarea.addEventListener('keyup', updateCursorStatus);
-            textarea.addEventListener('select', updateCursorStatus);
+            });
 
             textarea.addEventListener('keydown', e => {if (e.key === 'Tab') {
                 e.preventDefault();
