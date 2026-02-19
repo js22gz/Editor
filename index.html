@@ -217,7 +217,7 @@
             tab-size: 4;
         }
         
-        #line-width-slider {
+#line-width-slider {
             display: flex;
             align-items: center;
             height: 32px;
@@ -322,7 +322,10 @@
         </div>
         <div class="editor-area">
             <div id="tabs" class="tabs"></div>
-            <div id="line-width-slider"><input type="range" id="width-slider" min="10" max="100" value="100" aria-label="Text area width control"></div>
+            <div id="line-width-slider">
+                <input type="range" id="width-slider" min="60" max="200" value="120" aria-label="Line width in chars">
+                <span id="width-value">120</span>
+            </div>
             <div class="editor-wrapper">
                 <div id="gutter"></div>
                 <textarea id="textarea" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea>
