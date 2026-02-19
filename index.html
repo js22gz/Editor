@@ -1025,13 +1025,16 @@ const App = (() => {
                         };
                         const totalEntries = srcNode.children ? countEntries(srcNode) : 0;
                         if (totalEntries > 0) {
+                            const safeSrcName = srcName.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m] || m));
                             const confirmed = await new Promise(resolve => {
                                 const modal = document.createElement('div');
                                 modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10001;';
                                 const box = document.createElement('div');
+                                box.setAttribute('role', 'dialog');
+                                box.setAttribute('aria-label', `Move folder ${srcName}`);
                                 box.style.cssText = 'background:#18181b;padding:24px;border-radius:8px;min-width:320px;border:1px solid #27272a;';
                                 box.innerHTML = `
-                                    <div style="margin-bottom:12px;font-size:14px;">Move folder "${srcName}" with ${totalEntries} item${totalEntries !== 1 ? 's' : ''} inside?</div>
+                                    <div style="margin-bottom:12px;font-size:14px;">Move folder &quot;${safeSrcName}&quot; with ${totalEntries} item${totalEntries !== 1 ? 's' : ''} inside?</div>
                                     <div style="display:flex;gap:8px;margin-top:16px;">
                                         <button id="move-yes" style="flex:1;min-height:44px;background:#a1a1aa;color:#09090b;border:none;border-radius:4px;cursor:pointer;">Yes</button>
                                         <button id="move-no" style="flex:1;min-height:44px;background:#27272a;color:#e4e4e7;border:none;border-radius:4px;cursor:pointer;">No</button>
@@ -1039,9 +1042,15 @@ const App = (() => {
                                 `;
                                 modal.appendChild(box);
                                 document.body.appendChild(modal);
-                                box.querySelector('#move-yes').onclick = () => { resolve(true); modal.remove(); };
-                                box.querySelector('#move-no').onclick = () => { resolve(false); modal.remove(); };
+                                const yesBtn = box.querySelector('#move-yes');
+                                const noBtn = box.querySelector('#move-no');
+                                yesBtn.onclick = () => { resolve(true); modal.remove(); };
+                                noBtn.onclick = () => { resolve(false); modal.remove(); };
                                 modal.onclick = e => { if (e.target === modal) { resolve(false); modal.remove(); } };
+                                box.addEventListener('keydown', e => {
+                                    if (e.key === 'Escape') { resolve(false); modal.remove(); }
+                                });
+                                yesBtn.focus();
                             });
                             if (!confirmed) return;
                         }
