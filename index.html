@@ -216,41 +216,27 @@
             word-wrap: normal;
             tab-size: 4;
         }
+        
         #line-width-slider {
             display: flex;
             align-items: center;
-            height: 24px;
+            height: 32px;
             background: #18181b;
             border-bottom: 1px solid #27272a;
             padding: 0 16px 0 52px;
+            gap: 10px;
         }
-        #line-width-slider input[type="range"] {
-            width: 100%;
-            height: 4px;
-            -webkit-appearance: none;
-            appearance: none;
-            background: #3f3f46;
-            border-radius: 2px;
-            outline: none;
-            cursor: pointer;
+        #line-width-slider input {
+            flex: 1;
+            accent-color: #a1a1aa;
         }
-        #line-width-slider input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #a1a1aa;
-            cursor: pointer;
+        #width-value {
+            font-family: ui-monospace, monospace;
+            color: #a1a1aa;
+            min-width: 36px;
+            text-align: right;
         }
-        #line-width-slider input[type="range"]::-moz-range-thumb {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #a1a1aa;
-            border: none;
-            cursor: pointer;
-        }
+        
         .status {
             height: 28px;
             background: #18181b;
@@ -1270,14 +1256,19 @@ const App = (() => {
                     if (currentTabId) this.closeTab(currentTabId);
                 }
             });
-            document.getElementById('width-slider').addEventListener('input', e => {
-                const v = parseInt(e.target.value, 10);
-                if (v > 90) {
+            
+            const slider = document.getElementById('width-slider');
+            const valueEl = document.getElementById('width-value');
+            const MAX_CHARS = 200;
+            slider.addEventListener('input', e => {
+                const v = +e.target.value;
+                valueEl.textContent = (v === MAX_CHARS) ? '∞' : v;
+                if (v === MAX_CHARS) {
                     textarea.style.maxWidth = 'none';
                     textarea.style.whiteSpace = 'pre';
                     textarea.style.wordWrap = 'normal';
                 } else {
-                    textarea.style.maxWidth = v + '%';
+                    textarea.style.maxWidth = v + 'ch';
                     textarea.style.whiteSpace = 'pre-wrap';
                     textarea.style.wordWrap = 'break-word';
                 }
