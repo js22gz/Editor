@@ -354,7 +354,6 @@ const App = (() => {
     let lastLineCount = 1;
     let longPressTriggered = false;
     let activeFilePath = null;
-    let activeFolderPath = null;
 
     // DOM references
     let textarea, gutter, tabsContainer, treeContainer,
@@ -441,7 +440,6 @@ const App = (() => {
             try { localStorage.setItem('expandedFolders', JSON.stringify([...expandedFolders])); } catch {}
         },
 
-        getExpandedFolders() { return [...expandedFolders]; }, 
 
         async isSameEntry(h1, h2) {
             if (!h1 || !h2) return false;
@@ -517,7 +515,6 @@ const App = (() => {
                     if (wasOpen) expandedFolders.delete(node.path);
                     else expandedFolders.add(node.path);
                     FSL.saveExpandedState();
-                    activeFolderPath = node.path;
                     TreeManager.highlightActive();
                 };
                 header.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); header.click(); } };
@@ -665,10 +662,6 @@ const App = (() => {
                         if (folderEl) folderEl.classList.add('active');
                     }
                 }
-                if (activeFolderPath) {
-                    const el = treeContainer.querySelector(`.folder-header[data-path="${activeFolderPath.replace(/"/g, '\\"')}"]`);
-                    if (el) el.classList.add('active');
-                }
             },
 
             clear() {
@@ -684,17 +677,6 @@ const App = (() => {
     // LOGIC
     // ──────────────────────────────────────────────
     const Logic = {
-        findNodeByPath(node, path) {
-            if (!node) return null;
-            if (node.path === path) return node;
-            if (node.children) {
-                for (const child of node.children) {
-                    const found = this.findNodeByPath(child, path);
-                    if (found) return found;
-                }
-            }
-            return null;
-        },
 
         async buildTree(dirHandle, basePath = '', depth = 0) {
             if (depth > 12) return { name: dirHandle.name, kind: 'directory', truncated: true };
