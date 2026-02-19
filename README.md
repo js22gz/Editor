@@ -5,5 +5,6 @@
 * Sidebar file tree with expand/collapse support
 * Service Worker for offline capability
 * Installable as a PWA
+  [Try EDITOR here](https://js22gz.github.io/Editor)
 
 Copyright © 2026 Jonatan Skäryd. All rights reserved.
