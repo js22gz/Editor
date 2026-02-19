@@ -123,6 +123,10 @@
             color: #f4f4f5;
             font-weight: 500;
         }
+        .folder-header.drop-target,
+        .tree-container.drop-target { background: #27272a; outline: 1px dashed #52525b; }
+        .file-item.dragging,
+        .folder-header.dragging { opacity: 0.4; }
     
         .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
     
@@ -552,6 +556,31 @@ const App = (() => {
                 };
                 header.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); header.click(); } };
 
+                // Drag-and-drop: folder is draggable and a drop target
+                header.draggable = true;
+                header.addEventListener('dragstart', e => {
+                    e.dataTransfer.setData('application/x-tree-path', node.path);
+                    e.dataTransfer.effectAllowed = 'move';
+                    header.classList.add('dragging');
+                });
+                header.addEventListener('dragend', () => header.classList.remove('dragging'));
+                header.addEventListener('dragover', e => {
+                    const src = e.dataTransfer.types.includes('application/x-tree-path');
+                    if (!src) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    header.classList.add('drop-target');
+                });
+                header.addEventListener('dragleave', () => header.classList.remove('drop-target'));
+                header.addEventListener('drop', e => {
+                    e.preventDefault();
+                    header.classList.remove('drop-target');
+                    const srcPath = e.dataTransfer.getData('application/x-tree-path');
+                    if (srcPath && srcPath !== node.path && !node.path.startsWith(srcPath + '/')) {
+                        Actions.moveEntry(srcPath, node.path);
+                    }
+                });
+
                 node.children.forEach(c => _renderTreeItem(c, childrenDiv, level + 1));
             } else {
                 const fileDiv = document.createElement('div');
@@ -563,6 +592,15 @@ const App = (() => {
 
                 fileDiv.onclick = () => { if (!longPressTriggered) Actions.openFileFromNode(node); };
                 fileDiv.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); fileDiv.click(); } };
+
+                // Drag-and-drop: file is draggable
+                fileDiv.draggable = true;
+                fileDiv.addEventListener('dragstart', e => {
+                    e.dataTransfer.setData('application/x-tree-path', node.path);
+                    e.dataTransfer.effectAllowed = 'move';
+                    fileDiv.classList.add('dragging');
+                });
+                fileDiv.addEventListener('dragend', () => fileDiv.classList.remove('dragging'));
 
                 parentEl.appendChild(fileDiv);
             }
@@ -915,6 +953,149 @@ const App = (() => {
         clearSavedFolder: async () => {
             await FSL.clearSavedFolder();
             UI.showToast('Saved folder cleared');
+        },
+
+        async moveEntry(srcPath, destFolderPath) {
+            if (!currentDirHandle) return;
+            const srcNode = TreeManager.getNode(srcPath);
+            if (!srcNode) return UI.showToast('Source not found');
+
+            // Prevent moving into itself
+            if (destFolderPath === srcPath) return;
+            if (srcNode.kind === 'directory' && destFolderPath.startsWith(srcPath + '/')) return UI.showToast('Cannot move folder into itself');
+
+            // Resolve source parent handle
+            const srcParts = srcPath.split('/');
+            const srcName = srcParts.pop();
+            let srcParent = currentDirHandle;
+            for (const p of srcParts) if (p) srcParent = await srcParent.getDirectoryHandle(p);
+
+            // Resolve destination handle
+            let destHandle = currentDirHandle;
+            if (destFolderPath) {
+                const destParts = destFolderPath.split('/');
+                for (const p of destParts) if (p) destHandle = await destHandle.getDirectoryHandle(p);
+            }
+
+            // Prevent no-op (same parent)
+            if (await FSL.isSameEntry(srcParent, destHandle)) return;
+
+            // Check for name conflict
+            try {
+                if (srcNode.kind === 'file') await destHandle.getFileHandle(srcName);
+                else await destHandle.getDirectoryHandle(srcName);
+                return UI.showToast(`"${srcName}" already exists in destination`);
+            } catch { /* name available */ }
+
+            try {
+                await FSL.ensureWritePermission(srcParent);
+                await FSL.ensureWritePermission(destHandle);
+
+                if (srcNode.handle.move) {
+                    // Modern API: FileSystemHandle.move()
+                    await srcNode.handle.move(destHandle, srcName);
+                } else {
+                    // Fallback: copy + delete
+                    if (srcNode.kind === 'file') {
+                        const file = await srcNode.handle.getFile();
+                        const buf = await file.arrayBuffer();
+                        const newH = await destHandle.getFileHandle(srcName, { create: true });
+                        const w = await newH.createWritable();
+                        await w.write(buf);
+                        await w.close();
+                        await srcParent.removeEntry(srcName);
+                    } else {
+                        // For folders, only support empty or use move() API
+                        if (srcNode.children && srcNode.children.length > 0) {
+                            return UI.showToast('Cannot move non-empty folder (browser limitation)');
+                        }
+                        await destHandle.getDirectoryHandle(srcName, { create: true });
+                        await srcParent.removeEntry(srcName);
+                    }
+                }
+
+                // Update open tab paths and re-resolve handles
+                const oldPath = srcPath;
+                const newPath = destFolderPath ? `${destFolderPath}/${srcName}` : srcName;
+                for (const tab of tabs) {
+                    if (tab.path === oldPath) {
+                        tab.path = newPath;
+                        if (srcNode.kind === 'file') tab.handle = await destHandle.getFileHandle(srcName);
+                    } else if (tab.path && tab.path.startsWith(oldPath + '/')) {
+                        const relPath = tab.path.substring(oldPath.length);
+                        tab.path = newPath + relPath;
+                        // Re-resolve file handle by walking the new path
+                        try {
+                            const parts = tab.path.split('/');
+                            const fileName = parts.pop();
+                            let dir = currentDirHandle;
+                            for (const p of parts) if (p) dir = await dir.getDirectoryHandle(p);
+                            tab.handle = await dir.getFileHandle(fileName);
+                        } catch { /* handle will be stale but tab path is updated */ }
+                    }
+                }
+
+                if (activeFilePath === oldPath) activeFilePath = newPath;
+                else if (activeFilePath && activeFilePath.startsWith(oldPath + '/')) {
+                    activeFilePath = newPath + activeFilePath.substring(oldPath.length);
+                }
+
+                if (destFolderPath) { expandedFolders.add(destFolderPath); FSL.saveExpandedState(); }
+                await TreeManager.mutateAndRebuild();
+                UI.showToast(`Moved "${srcName}"`);
+            } catch (e) { UI.showToast('Move failed: ' + e.message); }
+            UI.closeContextMenu();
+        },
+
+        async showMoveDialog() {
+            const target = contextMenuTarget;
+            if (!target || !currentDirHandle) return;
+
+            // Collect all folder paths
+            const folders = [{ path: '', name: '/ (root)' }];
+            const collectFolders = (node) => {
+                if (node.kind === 'directory' && node.path !== target.path) {
+                    // Prevent moving a folder into its own subtree
+                    if (target.kind !== 'directory' || !node.path.startsWith(target.path + '/')) {
+                        folders.push({ path: node.path, name: node.path });
+                    }
+                }
+                if (node.children) node.children.forEach(collectFolders);
+            };
+            const tree = TreeManager.getNode('') || TreeManager.getNode('/');
+            if (tree && tree.children) tree.children.forEach(collectFolders);
+
+            // Build selection dialog
+            const destPath = await new Promise(resolve => {
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10001;';
+                const box = document.createElement('div');
+                box.style.cssText = 'background:#18181b;padding:24px;border-radius:8px;min-width:320px;max-height:60vh;border:1px solid #27272a;display:flex;flex-direction:column;';
+                const title = document.createElement('div');
+                title.style.cssText = 'margin-bottom:12px;font-size:14px;';
+                title.textContent = `Move "${target.name}" to:`;
+                const list = document.createElement('div');
+                list.style.cssText = 'overflow-y:auto;flex:1;margin-bottom:16px;';
+                folders.forEach(f => {
+                    const item = document.createElement('div');
+                    item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:13px;color:#e4e4e7;border-radius:4px;';
+                    item.textContent = f.name;
+                    item.onmouseenter = () => item.style.background = '#27272a';
+                    item.onmouseleave = () => item.style.background = '';
+                    item.onclick = () => { resolve(f.path); modal.remove(); };
+                    list.appendChild(item);
+                });
+                const cancelBtn = document.createElement('button');
+                cancelBtn.style.cssText = 'min-height:44px;background:#27272a;color:#e4e4e7;border:none;border-radius:4px;cursor:pointer;';
+                cancelBtn.textContent = 'Cancel';
+                cancelBtn.onclick = () => { resolve(null); modal.remove(); };
+                box.append(title, list, cancelBtn);
+                modal.appendChild(box);
+                modal.onclick = e => { if (e.target === modal) { resolve(null); modal.remove(); } };
+                document.body.appendChild(modal);
+            });
+            if (destPath === null) { UI.closeContextMenu(); return; }
+            await this.moveEntry(target.path, destPath);
         }
     };
 
@@ -996,11 +1177,13 @@ const App = (() => {
                 addItem('New Folder', () => Actions.newFolder());
                 addSeparator();
                 addItem('Rename', () => Actions.renameItem());
+                addItem('Move to…', () => Actions.showMoveDialog());
                 addSeparator();
                 addItem('Delete Folder', () => Actions.deleteFolder(), 'danger');
             } else {
                 addItem('Open', () => Actions.openFileFromNode(contextMenuTarget));
                 addItem('Rename', () => Actions.renameItem());
+                addItem('Move to…', () => Actions.showMoveDialog());
                 addSeparator();
                 addItem('Delete File', () => Actions.deleteFile(), 'danger');
             }
@@ -1175,6 +1358,25 @@ updateLineNumbers() {
                 const wasMobile = isMobile;
                 isMobile = window.innerWidth <= 768;
                 if (isMobile && !wasMobile) sidebarEl.classList.add('hidden');
+            });
+
+            // Drop on tree container background → move to root
+            treeContainer.addEventListener('dragover', e => {
+                if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
+                if (e.target.closest('.folder-header')) return;  // handled by folder
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                treeContainer.classList.add('drop-target');
+            });
+            treeContainer.addEventListener('dragleave', e => {
+                if (!e.relatedTarget || !treeContainer.contains(e.relatedTarget)) treeContainer.classList.remove('drop-target');
+            });
+            treeContainer.addEventListener('drop', e => {
+                treeContainer.classList.remove('drop-target');
+                if (e.target.closest('.folder-header')) return;  // handled by folder
+                e.preventDefault();
+                const srcPath = e.dataTransfer.getData('application/x-tree-path');
+                if (srcPath) Actions.moveEntry(srcPath, '');
             });
 
             document.addEventListener('click', e => {
