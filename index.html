@@ -1,5 +1,10 @@
-<!--
-  index.html – single-file web editor (HTML + CSS + JS, no build step)
+<script>
+const LEGEND = '<!--
+  name: EDITOR
+  description: No dependency single-file text EDITOR
+  length: ~1500 lines (febuary 2026)
+  compability: theoretically all browsers? (Only tested in Chrome though *lol*) 
+  Copyright © 2026 Jonatan Skäryd. All rights reserved.
   ═══════════════════════════════════════════════════════════════════════
 
   FILE MAP
@@ -73,7 +78,8 @@
   manifest.json   PWA manifest
   sw.js           Service Worker (cache-first offline support)
   favicon.ico     App icon
--->
+-->'
+</script>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1410,7 +1416,7 @@ const slider = document.getElementById('width-slider');
             }
             if (isMobile) sidebarEl.classList.add('hidden');
             if (!hadSavedTabs && tabs.length === 0) {
-                await UI.createNewTab(null, 'welcome.txt', `EDITOR\nA minimal, fast text editor.\n\n`);
+                await UI.createNewTab(null, 'welcome.txt', LEGEND);
             }
         }
     };
