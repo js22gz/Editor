@@ -1,3 +1,81 @@
+<!--
+  index.html – single-file web editor (HTML + CSS + JS, no build step)
+  ═══════════════════════════════════════════════════════════════════════
+
+  FILE MAP
+  ────────
+  index.html
+  ├── <head>
+  │   ├── <meta>  charset · viewport · title · manifest · theme-color
+  │   └── <style>
+  │       ├── Base layout   – *, body, .topbar, .logo, .main
+  │       ├── Sidebar       – .sidebar, .sidebar-header, .sidebar-header-row
+  │       ├── Tree          – .tree-container, .folder-header, .toggle,
+  │       │                   .tree-children, .file-item  (drag/drop styles)
+  │       ├── Editor        – .editor-area, .tabs, .tab, .dirty-indicator,
+  │       │                   .editor-wrapper, #gutter, #textarea
+  │       ├── Widgets       – .toast, .status, .sidebar-toggle,
+  │       │                   #line-width-slider
+  │       ├── Context menu  – .context-menu, .context-menu-item,
+  │       │                   .context-menu-separator
+  │       └── Mobile        – touch-action, -webkit-overflow-scrolling
+  │
+  └── <body>
+      ├── div.topbar
+      │   ├── div.logo                    "EDITOR" heading
+      │   └── div#topbar-active-row       shows the active directory path
+      │
+      ├── div.main
+      │   ├── div#sidebar.sidebar
+      │   │   ├── div#sidebar-header      root dir label + refresh/clear icons
+      │   │   └── div#tree-container      file-tree (rendered by TreeManager)
+      │   │
+      │   └── div.editor-area
+      │       ├── div#tabs                open-file tab strip
+      │       ├── div#line-width-slider   soft wrap / line-width control
+      │       ├── div.editor-wrapper
+      │       │   ├── button#sidebar-toggle   collapse/expand sidebar
+      │       │   ├── div#gutter              line-number column
+      │       │   └── textarea#textarea       main editing surface
+      │       └── div.status              cursor position + file info bar
+      │
+      └── <script>  (IIFE: const App = (() => { … })())
+          │
+          ├── STATE         – currentDirHandle, tabs, activeDirectoryPath, …
+          │
+          ├── FS            – File System Access API + IndexedDB wrapper
+          │   ├── initDB / saveFolderHandle / loadSavedFolder / clearSavedFolder
+          │   ├── queryPermission / ensureRW / reauthorize
+          │   ├── resolvePath / buildTree
+          │   ├── loadExpandedState / saveExpandedState
+          │   ├── writeFile / isSameEntry / moveFile
+          │   └── loadOpenTabs / saveOpenTabs
+          │
+          ├── TreeManager   – sidebar tree rendering & state
+          │   ├── _renderTreeItem()   recursive DOM builder
+          │   ├── build / render / mutateAndRebuild
+          │   ├── registerNode / highlightActive
+          │   └── updateHeader / clear
+          │
+          ├── UI            – DOM interactions & event wiring
+          │   ├── bindEvents()   keyboard shortcuts, drag-and-drop, resize
+          │   ├── createNewTab / switchToTab / closeTab
+          │   ├── showToast / showInputDialog / closeContextMenu
+          │   └── updateGutter / updateEditorStatus / init
+          │
+          └── Actions       – file-system operations invoked from UI
+              ├── openFolder / openFileFromNode
+              ├── newFile / newFolder
+              ├── saveTab / saveCurrentFile / scheduleSave / flushSave
+              ├── deleteFile / deleteFolder
+              └── rename / moveEntry
+
+  External files
+  ──────────────
+  manifest.json   PWA manifest
+  sw.js           Service Worker (cache-first offline support)
+  favicon.ico     App icon
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -708,7 +786,8 @@ const App = (() => {
             const trimmed = name.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return UI.showToast('Invalid filename');
             let targetPath = contextMenuTarget && contextMenuTarget.kind === 'directory' ? contextMenuTarget.path : (activeDirectoryPath || '');
-            const { parent } = await FS.resolvePath(currentDirHandle, targetPath);
+            const { parent: dirParent, name: dirName } = await FS.resolvePath(currentDirHandle, targetPath);
+            const parent = targetPath ? await dirParent.getDirectoryHandle(dirName) : dirParent;
             await FS.ensureRW(parent);
             const fileHandle = await parent.getFileHandle(trimmed, { create: true });
             await FS.writeFile(fileHandle, '');
@@ -724,7 +803,8 @@ const App = (() => {
             const trimmed = name.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return UI.showToast('Invalid folder name');
             let targetPath = contextMenuTarget && contextMenuTarget.kind === 'directory' ? contextMenuTarget.path : (activeDirectoryPath || '');
-            const { parent } = await FS.resolvePath(currentDirHandle, targetPath);
+            const { parent: dirParent, name: dirName } = await FS.resolvePath(currentDirHandle, targetPath);
+            const parent = targetPath ? await dirParent.getDirectoryHandle(dirName) : dirParent;
             await FS.ensureRW(parent);
             await parent.getDirectoryHandle(trimmed, { create: true });
             if (targetPath) { expandedFolders.add(targetPath); FS.saveExpandedState(); }
