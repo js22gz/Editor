@@ -915,9 +915,12 @@ const App = (() => {
                 return fileTree;
             },
             render() {
-                treeContainer.innerHTML = '';
+                treeContainer.replaceChildren();
                 if (!fileTree) {
-                    treeContainer.innerHTML = '<div style="padding:20px;color:#52525b;text-align:center;font-size:12px">No folder open</div>';
+                    const msg = document.createElement('div');
+                    msg.style.cssText = 'padding:20px;color:#52525b;text-align:center;font-size:12px';
+                    msg.textContent = 'No folder open';
+                    treeContainer.appendChild(msg);
                     return;
                 }
                 fileTree.children.forEach(child => _renderTreeItem(child, treeContainer, 0));
@@ -927,13 +930,22 @@ const App = (() => {
                 if (!fileTree || !currentDirHandle) {
                     activeDirNameEl.textContent = '/';
                     rootDirNameEl.textContent = 'Click to open folder';
-                    sidebarHeaderActionsEl.innerHTML = '';
+                    sidebarHeaderActionsEl.replaceChildren();
                     return;
                 }
-                const safeName = currentDirHandle.name.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m] || m));
+                const safeName = currentDirHandle.name;
                 rootDirNameEl.textContent = safeName;
                 activeDirNameEl.textContent = activeDirectoryPath ? safeName + '/' + activeDirectoryPath : safeName;
-                sidebarHeaderActionsEl.innerHTML = `<span class="directory-clear" id="refresh-folder" title="Refresh tree">&#x27F3;</span> <span class="directory-clear" id="clear-folder">&#x232B;</span>`;
+                const refreshSpan = document.createElement('span');
+                refreshSpan.className = 'directory-clear';
+                refreshSpan.id = 'refresh-folder';
+                refreshSpan.title = 'Refresh tree';
+                refreshSpan.textContent = '\u27F3';
+                const clearSpan = document.createElement('span');
+                clearSpan.className = 'directory-clear';
+                clearSpan.id = 'clear-folder';
+                clearSpan.textContent = '\u232B';
+                sidebarHeaderActionsEl.replaceChildren(refreshSpan, clearSpan);
             },
             async mutateAndRebuild() {
                 if (!currentDirHandle) return;
@@ -966,7 +978,7 @@ const App = (() => {
             clear() {
                 fileTree = null;
                 nodeByPath.clear();
-                treeContainer.innerHTML = '';
+                treeContainer.replaceChildren();
             }
         };
     })();
@@ -987,21 +999,29 @@ const App = (() => {
                 modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10001;';
                 const box = document.createElement('div');
                 box.style.cssText = 'background:#18181b;padding:24px;border-radius:8px;min-width:320px;border:1px solid #27272a;';
-                box.innerHTML = `
-                    <div style="margin-bottom:12px;font-size:14px;">${title}</div>
-                    <input type="text" id="modal-input" value="${defaultValue.replace(/"/g, '&quot;')}" style="width:100%;padding:10px;background:#27272a;border:1px solid #3f3f46;color:#e4e4e7;border-radius:4px;font-size:16px;">
-                    <div style="display:flex;gap:8px;margin-top:16px;">
-                        <button id="modal-ok" style="flex:1;min-height:44px;background:#a1a1aa;color:#09090b;border:none;border-radius:4px;">OK</button>
-                        <button id="modal-cancel" style="flex:1;min-height:44px;background:#27272a;color:#e4e4e7;border:none;border-radius:4px;">Cancel</button>
-                    </div>
-                `;
+                const titleDiv = document.createElement('div');
+                titleDiv.style.cssText = 'margin-bottom:12px;font-size:14px;';
+                titleDiv.textContent = title;
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = defaultValue;
+                input.style.cssText = 'width:100%;padding:10px;background:#27272a;border:1px solid #3f3f46;color:#e4e4e7;border-radius:4px;font-size:16px;';
+                const btnRow = document.createElement('div');
+                btnRow.style.cssText = 'display:flex;gap:8px;margin-top:16px;';
+                const okBtn = document.createElement('button');
+                okBtn.style.cssText = 'flex:1;min-height:44px;background:#a1a1aa;color:#09090b;border:none;border-radius:4px;';
+                okBtn.textContent = 'OK';
+                const cancelBtn = document.createElement('button');
+                cancelBtn.style.cssText = 'flex:1;min-height:44px;background:#27272a;color:#e4e4e7;border:none;border-radius:4px;';
+                cancelBtn.textContent = 'Cancel';
+                btnRow.append(okBtn, cancelBtn);
+                box.append(titleDiv, input, btnRow);
                 modal.appendChild(box);
                 document.body.appendChild(modal);
-                const input = box.querySelector('#modal-input');
                 input.focus();
                 input.select();
-                box.querySelector('#modal-ok').onclick = () => { resolve(input.value); modal.remove(); };
-                box.querySelector('#modal-cancel').onclick = () => { resolve(null); modal.remove(); };
+                okBtn.onclick = () => { resolve(input.value); modal.remove(); };
+                cancelBtn.onclick = () => { resolve(null); modal.remove(); };
                 input.onkeydown = e => {
                     if (e.key === 'Enter') { resolve(input.value); modal.remove(); }
                     if (e.key === 'Escape') { resolve(null); modal.remove(); }
@@ -1160,7 +1180,7 @@ const App = (() => {
             if (tabs.length === 0) {
                 currentTabId = null;
                 textarea.value = '';
-                gutter.innerHTML = '';
+                gutter.replaceChildren();
                 editorStatusEl.textContent = 'No file open';
                 FS.saveOpenTabs(null);
                 localStorage.removeItem('openTabs');
