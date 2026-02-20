@@ -1,5 +1,5 @@
 <script>
-const LEGEND = '<!--
+const window.LEGEND = '<!--
   name: EDITOR
   description: No dependency single-file text EDITOR
   length: ~1500 lines (febuary 2026)
@@ -1416,7 +1416,7 @@ const slider = document.getElementById('width-slider');
             }
             if (isMobile) sidebarEl.classList.add('hidden');
             if (!hadSavedTabs && tabs.length === 0) {
-                await UI.createNewTab(null, 'welcome.txt', LEGEND);
+                await UI.createNewTab(null, 'welcome.txt', window.LEGEND);
             }
         }
     };
