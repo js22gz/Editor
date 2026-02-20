@@ -2,35 +2,35 @@
 window.LEGEND = `<!--
   name: EDITOR
   description: No dependency single-file text EDITOR
-  length: ~1500 lines (febuary 2026)
-  compability: theoretically all browsers? (Only tested in Chrome though *lol*)
+  length: ~1500 lines (February 2026)
+  compatibility: theoretically all browsers? (Only tested in Chrome though *lol*)
   ═══════════════════════════════════════════════════════════════════════
   FILE MAP
   ────────
   index.html
   ├── <head>
-  │      ├── <meta> charset · viewport · title · manifest · theme-color
-  │      └── <style> 
-  └── <body> 
-         ├── div.topbar 
-         │ ├── div.logo "EDITOR" heading
-         │ └── div#topbar-active-row shows the active directory path
+  │   ├── <meta> charset · viewport · title · manifest · theme-color
+  │   └── <style>
+  └── <body>
+         ├── <header>
+         │   ├── <h1>EDITOR</h1>
+         │   └── #path-bar              active directory path
          │
-         ├── div.main 
-         │     ├── div#sidebar.sidebar 
-         │     │     ├── div#sidebar-header root dir label + refresh/clear icons
-         │     │     └── div#tree-container file-tree (rendered by TreeManager)
-         │     │
-         │     └── div.editor-area 
-         │     ├── div#tabs open-file tab strip
-         │     ├── div#line-width-slider soft wrap / line-width control
-         │     ├── div.editor-wrapper
-         │     │     ├── button#sidebar-toggle collapse/expand sidebar
-         │     │     ├── div#gutter line-number column
-         │     │     └── textarea#textarea main editing surface
-         │     └── div.status cursor position + file info bar
+         ├── <main>
+         │   ├── <aside id="sidebar">
+         │   │   ├── #tree-header       root dir label + refresh/clear icons
+         │   │   └── #file-tree         file-tree (rendered by TreeManager)
+         │   │
+         │   └── .editor
+         │       ├── #tab-bar           open-file tab strip
+         │       ├── #wrap-bar          soft-wrap / line-width control
+         │       ├── #edit-pane
+         │       │   ├── button#sidebar-toggle
+         │       │   ├── #line-numbers  line-number gutter
+         │       │   └── #edit-area     main editing surface
+         │       └── #status-bar        cursor position + file info
          │
-         └── <script> (IIFE: const App = (() => { … })()) 
+         └── <script> (IIFE: const App = (() => { … })())
                 │
                 ├── STATE – currentDirHandle, tabs, activeDirectoryPath, …
                 │
@@ -41,23 +41,23 @@ window.LEGEND = `<!--
                 │ ├── loadExpandedState / saveExpandedState
                 │ ├── writeFile / isSameEntry
                 │ ├── loadOpenTabs / saveOpenTabs
-                │ ├── openFolder / openFile / openFileFromNode ln 594
-                │ ├── newFile / newFolder ln 633
-                │ ├── saveTab / saveCurrentFile / scheduleSave / flushSave ln 666
-                │ ├── deleteFile / deleteFolder ln 703
-                │ └── renameItem / moveEntry ln 742
+                │ ├── openFolder / openFile / openFileFromNode
+                │ ├── newFile / newFolder
+                │ ├── saveTab / saveCurrentFile / scheduleSave / flushSave
+                │ ├── deleteFile / deleteFolder
+                │ └── renameItem / moveEntry
                 │
-                ├── TreeManager – sidebar tree rendering & state ln 834
+                ├── TreeManager – sidebar tree rendering & state
                 │ ├── _renderTreeItem() recursive DOM builder
                 │ ├── build / render / mutateAndRebuild
                 │ ├── registerNode / highlightActive
                 │ └── updateHeader / clear
                 │
-                └── UI – DOM interactions & event wiring ln 976
+                └── UI – DOM interactions & event wiring
                      ├── bindEvents() keyboard shortcuts, drag-and-drop, resize
                      ├── createNewTab / switchToTab / closeTab
                      ├── showToast / showInputDialog / closeContextMenu
-                     └── updateGutter / updateEditorStatus / init
+                     └── updateLineNumbers / updateEditorStatus / init
 
   copyright © 2026 Jonatan Skäryd. All rights reserved.
   the LEGEND is off limits for any automated process such as AI-AGENTS... It's a human work in progress.
