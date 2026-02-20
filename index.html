@@ -84,7 +84,7 @@ window.LEGEND = `<!--
             flex-direction: column;
         }
    
-        .topbar {
+        header {
             height: auto;
             min-height: 76px;
             background: #18181b;
@@ -97,16 +97,17 @@ window.LEGEND = `<!--
             flex-shrink: 0;
             gap: 3px;
         }
-        .logo {
+        h1 {
             font-weight: 700;
             font-size: 1.5rem;
             letter-spacing: -0.5px;
             pointer-events: none;
+            margin: 0;
         }
    
-        .main { flex: 1; display: flex; overflow: hidden; }
+        main { flex: 1; display: flex; overflow: hidden; }
    
-        .sidebar {
+        #sidebar {
             width: 280px;
             background: #111113;
             border-right: 1px solid #27272a;
@@ -116,14 +117,14 @@ window.LEGEND = `<!--
             transition: width 0.2s, opacity 0.2s;
             overflow: hidden;
         }
-        .sidebar.hidden {
+        #sidebar.hidden {
             width: 0;
             border-right: none;
             opacity: 0;
             pointer-events: none;
         }
    
-        .sidebar-header {
+        #sidebar-header {
             padding: 0;
             font-size: 0.7rem;
             text-transform: uppercase;
@@ -157,7 +158,7 @@ window.LEGEND = `<!--
         #topbar-active-row:hover { color: #e4e4e7; }
         .directory-clear { cursor: pointer; margin-left: 8px; }
    
-        .tree-container {
+        #tree-container {
             flex: 1;
             overflow-y: auto;
             padding: 8px 0;
@@ -199,13 +200,13 @@ window.LEGEND = `<!--
             font-weight: 500;
         }
         .folder-header.drop-target,
-        .tree-container.drop-target { background: #27272a; outline: 1px dashed #52525b; }
+        #tree-container.drop-target { background: #27272a; outline: 1px dashed #52525b; }
         .file-item.dragging,
         .folder-header.dragging { opacity: 0.4; }
    
         .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
    
-        .tabs {
+        #tabs {
             display: flex;
             background: #18181b;
             border-bottom: 1px solid #27272a;
@@ -382,29 +383,29 @@ window.LEGEND = `<!--
 .folder-header {
     touch-action: manipulation;
 }
-.tree-container {
+#tree-container {
     -webkit-overflow-scrolling: touch;
 }
        
     </style>
 </head>
 <body>
-    <div class="topbar">
-        <div class="logo">EDITOR</div>
+    <header>
+        <h1>EDITOR</h1>
         <div id="topbar-active-row" title="Click to reset active directory"><span class="sidebar-header-label">ACTIVE:</span> <span id="active-dir-name">/</span></div>
-    </div>
-    <div class="main">
-        <div id="sidebar" class="sidebar">
-            <div id="sidebar-header" class="sidebar-header">
+    </header>
+    <main>
+        <aside id="sidebar">
+            <div id="sidebar-header">
                 <div id="sidebar-root-row" class="sidebar-header-row" title="Click to open folder">
                     <span><span class="sidebar-header-label">ROOT:</span> <span id="root-dir-name">Click to open folder</span></span>
                     <span id="sidebar-header-actions"></span>
                 </div>
             </div>
-            <div id="tree-container" class="tree-container"></div>
-        </div>
+            <div id="tree-container"></div>
+        </aside>
         <div class="editor-area">
-            <div id="tabs" class="tabs"></div>
+            <div id="tabs"></div>
             <div id="line-width-slider">
                 <input type="range" id="width-slider" min="24" max="200" value="200" aria-label="Line width in chars">
                 <span id="width-value">120</span>
@@ -416,7 +417,7 @@ window.LEGEND = `<!--
             </div>
             <div class="status"><span id="status"></span><span style="flex:1"></span><span id="editor-status">No file open</span></div>
         </div>
-    </div>
+    </main>
 <script>
 'use strict';
 const App = (() => {
