@@ -1,84 +1,82 @@
 <script>
-const window.LEGEND = '<!--
+window.LEGEND = `<!--
   name: EDITOR
   description: No dependency single-file text EDITOR
   length: ~1500 lines (febuary 2026)
-  compability: theoretically all browsers? (Only tested in Chrome though *lol*) 
+  compability: theoretically all browsers? (Only tested in Chrome though *lol*)
   Copyright © 2026 Jonatan Skäryd. All rights reserved.
   ═══════════════════════════════════════════════════════════════════════
-
   FILE MAP
   ────────
   index.html
-  ├── <head>                                                           ln  79
-  │   ├── <meta>  charset · viewport · title · manifest · theme-color
-  │   └── <style>                                                      ln  85
-  │       ├── Base layout   – *, body, .topbar, .logo, .main
-  │       ├── Sidebar       – .sidebar, .sidebar-header, .sidebar-header-row
-  │       ├── Tree          – .tree-container, .folder-header, .toggle,
-  │       │                   .tree-children, .file-item  (drag/drop styles)
-  │       ├── Editor        – .editor-area, .tabs, .tab, .dirty-indicator,
-  │       │                   .editor-wrapper, #gutter, #textarea
-  │       ├── Widgets       – .toast, .status, .sidebar-toggle,
-  │       │                   #line-width-slider
-  │       ├── Context menu  – .context-menu, .context-menu-item,
-  │       │                   .context-menu-separator
-  │       └── Mobile        – touch-action, -webkit-overflow-scrolling
+  ├── <head> ln 79
+  │ ├── <meta> charset · viewport · title · manifest · theme-color
+  │ └── <style> ln 85
+  │ ├── Base layout – *, body, .topbar, .logo, .main
+  │ ├── Sidebar – .sidebar, .sidebar-header, .sidebar-header-row
+  │ ├── Tree – .tree-container, .folder-header, .toggle,
+  │ │ .tree-children, .file-item (drag/drop styles)
+  │ ├── Editor – .editor-area, .tabs, .tab, .dirty-indicator,
+  │ │ .editor-wrapper, #gutter, #textarea
+  │ ├── Widgets – .toast, .status, .sidebar-toggle,
+  │ │ #line-width-slider
+  │ ├── Context menu – .context-menu, .context-menu-item,
+  │ │ .context-menu-separator
+  │ └── Mobile – touch-action, -webkit-overflow-scrolling
   │
-  └── <body>                                                           ln 402
-      ├── div.topbar                                                   ln 403
-      │   ├── div.logo                    "EDITOR" heading
-      │   └── div#topbar-active-row       shows the active directory path
+  └── <body> ln 402
+      ├── div.topbar ln 403
+      │ ├── div.logo "EDITOR" heading
+      │ └── div#topbar-active-row shows the active directory path
       │
-      ├── div.main                                                     ln 407
-      │   ├── div#sidebar.sidebar                                      ln 408
-      │   │   ├── div#sidebar-header      root dir label + refresh/clear icons
-      │   │   └── div#tree-container      file-tree (rendered by TreeManager)
-      │   │
-      │   └── div.editor-area                                          ln 417
-      │       ├── div#tabs                open-file tab strip
-      │       ├── div#line-width-slider   soft wrap / line-width control
-      │       ├── div.editor-wrapper
-      │       │   ├── button#sidebar-toggle   collapse/expand sidebar
-      │       │   ├── div#gutter              line-number column
-      │       │   └── textarea#textarea       main editing surface
-      │       └── div.status              cursor position + file info bar
+      ├── div.main ln 407
+      │ ├── div#sidebar.sidebar ln 408
+      │ │ ├── div#sidebar-header root dir label + refresh/clear icons
+      │ │ └── div#tree-container file-tree (rendered by TreeManager)
+      │ │
+      │ └── div.editor-area ln 417
+      │ ├── div#tabs open-file tab strip
+      │ ├── div#line-width-slider soft wrap / line-width control
+      │ ├── div.editor-wrapper
+      │ │ ├── button#sidebar-toggle collapse/expand sidebar
+      │ │ ├── div#gutter line-number column
+      │ │ └── textarea#textarea main editing surface
+      │ └── div.status cursor position + file info bar
       │
-      └── <script>  (IIFE: const App = (() => { … })())               ln 431
+      └── <script> (IIFE: const App = (() => { … })()) ln 431
           │
-          ├── STATE         – currentDirHandle, tabs, activeDirectoryPath, …  ln 435
+          ├── STATE – currentDirHandle, tabs, activeDirectoryPath, … ln 435
           │
-          ├── FS            – file system, IndexedDB & all file operations    ln 458
-          │   ├── initDB / saveFolderHandle / loadSavedFolder / clearSavedFolder
-          │   ├── queryPermission / ensureRW / reauthorize
-          │   ├── resolvePath / buildTree
-          │   ├── loadExpandedState / saveExpandedState
-          │   ├── writeFile / isSameEntry
-          │   ├── loadOpenTabs / saveOpenTabs
-          │   ├── openFolder / openFile / openFileFromNode             ln 594
-          │   ├── newFile / newFolder                                  ln 633
-          │   ├── saveTab / saveCurrentFile / scheduleSave / flushSave ln 666
-          │   ├── deleteFile / deleteFolder                            ln 703
-          │   └── renameItem / moveEntry                               ln 742
+          ├── FS – file system, IndexedDB & all file operations ln 458
+          │ ├── initDB / saveFolderHandle / loadSavedFolder / clearSavedFolder
+          │ ├── queryPermission / ensureRW / reauthorize
+          │ ├── resolvePath / buildTree
+          │ ├── loadExpandedState / saveExpandedState
+          │ ├── writeFile / isSameEntry
+          │ ├── loadOpenTabs / saveOpenTabs
+          │ ├── openFolder / openFile / openFileFromNode ln 594
+          │ ├── newFile / newFolder ln 633
+          │ ├── saveTab / saveCurrentFile / scheduleSave / flushSave ln 666
+          │ ├── deleteFile / deleteFolder ln 703
+          │ └── renameItem / moveEntry ln 742
           │
-          ├── TreeManager   – sidebar tree rendering & state           ln 834
-          │   ├── _renderTreeItem()   recursive DOM builder
-          │   ├── build / render / mutateAndRebuild
-          │   ├── registerNode / highlightActive
-          │   └── updateHeader / clear
+          ├── TreeManager – sidebar tree rendering & state ln 834
+          │ ├── _renderTreeItem() recursive DOM builder
+          │ ├── build / render / mutateAndRebuild
+          │ ├── registerNode / highlightActive
+          │ └── updateHeader / clear
           │
-          └── UI            – DOM interactions & event wiring          ln 976
-              ├── bindEvents()   keyboard shortcuts, drag-and-drop, resize
+          └── UI – DOM interactions & event wiring ln 976
+              ├── bindEvents() keyboard shortcuts, drag-and-drop, resize
               ├── createNewTab / switchToTab / closeTab
               ├── showToast / showInputDialog / closeContextMenu
               └── updateGutter / updateEditorStatus / init
-
   External files
   ──────────────
-  manifest.json   PWA manifest
-  sw.js           Service Worker (cache-first offline support)
-  favicon.ico     App icon
--->'
+  manifest.json PWA manifest
+  sw.js Service Worker (cache-first offline support)
+  favicon.ico App icon
+-->`;
 </script>
 <!DOCTYPE html>
 <html lang="en">
