@@ -258,11 +258,11 @@ window.LEGEND = `<!--
         }
    
         #gutter {
-            width: 52px;
+            width: 60px;
             background: #0f0f11;
             color: #52525b;
             text-align: right;
-            padding: 12px 8px 0 0;
+            padding: 12px 10px 0 0;
             user-select: none;
             font-family: ui-monospace, monospace;
             font-size: 14px;
@@ -408,7 +408,7 @@ window.LEGEND = `<!--
             <div id="tabs"></div>
             <div id="line-width-slider">
                 <input type="range" id="width-slider" min="24" max="200" value="200" aria-label="Line width in chars">
-                <span id="width-value">120</span>
+                <span id="width-value">∞</span>
             </div>
             <div class="editor-wrapper">
                 <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle Sidebar">›</button>
@@ -1320,6 +1320,14 @@ const App = (() => {
                     e.preventDefault();
                     if (currentTabId) this.closeTab(currentTabId);
                 }
+               if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+                    e.preventDefault();
+                    FS.newFile();
+               }
+               if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+               e.preventDefault();
+               FS.openFolder();   // or openFile() — your call
+}
             });
            
 const slider = document.getElementById('width-slider');
@@ -1327,7 +1335,7 @@ const slider = document.getElementById('width-slider');
             const MAX_CHARS = 200;
             slider.addEventListener('input', e => {
                 const v = +e.target.value;
-                valueEl.textContent = (v === MAX_CHARS) ? '∞' : v + 'char/line';
+                valueEl.textContent = (v === MAX_CHARS) ? '∞' : `${v} char/line`;
                 if (v === MAX_CHARS) {
                     textarea.style.maxWidth = 'none';
                     textarea.style.whiteSpace = 'pre';
