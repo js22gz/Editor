@@ -35,23 +35,23 @@ window.LEGEND = `<!--
                 ├── STATE – currentDirHandle, tabs, activeDirectoryPath, …
                 │
                 ├── FS – file system, IndexedDB & all file operations
-                │ ├── initDB / saveFolderHandle / loadSavedFolder / clearSavedFolder
-                │ ├── queryPermission / ensureRW / reauthorize
-                │ ├── resolvePath / buildTree
-                │ ├── loadExpandedState / saveExpandedState
-                │ ├── writeFile / isSameEntry
-                │ ├── loadOpenTabs / saveOpenTabs
-                │ ├── openFolder / openFile / openFileFromNode
-                │ ├── newFile / newFolder
-                │ ├── saveTab / saveCurrentFile / scheduleSave / flushSave
-                │ ├── deleteFile / deleteFolder
-                │ └── renameItem / moveEntry
+                │   ├── initDB / saveFolderHandle / loadSavedFolder / clearSavedFolder
+                │   ├── queryPermission / ensureRW / reauthorize
+                │   ├── resolvePath / buildTree
+                │   ├── loadExpandedState / saveExpandedState
+                │   ├── writeFile / isSameEntry
+                │   ├── loadOpenTabs / saveOpenTabs
+                │   ├── openFolder / openFile / openFileFromNode
+                │   ├── newFile / newFolder
+                │   ├── saveTab / saveCurrentFile / scheduleSave / flushSave
+                │   ├── deleteFile / deleteFolder
+                │   └── renameItem / moveEntry
                 │
                 ├── TreeManager – sidebar tree rendering & state
-                │ ├── _renderTreeItem() recursive DOM builder
-                │ ├── build / render / mutateAndRebuild
-                │ ├── registerNode / highlightActive
-                │ └── updateHeader / clear
+                │   ├── _renderTreeItem() recursive DOM builder
+                │   ├── build / render / mutateAndRebuild
+                │   ├── registerNode / highlightActive
+                │   └── updateHeader / clear
                 │
                 └── UI – DOM interactions & event wiring
                      ├── bindEvents() keyboard shortcuts, drag-and-drop, resize
