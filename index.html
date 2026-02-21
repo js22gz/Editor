@@ -1240,6 +1240,15 @@ const App = (() => {
                 addSeparator();
                 addItem('Open File', () => FSA.openFile());
                 addItem('Open Folder', () => FSA.openFolder());
+                addSeparator();
+                addItem('Open welcome.txt', () => {
+                    const existing = tabs.find(t => t.name === 'welcome.txt' && !t.handle);
+                    if (existing) {
+                        TabManager.switchToTab(existing.id);
+                    } else {
+                        TabManager.createNewTab(null, 'welcome.txt', window.LEGEND);
+                    }
+                });
             } else if (node.kind === 'directory') {
                 addItem('New File', () => FSA.newFile());
                 addItem('New Folder', () => FSA.newFolder());
