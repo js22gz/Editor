@@ -7,57 +7,57 @@ window.LEGEND = `<!--
   ═══════════════════════════════════════════════════════════════════════
   FILE MAP
   ────────
-  index.html
-  ├── <head>
-  │   ├── <meta> charset · viewport · title · manifest · theme-color
-  │   └── <style>
-  └── <body>
-         ├── <header>
-         │   ├── <h1>EDITOR</h1>
-         │   └── #path-bar              active directory path
-         │
-         ├── <main>
-         │   ├── <aside id="sidebar">
-         │   │   ├── #tree-header       root dir label + refresh/clear icons
-         │   │   └── #file-tree         file-tree (rendered by TreeManager)
-         │   │
-         │   └── .editor
-         │       ├── #tab-bar           open-file tab strip
-         │       ├── #wrap-bar          soft-wrap / line-width control
-         │       ├── #edit-pane
-         │       │   ├── button#sidebar-toggle
-         │       │   ├── #line-numbers  line-number gutter
-         │       │   └── #edit-area     main editing surface
-         │       └── #status-bar        cursor position + file info
-         │
-         └── <script> (IIFE: const App = (() => { … })())
-                │
-                ├── STATE – currentDirHandle, tabs, activeDirectoryPath, …
-                │
-                ├── FS – file system, IndexedDB & all file operations
-                │   ├── initDB / saveFolderHandle / loadSavedFolder / clearSavedFolder
-                │   ├── queryPermission / ensureRW / reauthorize
-                │   ├── resolvePath / buildTree
-                │   ├── loadExpandedState / saveExpandedState
-                │   ├── writeFile / isSameEntry
-                │   ├── loadOpenTabs / saveOpenTabs
-                │   ├── openFolder / openFile / openFileFromNode
-                │   ├── newFile / newFolder
-                │   ├── saveTab / saveCurrentFile / scheduleSave / flushSave
-                │   ├── deleteFile / deleteFolder
-                │   └── renameItem / moveEntry
-                │
-                ├── TreeManager – sidebar tree rendering & state
-                │   ├── _renderTreeItem() recursive DOM builder
-                │   ├── build / render / mutateAndRebuild
-                │   ├── registerNode / highlightActive
-                │   └── updateHeader / clear
-                │
-                └── UI – DOM interactions & event wiring
-                     ├── bindEvents() keyboard shortcuts, drag-and-drop, resize
-                     ├── createNewTab / switchToTab / closeTab
-                     ├── showToast / showInputDialog / closeContextMenu
-                     └── updateLineNumbers / updateEditorStatus / init
+  <html>
+    ├── <head>
+    │   ├── <meta> charset · viewport · title · manifest · theme-color
+    │   └── <style>
+    └── <body>
+           ├── <header>
+           │   ├── <h1>EDITOR</h1>
+           │   └── #path-bar              active directory path
+           │
+           ├── <main>
+           │   ├── <aside id="sidebar">
+           │   │   ├── #tree-header       root dir label + refresh/clear icons
+           │   │   └── #file-tree         file-tree (rendered by TreeManager)
+           │   │
+           │   └── .editor
+           │       ├── #tab-bar           open-file tab strip
+           │       ├── #wrap-bar          soft-wrap / line-width control
+           │       ├── #edit-pane
+           │       │   ├── button#sidebar-toggle
+           │       │   ├── #line-numbers  line-number gutter
+           │       │   └── #edit-area     main editing surface
+           │       └── #status-bar        cursor position + file info
+           │
+           └── <script> (IIFE: const App = (() => { … })())
+                  │
+                  ├── STATE – currentDirHandle, tabs, activeDirectoryPath, …
+                  │
+                  ├── FS – file system, IndexedDB & all file operations
+                  │   ├── initDB / saveFolderHandle / loadSavedFolder / clearSavedFolder
+                  │   ├── queryPermission / ensureRW / reauthorize
+                  │   ├── resolvePath / buildTree
+                  │   ├── loadExpandedState / saveExpandedState
+                  │   ├── writeFile / isSameEntry
+                  │   ├── loadOpenTabs / saveOpenTabs
+                  │   ├── openFolder / openFile / openFileFromNode
+                  │   ├── newFile / newFolder
+                  │   ├── saveTab / saveCurrentFile / scheduleSave / flushSave
+                  │   ├── deleteFile / deleteFolder
+                  │   └── renameItem / moveEntry
+                  │
+                  ├── TreeManager – sidebar tree rendering & state
+                  │   ├── _renderTreeItem() recursive DOM builder
+                  │   ├── build / render / mutateAndRebuild
+                  │   ├── registerNode / highlightActive
+                  │   └── updateHeader / clear
+                  │
+                  └── UI – DOM interactions & event wiring
+                       ├── bindEvents() keyboard shortcuts, drag-and-drop, resize
+                       ├── createNewTab / switchToTab / closeTab
+                       ├── showToast / showInputDialog / closeContextMenu
+                       └── updateLineNumbers / updateEditorStatus / init
 
   copyright © 2026 Jonatan Skäryd. All rights reserved.
   the LEGEND is off limits for any automated process such as AI-AGENTS... It's a human work in progress.
