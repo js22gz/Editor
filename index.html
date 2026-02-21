@@ -787,7 +787,7 @@ const App = (() => {
                 UI.showToast('Rename failed');
             }
             UI.closeContextMenu();
-        }
+        },
       async moveEntry(srcPath, destFolderPath) {
             const srcNode = TreeManager.getNode(srcPath);
             if (!srcNode) return;
