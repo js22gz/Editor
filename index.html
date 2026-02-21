@@ -444,9 +444,9 @@ const App = (() => {
     const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
     const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/;
     // ──────────────────────────────────────────────
-    // FS – file system, IndexedDB & all file operations
+    // FSA – file system, IndexedDB & all file operations
     // ──────────────────────────────────────────────
-    const FS = {
+    const FSA = {
         db: null,
         async initDB() {
             if (this.db) return;
@@ -602,7 +602,7 @@ const App = (() => {
                     if (!confirm('Binary file detected. Open anyway?')) return;
                 }
                 const content = await file.text();
-                await UI.createNewTab(fileHandle, file.name, content);
+                await TabManager.createNewTab(fileHandle, file.name, content);
             } catch (e) { if (e.name !== 'AbortError') UI.showToast('Open file cancelled or failed'); }
         },
         async openFileFromNode(node) {
@@ -612,7 +612,7 @@ const App = (() => {
                     if (!confirm('Binary file detected. Open anyway?')) return;
                 }
                 const content = await file.text();
-                await UI.createNewTab(node.handle, node.name, content, node.path);
+                await TabManager.createNewTab(node.handle, node.name, content, node.path);
                 if (isMobile) {
                     sidebarEl.classList.add('hidden');
                     document.getElementById('sidebar-toggle').textContent = '>';
@@ -635,7 +635,7 @@ const App = (() => {
             await this.writeFile(fileHandle, '');
             if (targetPath) { expandedFolders.add(targetPath); this.saveExpandedState(); }
             await TreeManager.mutateAndRebuild();
-            await UI.createNewTab(fileHandle, trimmed, '', targetPath ? `${targetPath}/${trimmed}` : trimmed);
+            await TabManager.createNewTab(fileHandle, trimmed, '', targetPath ? `${targetPath}/${trimmed}` : trimmed);
             UI.closeContextMenu();
         },
         async newFolder() {
@@ -698,7 +698,7 @@ const App = (() => {
             try {
                 for (let i = 0; i < tabs.length; i++) {
                     if (tabs[i].handle && await this.isSameEntry(tabs[i].handle, target.handle)) {
-                        UI.closeTab(tabs[i].id);
+                        TabManager.closeTab(tabs[i].id);
                         break;
                     }
                 }
@@ -731,9 +731,10 @@ const App = (() => {
             UI.closeContextMenu();
         },
         async renameItem() {
-            if (!contextMenuTarget) return;
-            const oldName = contextMenuTarget.name;
-            const isFolder = contextMenuTarget.kind === 'directory';
+            const target = contextMenuTarget;
+            if (!target) return;
+            const oldName = target.name;
+            const isFolder = target.kind === 'directory';
             const newName = await UI.showInputDialog(`Rename ${isFolder ? 'folder' : 'file'}:`, oldName);
             if (!newName || !newName.trim() || newName === oldName) {
                 UI.closeContextMenu(); return;
@@ -744,10 +745,10 @@ const App = (() => {
             }
         
             try {
-                const oldPath = contextMenuTarget.path;
+                const oldPath = target.path;
                 const { parent } = await this.resolvePath(currentDirHandle, oldPath);
                 await this.ensureRW(parent);
-                const oldHandle = contextMenuTarget.handle;
+                const oldHandle = target.handle;
         
                 if (isFolder) {
                     if (oldHandle.move) {
@@ -866,7 +867,7 @@ const App = (() => {
                     toggle.textContent = wasOpen ? '▶' : '▼';
                     if (wasOpen) expandedFolders.delete(node.path);
                     else expandedFolders.add(node.path);
-                    FS.saveExpandedState();
+                    FSA.saveExpandedState();
                     activeDirectoryPath = node.path;
                     TreeManager.highlightActive();
                     TreeManager.updateHeader();
@@ -891,7 +892,7 @@ const App = (() => {
                     header.classList.remove('drop-target');
                     const srcPath = e.dataTransfer.getData('application/x-tree-path');
                     if (srcPath && srcPath !== node.path && !node.path.startsWith(srcPath + '/')) {
-                        FS.moveEntry(srcPath, node.path);
+                        FSA.moveEntry(srcPath, node.path);
                     }
                 });
                 node.children.forEach(c => _renderTreeItem(c, childrenDiv, level + 1));
@@ -902,7 +903,7 @@ const App = (() => {
                 fileDiv.style.paddingLeft = (level * 14 + 26) + 'px';
                 fileDiv.textContent = node.name;
                 fileDiv.tabIndex = 0;
-                fileDiv.onclick = () => { if (!longPressTriggered) FS.openFileFromNode(node); };
+                fileDiv.onclick = () => { if (!longPressTriggered) FSA.openFileFromNode(node); };
                 fileDiv.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); fileDiv.click(); } };
                 fileDiv.draggable = true;
                 fileDiv.addEventListener('dragstart', e => {
@@ -919,7 +920,7 @@ const App = (() => {
             registerNode(path, node) { nodeByPath.set(path, node); },
             async build(rootHandle) {
                 nodeByPath.clear();
-                fileTree = await FS.buildTree(rootHandle);
+                fileTree = await FSA.buildTree(rootHandle);
                 return fileTree;
             },
             render() {
@@ -991,6 +992,114 @@ const App = (() => {
         };
     })();
     // ──────────────────────────────────────────────
+    // TabManager – tab creation, switching & closing
+    // ──────────────────────────────────────────────
+    const TabManager = {
+        async createNewTab(handle, name, content = '', path = null) {
+            if (handle) {
+                for (const t of tabs) {
+                    if (t.handle && await FSA.isSameEntry(t.handle, handle)) {
+                        this.switchToTab(t.id);
+                        return;
+                    }
+                }
+            }
+            const id = nextTabId++;
+            const tab = { id, name, handle, content, dirty: false, path, element: null };
+            tabs.push(tab);
+            const tabEl = document.createElement('div');
+            tabEl.className = 'tab';
+            tabEl.dataset.id = id;
+            tabEl.draggable = true;
+            const tabName = document.createElement('span');
+            tabName.className = 'tab-name';
+            tabName.textContent = name;
+            const dirtyInd = document.createElement('span');
+            dirtyInd.className = 'dirty-indicator';
+            dirtyInd.style.display = 'none';
+            dirtyInd.textContent = ' *';
+            const closeBtn = document.createElement('span');
+            closeBtn.className = 'close';
+            closeBtn.textContent = '×';
+            tabEl.append(tabName, dirtyInd, closeBtn);
+            tabEl.onclick = () => this.switchToTab(id);
+            closeBtn.onclick = e => { e.stopPropagation(); this.closeTab(id); };
+            tabEl.addEventListener('dragstart', e => {
+                e.dataTransfer.setData('text/plain', String(id));
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            tabEl.addEventListener('dragover', e => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                tabEl.classList.add('drag-over');
+            });
+            tabEl.addEventListener('dragleave', () => tabEl.classList.remove('drag-over'));
+            tabEl.addEventListener('drop', e => {
+                e.preventDefault();
+                tabEl.classList.remove('drag-over');
+                const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                if (draggedId === id) return;
+                const fromIdx = tabs.findIndex(t => t.id === draggedId);
+                const toIdx = tabs.findIndex(t => t.id === id);
+                if (fromIdx === -1 || toIdx === -1) return;
+                const [moved] = tabs.splice(fromIdx, 1);
+                const rect = tabEl.getBoundingClientRect();
+                const insertAfter = e.clientX > rect.left + rect.width / 2;
+                tabs.splice(insertAfter ? toIdx + 1 : toIdx, 0, moved);
+                tabsContainer.append(...tabs.map(t => t.element));
+                FSA.saveOpenTabs(currentTabId);
+            });
+            tabsContainer.appendChild(tabEl);
+            tab.element = tabEl;
+            this.switchToTab(id);
+            return tab;
+        },
+        switchToTab(id) {
+            if (currentTabId !== null) {
+                const cur = tabs.find(t => t.id === currentTabId);
+                if (cur) {
+                    cur.content = textarea.value;
+                    cur.scrollTop = textarea.scrollTop;
+                }
+            }
+            currentTabId = id;
+            const tab = tabs.find(t => t.id === id);
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            tab.element.classList.add('active');
+            textarea.value = tab.content || '';
+            lastLineCount = 0;
+            UI.updateLineNumbers();
+            if (tab.scrollTop !== undefined) {
+                textarea.scrollTop = tab.scrollTop;
+                gutter.scrollTop = tab.scrollTop;
+            }
+            UI.updateEditorStatus(tab);
+            if (tab.path) {
+                activeFilePath = tab.path;
+                TreeManager.highlightActive();
+            }
+            FSA.saveOpenTabs(id);
+        },
+        closeTab(id) {
+            const idx = tabs.findIndex(t => t.id === id);
+            if (idx === -1) return;
+            const tab = tabs[idx];
+            if (tab.dirty && !confirm(`"${tab.name}" has unsaved changes. Close anyway?`)) return;
+            tabs.splice(idx, 1);
+            tab.element.remove();
+            if (tabs.length === 0) {
+                currentTabId = null;
+                textarea.value = '';
+                gutter.replaceChildren();
+                editorStatusEl.textContent = 'No file open';
+                FSA.saveOpenTabs(null);
+                localStorage.removeItem('openTabs');
+                return;
+            }
+            this.switchToTab(tabs[Math.min(idx, tabs.length - 1)].id);
+        }
+    };
+    // ──────────────────────────────────────────────
     // UI
     // ──────────────────────────────────────────────
     const UI = {
@@ -1061,23 +1170,23 @@ const App = (() => {
                 contextMenu.appendChild(sep);
             };
             if (!node) {
-                addItem('New File', () => FS.newFile());
-                addItem('New Folder', () => FS.newFolder());
+                addItem('New File', () => FSA.newFile());
+                addItem('New Folder', () => FSA.newFolder());
                 addSeparator();
-                addItem('Open File', () => FS.openFile());
-                addItem('Open Folder', () => FS.openFolder());
+                addItem('Open File', () => FSA.openFile());
+                addItem('Open Folder', () => FSA.openFolder());
             } else if (node.kind === 'directory') {
-                addItem('New File', () => FS.newFile());
-                addItem('New Folder', () => FS.newFolder());
+                addItem('New File', () => FSA.newFile());
+                addItem('New Folder', () => FSA.newFolder());
                 addSeparator();
-                addItem('Rename', () => FS.renameItem());
+                addItem('Rename', () => FSA.renameItem());
                 addSeparator();
-                addItem('Delete Folder', () => FS.deleteFolder(), 'danger');
+                addItem('Delete Folder', () => FSA.deleteFolder(), 'danger');
             } else {
-                addItem('Open', () => FS.openFileFromNode(contextMenuTarget));
-                addItem('Rename', () => FS.renameItem());
+                addItem('Open', () => FSA.openFileFromNode(contextMenuTarget));
+                addItem('Rename', () => FSA.renameItem());
                 addSeparator();
-                addItem('Delete File', () => FS.deleteFile(), 'danger');
+                addItem('Delete File', () => FSA.deleteFile(), 'danger');
             }
             contextMenu.style.left = e.clientX + 'px';
             contextMenu.style.top = e.clientY + 'px';
@@ -1092,109 +1201,6 @@ const App = (() => {
                 contextMenu = null;
                 contextMenuTarget = null;
             }
-        },
-        async createNewTab(handle, name, content = '', path = null) {
-            if (handle) {
-                for (const t of tabs) {
-                    if (t.handle && await FS.isSameEntry(t.handle, handle)) {
-                        this.switchToTab(t.id);
-                        return;
-                    }
-                }
-            }
-            const id = nextTabId++;
-            const tab = { id, name, handle, content, dirty: false, path, element: null };
-            tabs.push(tab);
-            const tabEl = document.createElement('div');
-            tabEl.className = 'tab';
-            tabEl.dataset.id = id;
-            tabEl.draggable = true;
-            const tabName = document.createElement('span');
-            tabName.className = 'tab-name';
-            tabName.textContent = name;
-            const dirtyInd = document.createElement('span');
-            dirtyInd.className = 'dirty-indicator';
-            dirtyInd.style.display = 'none';
-            dirtyInd.textContent = ' *';
-            const closeBtn = document.createElement('span');
-            closeBtn.className = 'close';
-            closeBtn.textContent = '×';
-            tabEl.append(tabName, dirtyInd, closeBtn);
-            tabEl.onclick = () => UI.switchToTab(id);
-            closeBtn.onclick = e => { e.stopPropagation(); UI.closeTab(id); };
-            tabEl.addEventListener('dragstart', e => {
-                e.dataTransfer.setData('text/plain', String(id));
-                e.dataTransfer.effectAllowed = 'move';
-            });
-            tabEl.addEventListener('dragover', e => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-                tabEl.classList.add('drag-over');
-            });
-            tabEl.addEventListener('dragleave', () => tabEl.classList.remove('drag-over'));
-            tabEl.addEventListener('drop', e => {
-                e.preventDefault();
-                tabEl.classList.remove('drag-over');
-                const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
-                if (draggedId === id) return;
-                const fromIdx = tabs.findIndex(t => t.id === draggedId);
-                const toIdx = tabs.findIndex(t => t.id === id);
-                if (fromIdx === -1 || toIdx === -1) return;
-                const [moved] = tabs.splice(fromIdx, 1);
-                const rect = tabEl.getBoundingClientRect();
-                const insertAfter = e.clientX > rect.left + rect.width / 2;
-                tabs.splice(insertAfter ? toIdx + 1 : toIdx, 0, moved);
-                tabsContainer.append(...tabs.map(t => t.element));
-                FS.saveOpenTabs(currentTabId);
-            });
-            tabsContainer.appendChild(tabEl);
-            tab.element = tabEl;
-            this.switchToTab(id);
-            return tab;
-        },
-        switchToTab(id) {
-            if (currentTabId !== null) {
-                const cur = tabs.find(t => t.id === currentTabId);
-                if (cur) {
-                    cur.content = textarea.value;
-                    cur.scrollTop = textarea.scrollTop;
-                }
-            }
-            currentTabId = id;
-            const tab = tabs.find(t => t.id === id);
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            tab.element.classList.add('active');
-            textarea.value = tab.content || '';
-            lastLineCount = 0;
-            this.updateLineNumbers();
-            if (tab.scrollTop !== undefined) {
-                textarea.scrollTop = tab.scrollTop;
-                gutter.scrollTop = tab.scrollTop;
-            }
-            this.updateEditorStatus(tab);
-            if (tab.path) {
-                activeFilePath = tab.path;
-                TreeManager.highlightActive();
-            }
-            FS.saveOpenTabs(id);
-        },
-        closeTab(id) {
-            const idx = tabs.findIndex(t => t.id === id);
-            if (idx === -1) return;
-            const tab = tabs[idx];
-            if (tab.dirty && !confirm(`"${tab.name}" has unsaved changes. Close anyway?`)) return;
-            tabs.splice(idx, 1);
-            tab.element.remove();
-            if (tabs.length === 0) {
-                currentTabId = null;
-                textarea.value = '';
-                gutter.replaceChildren();
-                editorStatusEl.textContent = 'No file open';
-                FS.saveOpenTabs(null);
-                localStorage.removeItem('openTabs');
-                return;
-            }
-            this.switchToTab(tabs[Math.min(idx, tabs.length - 1)].id);
         },
         updateLineNumbers() {
             const lineCount = (textarea.value.match(/\n/g) || []).length + 1;
@@ -1214,7 +1220,7 @@ const App = (() => {
         },
         bindEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
-            document.getElementById('sidebar-root-row').addEventListener('click', () => FS.openFolder());
+            document.getElementById('sidebar-root-row').addEventListener('click', () => FSA.openFolder());
             document.getElementById('topbar-active-row').addEventListener('click', () => {
                 activeDirectoryPath = null;
                 TreeManager.highlightActive();
@@ -1238,10 +1244,10 @@ const App = (() => {
                 if (e.target.closest('.folder-header')) return;
                 e.preventDefault();
                 const srcPath = e.dataTransfer.getData('application/x-tree-path');
-                if (srcPath) FS.moveEntry(srcPath, '');
+                if (srcPath) FSA.moveEntry(srcPath, '');
             });
             document.addEventListener('click', e => {
-                if (e.target.id === 'clear-folder') { e.stopPropagation(); FS.clearSavedFolder(); return; }
+                if (e.target.id === 'clear-folder') { e.stopPropagation(); FSA.clearSavedFolder(); return; }
                 if (e.target.id === 'refresh-folder') {
                     e.stopPropagation();
                     if (currentDirHandle) TreeManager.mutateAndRebuild();
@@ -1309,7 +1315,7 @@ const App = (() => {
                         tab.dirty = true;
                         if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
                         this.updateEditorStatus(tab);
-                        FS.scheduleSave();
+                        FSA.scheduleSave();
                     }
                 }
             });
@@ -1332,19 +1338,19 @@ const App = (() => {
                 }
                 if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                     e.preventDefault();
-                    FS.saveCurrentFile();
+                    FSA.saveCurrentFile();
                 }
                 if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
                     e.preventDefault();
-                    if (currentTabId) this.closeTab(currentTabId);
+                    if (currentTabId) TabManager.closeTab(currentTabId);
                 }
                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
                     e.preventDefault();
-                    FS.newFile();
+                    FSA.newFile();
                }
                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
                e.preventDefault();
-               FS.openFolder();   // or openFile() — your call
+               FSA.openFolder();   // or openFile() — your call
 }
             });
            
@@ -1368,7 +1374,7 @@ const slider = document.getElementById('width-slider');
            
             window.addEventListener('beforeunload', e => {
                 if (tabs.some(t => t.dirty)) {
-                    FS.flushSave();
+                    FSA.flushSave();
                     e.preventDefault();
                     return e.returnValue = 'Unsaved changes will be lost';
                 }
@@ -1387,16 +1393,16 @@ const slider = document.getElementById('width-slider');
             rootDirNameEl = document.getElementById('root-dir-name');
             sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions');
             UI.bindEvents();
-            await FS.initDB();
-            FS.loadExpandedState();
-            const saved = await FS.loadSavedFolder();
+            await FSA.initDB();
+            FSA.loadExpandedState();
+            const saved = await FSA.loadSavedFolder();
             let hadSavedTabs = false;
             if (saved.status === 'granted') {
                 currentDirHandle = saved.handle;
                 await TreeManager.build(currentDirHandle);
                 TreeManager.render();
                 TreeManager.updateHeader();
-                const savedTabs = FS.loadOpenTabs();
+                const savedTabs = FSA.loadOpenTabs();
                 hadSavedTabs = savedTabs.length > 0;
                 let activeTabPath = null;
                 for (const st of savedTabs) {
@@ -1409,24 +1415,24 @@ const slider = document.getElementById('width-slider');
                         const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
                         const file = await fileHandle.getFile();
                         const content = await file.text();
-                        await UI.createNewTab(fileHandle, st.name, content, st.path);
+                        await TabManager.createNewTab(fileHandle, st.name, content, st.path);
                         if (st.active) activeTabPath = st.path;
                     } catch {}
                 }
                 if (activeTabPath) {
                     const activeTab = tabs.find(t => t.path === activeTabPath);
-                    if (activeTab) UI.switchToTab(activeTab.id);
+                    if (activeTab) TabManager.switchToTab(activeTab.id);
                 } else if (tabs.length > 0) {
-                    UI.switchToTab(tabs[0].id);
+                    TabManager.switchToTab(tabs[0].id);
                 }
                 if (savedTabs.length > 0) UI.showToast(`Restored ${savedTabs.length} tab${savedTabs.length > 1 ? 's' : ''}`);
             } else if (saved.status === 'needs-auth') {
-                await FS.clearSavedFolder();
+                await FSA.clearSavedFolder();
                 UI.showToast('Saved folder access expired – open folder again', 4000);
             }
             if (isMobile) sidebarEl.classList.add('hidden');
             if (!hadSavedTabs && tabs.length === 0) {
-                await UI.createNewTab(null, 'welcome.txt', window.LEGEND);
+                await TabManager.createNewTab(null, 'welcome.txt', window.LEGEND);
             }
         }
     };
