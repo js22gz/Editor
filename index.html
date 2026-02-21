@@ -2,7 +2,7 @@
 window.LEGEND = `<!--
   name: EDITOR
   type: progressive web app
-  description: No-dependency single-file text editor 
+  description: No-dependency single-file text editor
   length: ~1600 lines (February 2026)
   browser compatibility: Chrome & Edge (File System Access API)
   ═══════════════════════════════════════════════════════════════════════
@@ -10,28 +10,29 @@ window.LEGEND = `<!--
   ────────
   <html lang="en">
     ├── <head>
-    │   ├── <meta> charset · viewport · title · manifest · theme-color
-    │   └── <style> (minimal dark, squarish, fluid)
+    │    ├── <meta> charset · viewport · title · manifest · theme-color
+    │    └── <style> (minimal dark, squarish, fluid)
     └── <body>
-           ├── <header>
-           │   ├── <h1>EDITOR</h1>
-           │   └── #topbar-active-row (active directory)
-           │
-           ├── <main>
-           │   ├── <aside id="sidebar">
-           │   │   ├── #sidebar-header (root label + refresh/clear)
-           │   │   └── #tree-container (lazy TreeManager)
-           │   │
-           │   └── .editor-area
-           │       ├── #tabs (draggable tab strip)
-           │       ├── #line-width-slider (chars or ∞)
-           │       ├── .editor-wrapper
-           │       │   ├── button#sidebar-toggle
-           │       │   ├── #gutter (live line numbers)
-           │       │   └── #textarea (core editing surface)
-           │       └── .status (cursor + file info)
-           │
-           └── <script> (IIFE: const App = (() => { … })())
+         ├── <header>
+         │    ├── <h1>EDITOR</h1>
+         │    └── #topbar-active-row (active directory)
+         │
+         ├── <main>
+         │    ├── <aside id="sidebar">
+         │    │    ├── #sidebar-header (root label + refresh/clear)
+         │    │    └── #tree-container (lazy TreeManager)
+         │    │
+         │    ├── #sidebar-resize
+         │    └── .editor-area
+         │        ├── #tabs (draggable tab strip)
+         │        ├── #line-width-slider (chars or ∞)
+         │        ├── .editor-wrapper
+         │        │   ├── button#sidebar-toggle
+         │        │   ├── #gutter (live line numbers)
+         │        │   └── #textarea (core editing surface)
+         │        └── .status (cursor + file info)
+         │
+         └── <script> (IIFE: const App = (() => { … })())
                   │
                   ├── STATE – currentDirHandle, tabs[], currentTabId,
                   │           expandedFolders, activeFilePath,
@@ -40,9 +41,9 @@ window.LEGEND = `<!--
                   ├── FSA – FileSystemAccess + persistence
                   │   ├── IndexedDB handle storage
                   │   ├── Lazy tree (loadChildren + mutateAndRebuild)
-                  │   ├── CRUD + moveEntry (full drag & drop)
+                  │   ├── Full CRUD + drag & drop (move/copy/rename)
                   │   ├── Auto-save (debounce 750 ms + flush)
-                  │   ├── Tab & expandedFolders persistence
+                  │   ├── Tab & expandedFolders & sidebarWidth persistence
                   │   └── Permission / reauthorize
                   │
                   ├── TreeManager – sidebar tree (IIFE)
@@ -57,12 +58,13 @@ window.LEGEND = `<!--
                   │   └── Drag-to-reorder tabs
                   │
                   └── UI – interactions & wiring
-                       ├── Context menu + long-press (mobile)
-                       ├── showToast / showInputDialog
-                       ├── Line width slider (∞ mode)
-                       ├── updateLineNumbers / updateEditorStatus
-                       └── bindEvents() (kbd: S/W/N/O, dnd, touch, resize)
-                  
+                      ├── Context menu + long-press (mobile)
+                      ├── showToast / showInputDialog
+                      ├── Line width slider (∞ mode)
+                      ├── Sidebar resize
+                      ├── updateLineNumbers / updateEditorStatus
+                      └── bindEvents() (kbd: ⌘S/W/N/O, dnd, touch, resize)
+                 
   copyright © 2026 Jonatan Skäryd. All rights reserved.
 -->`;
 </script>
