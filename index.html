@@ -734,26 +734,39 @@ const App = (() => {
             const oldName = contextMenuTarget.name;
             const isFolder = contextMenuTarget.kind === 'directory';
             const newName = await UI.showInputDialog(`Rename ${isFolder ? 'folder' : 'file'}:`, oldName);
-            if (!newName || !newName.trim() || newName === oldName) { UI.closeContextMenu(); return; }
+            if (!newName || !newName.trim() || newName === oldName) {
+                UI.closeContextMenu(); return;
+            }
             const trimmed = newName.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) {
-                UI.showToast('Invalid name');
-                UI.closeContextMenu();
-                return;
+                UI.showToast('Invalid name'); UI.closeContextMenu(); return;
             }
+        
             try {
                 const oldPath = contextMenuTarget.path;
                 const { parent } = await this.resolvePath(currentDirHandle, oldPath);
                 await this.ensureRW(parent);
-                const targetHandle = contextMenuTarget.handle;
-                if (targetHandle.move) {
-                    try {
-                        await targetHandle.move(parent, trimmed);
-                    } catch {}
+                const oldHandle = contextMenuTarget.handle;
+        
+                if (isFolder) {
+                    if (oldHandle.move) {
+                        await oldHandle.move(parent, trimmed);
+                    } else {
+                        UI.showToast('Folder rename needs latest Chrome/Edge'); UI.closeContextMenu(); return;
+                    }
+                } else {
+                    // universal fallback for files
+                    const file = await oldHandle.getFile();
+                    const content = await file.text();
+                    const newHandle = await parent.getFileHandle(trimmed, { create: true });
+                    await this.writeFile(newHandle, content);
+                    await parent.removeEntry(oldName);
                 }
+        
+                // update tabs + paths
                 const newPath = oldPath.substring(0, oldPath.lastIndexOf('/') + 1) + trimmed || trimmed;
                 for (const tab of tabs) {
-                    if (tab.handle && await this.isSameEntry(tab.handle, targetHandle)) {
+                    if (tab.handle && await this.isSameEntry(tab.handle, oldHandle)) {
                         tab.name = trimmed;
                         tab.path = newPath;
                         if (tab.element) tab.element.querySelector('.tab-name').textContent = trimmed;
@@ -766,12 +779,16 @@ const App = (() => {
                 else if (isFolder && activeFilePath && activeFilePath.startsWith(oldPath + '/')) {
                     activeFilePath = newPath + activeFilePath.substring(oldPath.length);
                 }
+        
                 await TreeManager.mutateAndRebuild();
                 UI.showToast(`Renamed to ${trimmed}`);
-            } catch (e) { UI.showToast('Rename failed'); }
+            } catch (e) {
+                console.error(e);
+                UI.showToast('Rename failed');
+            }
             UI.closeContextMenu();
-        },
-        async moveEntry(srcPath, destFolderPath) {
+        }
+      async moveEntry(srcPath, destFolderPath) {
             const srcNode = TreeManager.getNode(srcPath);
             if (!srcNode) return;
             if (srcNode.kind === 'directory' && destFolderPath.startsWith(srcPath + '/')) return UI.showToast('Cannot move folder into itself');
