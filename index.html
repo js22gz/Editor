@@ -1104,7 +1104,8 @@ const App = (() => {
                 const [moved] = tabs.splice(fromIdx, 1);
                 const rect = tabEl.getBoundingClientRect();
                 const insertAfter = e.clientX > rect.left + rect.width / 2;
-                tabs.splice(insertAfter ? toIdx + 1 : toIdx, 0, moved);
+                const adjustedToIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
+                tabs.splice(insertAfter ? adjustedToIdx + 1 : adjustedToIdx, 0, moved);
                 tabsContainer.append(...tabs.map(t => t.element));
                 FSA.saveOpenTabs(currentTabId);
             });
