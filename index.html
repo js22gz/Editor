@@ -1,41 +1,41 @@
 <script>
 window.LEGEND = `<!--
   name: EDITOR
-  type: progressive web app. 
+  type: progressive web app.
   description: No dependency single-file text EDITOR
   length: ~1500 lines (February 2026)
   browser compatibility: Chrome & Edge (Only tested in Chrome though *lol*)
   ═══════════════════════════════════════════════════════════════════════
-  DOCUMENT MAP: 
+  DOCUMENT MAP:
   ────────
-  <html>
+  <html lang="en">
     ├── <head>
     │   ├── <meta> charset · viewport · title · manifest · theme-color
     │   └── <style>
     └── <body>
            ├── <header>
            │   ├── <h1>EDITOR</h1>
-           │   └── #path-bar              active directory path
+           │   └── #topbar-active-row active directory path
            │
            ├── <main>
            │   ├── <aside id="sidebar">
-           │   │   ├── #tree-header       root dir label + refresh/clear icons
-           │   │   └── #file-tree         file-tree (rendered by TreeManager)
+           │   │   ├── #sidebar-header root dir label + refresh/clear icons
+           │   │   └── #tree-container file-tree (rendered by TreeManager)
            │   │
-           │   └── .editor
-           │       ├── #tab-bar           open-file tab strip
-           │       ├── #wrap-bar          soft-wrap / line-width control
-           │       ├── #edit-pane
+           │   └── .editor-area
+           │       ├── #tabs open-file tab strip
+           │       ├── #line-width-slider line-width control
+           │       ├── .editor-wrapper
            │       │   ├── button#sidebar-toggle
-           │       │   ├── #line-numbers  line-number gutter
-           │       │   └── #edit-area     main editing surface
-           │       └── #status-bar        cursor position + file info
+           │       │   ├── #gutter line-number gutter
+           │       │   └── #textarea main editing surface
+           │       └── .status cursor position + file info
            │
            └── <script> (IIFE: const App = (() => { … })())
                   │
-                  ├── STATE – currentDirHandle, tabs, activeDirectoryPath, …
+                  ├── STATE – currentDirHandle, tabs, currentTabId, expandedFolders, activeFilePath, …
                   │
-                  ├── FS – file system, IndexedDB & all file operations
+                  ├── FSA – file system, IndexedDB & all file operations
                   │   ├── initDB / saveFolderHandle / loadSavedFolder / clearSavedFolder
                   │   ├── queryPermission / ensureRW / reauthorize
                   │   ├── resolvePath / buildTree
@@ -48,18 +48,21 @@ window.LEGEND = `<!--
                   │   ├── deleteFile / deleteFolder
                   │   └── renameItem / moveEntry
                   │
-                  ├── TreeManager – sidebar tree rendering & state
+                  ├── TreeManager – sidebar tree rendering & state (IIFE)
                   │   ├── _renderTreeItem() recursive DOM builder
                   │   ├── build / render / mutateAndRebuild
-                  │   ├── registerNode / highlightActive
+                  │   ├── registerNode / getNode / highlightActive
                   │   └── updateHeader / clear
                   │
+                  ├── TabManager – tab creation, switching & closing
+                  │   ├── createNewTab / switchToTab / closeTab
+                  │
                   └── UI – DOM interactions & event wiring
-                       ├── bindEvents() keyboard shortcuts, drag-and-drop, resize
-                       ├── createNewTab / switchToTab / closeTab
-                       ├── showToast / showInputDialog / closeContextMenu
-                       └── updateLineNumbers / updateEditorStatus / init
-
+                       ├── bindEvents() keyboard shortcuts, drag-and-drop, long-press, resize
+                       ├── showToast / showInputDialog / showContextMenu / closeContextMenu
+                       ├── toggleSidebar
+                       ├── updateLineNumbers / updateEditorStatus
+                       └── init
   copyright © 2026 Jonatan Skäryd. All rights reserved.
   the LEGEND is off limits for any automated process such as AI-AGENTS... It's a human work in progress.
 -->`;
