@@ -1526,12 +1526,10 @@ const slider = document.getElementById('width-slider');
                     textarea.style.maxWidth = 'none';
                     textarea.style.whiteSpace = 'pre';
                     textarea.style.wordWrap = 'normal';
-                    gutter.style.display = '';
                 } else {
                     textarea.style.maxWidth = v + 'ch';
                     textarea.style.whiteSpace = 'pre-wrap';
                     textarea.style.wordWrap = 'break-word';
-                    gutter.style.display = 'none';
                 }
             });
             slider.dispatchEvent(new Event('input'));
