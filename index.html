@@ -773,7 +773,7 @@ const App = (() => {
             } catch (e) { UI.showToast('Delete failed'); }
             UI.closeContextMenu();
         },
-        async renameItem() {
+                async renameItem() {
             const target = contextMenuTarget;
             if (!target) return;
             const oldName = target.name;
@@ -786,35 +786,34 @@ const App = (() => {
             if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) {
                 UI.showToast('Invalid name'); UI.closeContextMenu(); return;
             }
-        
             try {
                 const oldPath = target.path;
                 const { parent } = await this.resolvePath(currentDirHandle, oldPath);
                 await this.ensureRW(parent);
                 const oldHandle = target.handle;
-        
+                let updatedHandle = oldHandle;
+
                 if (isFolder) {
                     if (oldHandle.move) {
                         await oldHandle.move(parent, trimmed);
+                        updatedHandle = oldHandle;  // move updates handle in place
                     } else {
                         UI.showToast('Folder rename needs latest Chrome/Edge'); UI.closeContextMenu(); return;
                     }
                 } else {
-                    // universal fallback for files
                     const file = await oldHandle.getFile();
                     const content = await file.text();
-                    const newHandle = await parent.getFileHandle(trimmed, { create: true });
-                    await this.writeFile(newHandle, content);
+                    updatedHandle = await parent.getFileHandle(trimmed, { create: true });
+                    await this.writeFile(updatedHandle, content);
                     await parent.removeEntry(oldName);
                 }
-        
-                // update tabs + paths
+
                 const newPath = oldPath.substring(0, oldPath.lastIndexOf('/') + 1) + trimmed || trimmed;
                 for (const tab of tabs) {
-                    if (tab.handle && await this.isSameEntry(tab.handle, oldHandle)) {
+                    if (tab.path === oldPath) {
                         tab.name = trimmed;
                         tab.path = newPath;
-                        tab.handle = newHandle;
+                        tab.handle = updatedHandle;
                         if (tab.element) tab.element.querySelector('.tab-name').textContent = trimmed;
                     }
                     if (isFolder && tab.path && tab.path.startsWith(oldPath + '/')) {
@@ -825,7 +824,7 @@ const App = (() => {
                 else if (isFolder && activeFilePath && activeFilePath.startsWith(oldPath + '/')) {
                     activeFilePath = newPath + activeFilePath.substring(oldPath.length);
                 }
-        
+
                 await FSA.mutateAndRebuild();
                 UI.showToast(`Renamed to ${trimmed}`);
             } catch (e) {
@@ -834,7 +833,8 @@ const App = (() => {
             }
             UI.closeContextMenu();
         },
-      async moveEntry(srcPath, destFolderPath) {
+      
+        async moveEntry(srcPath, destFolderPath) {
             const srcNode = TreeManager.getNode(srcPath);
             if (!srcNode) return;
             if (srcNode.kind === 'directory' && destFolderPath.startsWith(srcPath + '/')) return UI.showToast('Cannot move folder into itself');
@@ -850,8 +850,11 @@ const App = (() => {
                 try { await destHandle.getFileHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; }
                 if (!nameExists) { try { await destHandle.getDirectoryHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; } }
                 if (nameExists) { UI.showToast(`"${srcNode.name}" already exists in destination`); return; }
+
+                let updatedHandle = srcNode.handle;
                 if (srcNode.handle.move) {
                     await srcNode.handle.move(destHandle, srcNode.name);
+                    updatedHandle = srcNode.handle;
                 } else if (srcNode.kind === 'file') {
                     const file = await srcNode.handle.getFile();
                     const newHandle = await destHandle.getFileHandle(srcNode.name, { create: true });
@@ -859,14 +862,16 @@ const App = (() => {
                     await writable.write(file);
                     await writable.close();
                     await srcParent.removeEntry(srcNode.name);
+                    updatedHandle = newHandle;
                 } else {
                     throw new Error('Moving folders requires Chrome/Edge 122+ or another browser with FileSystemHandle.move() support');
                 }
+
                 const newPath = destFolderPath ? `${destFolderPath}/${srcNode.name}` : srcNode.name;
                 for (const tab of tabs) {
                     if (tab.path === srcPath) {
                         tab.path = newPath;
-                        tab.handle = newHandle;
+                        tab.handle = updatedHandle;
                     } else if (tab.path && tab.path.startsWith(srcPath + '/')) {
                         tab.path = newPath + tab.path.substring(srcPath.length);
                     }
@@ -880,8 +885,7 @@ const App = (() => {
                 UI.showToast(`Moved "${srcNode.name}"`);
             } catch (e) { UI.showToast('Move failed'); }
             UI.closeContextMenu();
-        }
-    };
+        },
     // ──────────────────────────────────────────────
     // TREE MANAGER – owns data + DOM + updates
     // ──────────────────────────────────────────────
