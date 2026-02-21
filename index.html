@@ -540,25 +540,64 @@ const App = (() => {
             }
             return { handle: current, parent, name, path: pathStr };
         },
-        async buildTree(dirHandle, basePath = '', depth = 0) {
-            if (depth > 12) return { name: dirHandle.name, kind: 'directory', truncated: true };
-            const node = { name: dirHandle.name, kind: 'directory', handle: dirHandle, path: basePath || '/', children: [] };
-            TreeManager.registerNode(basePath || '/', node);
+        // ── LAZY TREE LOADING (new core) ──
+        async loadChildren(dirNode) {
+            if (dirNode.kind !== 'directory' || dirNode.childrenLoaded) return;
+            dirNode.children = [];
             try {
-                for await (const [name, handle] of dirHandle.entries()) {
+                const entries = [];
+                for await (const [name, handle] of dirNode.handle.entries()) {
                     if (name.startsWith('.') || name === 'node_modules' || name === '__pycache__') continue;
-                    const childPath = basePath ? `${basePath}/${name}` : name;
-                    if (handle.kind === 'directory') {
-                        node.children.push(await this.buildTree(handle, childPath, depth + 1));
-                    } else {
-                        const childNode = { name, kind: 'file', handle, path: childPath };
-                        TreeManager.registerNode(childPath, childNode);
-                        node.children.push(childNode);
-                    }
+                    entries.push([name, handle]);
                 }
-                node.children.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : (a.kind === 'directory' ? -1 : 1));
-            } catch (e) { console.error('Tree build error:', e); }
-            return node;
+                entries.sort(([aName, aHandle], [bName, bHandle]) => {
+                    if (aHandle.kind !== bHandle.kind) return aHandle.kind === 'directory' ? -1 : 1;
+                    return aName.localeCompare(bName, undefined, { numeric: true });
+                });
+                for (const [name, handle] of entries) {
+                    const childPath = dirNode.path === '/' ? name : `${dirNode.path}/${name}`;
+                    const childNode = handle.kind === 'directory' ?
+                        { name, kind: 'directory', handle, path: childPath, children: [], childrenLoaded: false } :
+                        { name, kind: 'file', handle, path: childPath };
+                    TreeManager.registerNode(childPath, childNode);
+                    dirNode.children.push(childNode);
+                }
+            } catch (e) {
+                console.error(`loadChildren failed for ${dirNode.path}:`, e);
+            }
+            dirNode.childrenLoaded = true;
+        },
+
+        async build(rootHandle) {
+            TreeManager.clear();
+            const rootNode = {
+                name: rootHandle.name,
+                kind: 'directory',
+                handle: rootHandle,
+                path: '/',
+                children: [],
+                childrenLoaded: false
+            };
+            TreeManager.registerNode('/', rootNode);
+            TreeManager.fileTree = rootNode;
+            await this.loadChildren(rootNode);
+            return rootNode;
+        },
+
+        async mutateAndRebuild() {
+            if (!currentDirHandle) return;
+            const previouslyExpanded = new Set(expandedFolders);
+            await this.build(currentDirHandle);
+            for (const path of previouslyExpanded) {
+                const node = TreeManager.getNode(path);
+                if (node && node.kind === 'directory') {
+                    await this.loadChildren(node);
+                    expandedFolders.add(path);
+                }
+            }
+            TreeManager.render();
+            TreeManager.highlightActive();
+            TreeManager.updateHeader();
         },
         loadExpandedState() {
             try {
@@ -637,7 +676,7 @@ const App = (() => {
             const fileHandle = await parent.getFileHandle(trimmed, { create: true });
             await this.writeFile(fileHandle, '');
             if (targetPath) { expandedFolders.add(targetPath); this.saveExpandedState(); }
-            await TreeManager.mutateAndRebuild();
+            await FSA.mutateAndRebuild();
             await TabManager.createNewTab(fileHandle, trimmed, '', targetPath ? `${targetPath}/${trimmed}` : trimmed);
             UI.closeContextMenu();
         },
@@ -653,7 +692,7 @@ const App = (() => {
             await this.ensureRW(parent);
             await parent.getDirectoryHandle(trimmed, { create: true });
             if (targetPath) { expandedFolders.add(targetPath); this.saveExpandedState(); }
-            await TreeManager.mutateAndRebuild();
+            await FSA.mutateAndRebuild();
             UI.showToast('Folder created');
             UI.closeContextMenu();
         },
@@ -708,7 +747,7 @@ const App = (() => {
                 const { parent, name } = await this.resolvePath(currentDirHandle, target.path);
                 await this.ensureRW(parent);
                 await parent.removeEntry(name);
-                await TreeManager.mutateAndRebuild();
+                await FSA.mutateAndRebuild();
                 UI.showToast('File deleted');
             } catch (e) { UI.showToast('Delete failed'); }
             UI.closeContextMenu();
@@ -728,7 +767,7 @@ const App = (() => {
                 await parent.removeEntry(name);
                 expandedFolders.delete(target.path);
                 this.saveExpandedState();
-                await TreeManager.mutateAndRebuild();
+                await FSA.mutateAndRebuild();
                 UI.showToast('Folder deleted');
             } catch (e) { UI.showToast('Delete failed'); }
             UI.closeContextMenu();
@@ -785,7 +824,7 @@ const App = (() => {
                     activeFilePath = newPath + activeFilePath.substring(oldPath.length);
                 }
         
-                await TreeManager.mutateAndRebuild();
+                await FSA.mutateAndRebuild();
                 UI.showToast(`Renamed to ${trimmed}`);
             } catch (e) {
                 console.error(e);
@@ -834,7 +873,7 @@ const App = (() => {
                     activeFilePath = newPath + activeFilePath.substring(srcPath.length);
                 }
                 if (destFolderPath) { expandedFolders.add(destFolderPath); this.saveExpandedState(); }
-                await TreeManager.mutateAndRebuild();
+                await FSA.mutateAndRebuild();
                 UI.showToast(`Moved "${srcNode.name}"`);
             } catch (e) { UI.showToast('Move failed'); }
             UI.closeContextMenu();
@@ -846,7 +885,8 @@ const App = (() => {
     const TreeManager = (() => {
         let fileTree = null;
         const nodeByPath = new Map();
-        const _renderTreeItem = (node, parentEl, level) => {
+
+        const _renderTreeItem = (node, parentEl, level = 0) => {
             if (node.kind === 'directory') {
                 const folderDiv = document.createElement('div');
                 const header = document.createElement('div');
@@ -863,19 +903,31 @@ const App = (() => {
                 childrenDiv.style.display = expandedFolders.has(node.path) ? 'block' : 'none';
                 folderDiv.append(header, childrenDiv);
                 parentEl.appendChild(folderDiv);
-                header.onclick = (e) => {
+
+                header.onclick = async (e) => {
                     if (longPressTriggered) return;
-                    const wasOpen = childrenDiv.style.display !== 'none';
-                    childrenDiv.style.display = wasOpen ? 'none' : 'block';
-                    toggle.textContent = wasOpen ? '▶' : '▼';
-                    if (wasOpen) expandedFolders.delete(node.path);
-                    else expandedFolders.add(node.path);
+                    const isExpanded = expandedFolders.has(node.path);
+                    if (!isExpanded) {
+                        await FSA.loadChildren(node);
+                        childrenDiv.replaceChildren();
+                        node.children.forEach(c => _renderTreeItem(c, childrenDiv, level + 1));
+                    }
+                    if (isExpanded) {
+                        expandedFolders.delete(node.path);
+                        childrenDiv.style.display = 'none';
+                        toggle.textContent = '▶';
+                    } else {
+                        expandedFolders.add(node.path);
+                        childrenDiv.style.display = 'block';
+                        toggle.textContent = '▼';
+                    }
                     FSA.saveExpandedState();
                     activeDirectoryPath = node.path;
                     TreeManager.highlightActive();
                     TreeManager.updateHeader();
                 };
                 header.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); header.click(); } };
+
                 header.draggable = true;
                 header.addEventListener('dragstart', e => {
                     e.dataTransfer.setData('application/x-tree-path', node.path);
@@ -898,7 +950,10 @@ const App = (() => {
                         FSA.moveEntry(srcPath, node.path);
                     }
                 });
-                node.children.forEach(c => _renderTreeItem(c, childrenDiv, level + 1));
+
+                if (expandedFolders.has(node.path) && node.children.length) {
+                    node.children.forEach(c => _renderTreeItem(c, childrenDiv, level + 1));
+                }
             } else {
                 const fileDiv = document.createElement('div');
                 fileDiv.className = 'file-item';
@@ -908,6 +963,7 @@ const App = (() => {
                 fileDiv.tabIndex = 0;
                 fileDiv.onclick = () => { if (!longPressTriggered) FSA.openFileFromNode(node); };
                 fileDiv.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); fileDiv.click(); } };
+
                 fileDiv.draggable = true;
                 fileDiv.addEventListener('dragstart', e => {
                     e.dataTransfer.setData('application/x-tree-path', node.path);
@@ -915,16 +971,18 @@ const App = (() => {
                     fileDiv.classList.add('dragging');
                 });
                 fileDiv.addEventListener('dragend', () => fileDiv.classList.remove('dragging'));
+
                 parentEl.appendChild(fileDiv);
             }
         };
+
         return {
+            get fileTree() { return fileTree; },
+            set fileTree(v) { fileTree = v; },
             getNode(path) { return nodeByPath.get(path); },
             registerNode(path, node) { nodeByPath.set(path, node); },
             async build(rootHandle) {
-                nodeByPath.clear();
-                fileTree = await FSA.buildTree(rootHandle);
-                return fileTree;
+                return FSA.build(rootHandle);
             },
             render() {
                 treeContainer.replaceChildren();
@@ -958,11 +1016,6 @@ const App = (() => {
                 clearSpan.id = 'clear-folder';
                 clearSpan.textContent = '\u232B';
                 sidebarHeaderActionsEl.replaceChildren(refreshSpan, clearSpan);
-            },
-            async mutateAndRebuild() {
-                if (!currentDirHandle) return;
-                await this.build(currentDirHandle);
-                this.render();
             },
             highlightActive() {
                 treeContainer.querySelectorAll('.file-item.active,.folder-header.active,.folder-header.active-dir,.folder-header.active-ancestor').forEach(el => el.classList.remove('active','active-dir','active-ancestor'));
@@ -1253,7 +1306,7 @@ const App = (() => {
                 if (e.target.id === 'clear-folder') { e.stopPropagation(); FSA.clearSavedFolder(); return; }
                 if (e.target.id === 'refresh-folder') {
                     e.stopPropagation();
-                    if (currentDirHandle) TreeManager.mutateAndRebuild();
+                    if (currentDirHandle) FSA.mutateAndRebuild();
                     return;
                 }
                 if (!e.target.closest('.context-menu')) UI.closeContextMenu();
