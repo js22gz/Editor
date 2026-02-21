@@ -185,10 +185,10 @@ window.LEGEND = `<!--
             margin-bottom: -1px;
         }
         .folder-header:hover { background: #1f1f23; color: #a1a1aa; }
-        .folder-header.top-level { font-weight: 700; }
+        .folder-header.top-level { font-weight: 700; color: #f4f4f5; }
         .folder-header.active { background: #1c1c20; color: #a1a1aa; font-weight: 500; }
         .folder-header.top-level.active { font-weight: 700; }
-        .folder-header.active-ancestor { color: #a1a1aa; }
+        .folder-header.active-ancestor { color: #d4d4d8; }
         .folder-header.active-dir { border-left: 2px solid #52525b; color: #f4f4f5; }
         .toggle { display: inline-block; width: 14px; font-size: 11px; color: #52525b; }
         .tree-children { padding-left: 20px; }
@@ -382,6 +382,14 @@ window.LEGEND = `<!--
             background: #27272a;
             margin: 4px 0;
         }
+        #sidebar-resize {
+            width: 5px;
+            cursor: col-resize;
+            background: transparent;
+            flex-shrink: 0;
+        }
+        #sidebar-resize:hover { background: #3f3f46; }
+        #sidebar.hidden + #sidebar-resize { display: none; }
        
 /* Mobile */
 .file-item,
@@ -409,6 +417,7 @@ window.LEGEND = `<!--
             </div>
             <div id="tree-container"></div>
         </aside>
+        <div id="sidebar-resize"></div>
         <div class="editor-area">
             <div id="tabs"></div>
             <div id="line-width-slider">
@@ -436,6 +445,7 @@ const App = (() => {
     let expandedFolders = new Set();
     let contextMenu = null;
     let contextMenuTarget = null;
+    let copiedNode = null;
     let saveTimer = null;
     let saveInProgress = false;
     let isMobile = window.innerWidth <= 768;
@@ -864,7 +874,9 @@ const App = (() => {
                     await srcParent.removeEntry(srcNode.name);
                     updatedHandle = newHandle;
                 } else {
-                    throw new Error('Moving folders requires Chrome/Edge 122+ or another browser with FileSystemHandle.move() support');
+                    await this._copyDirectory(srcNode.handle, destHandle, srcNode.name);
+                    await srcParent.removeEntry(srcNode.name, { recursive: true });
+                    updatedHandle = await destHandle.getDirectoryHandle(srcNode.name);
                 }
 
                 const newPath = destFolderPath ? `${destFolderPath}/${srcNode.name}` : srcNode.name;
@@ -884,6 +896,45 @@ const App = (() => {
                 await FSA.mutateAndRebuild();
                 UI.showToast(`Moved "${srcNode.name}"`);
             } catch (e) { UI.showToast('Move failed'); }
+            UI.closeContextMenu();
+        },
+        async _copyDirectory(srcDirHandle, destParentHandle, name) {
+            const newDirHandle = await destParentHandle.getDirectoryHandle(name, { create: true });
+            for await (const [entryName, entryHandle] of srcDirHandle) {
+                if (entryHandle.kind === 'file') {
+                    const file = await entryHandle.getFile();
+                    const newHandle = await newDirHandle.getFileHandle(entryName, { create: true });
+                    const writable = await newHandle.createWritable();
+                    await writable.write(file);
+                    await writable.close();
+                } else {
+                    await this._copyDirectory(entryHandle, newDirHandle, entryName);
+                }
+            }
+        },
+        async copyEntry(srcNode, destFolderPath) {
+            const destNode = TreeManager.getNode(destFolderPath || '/');
+            if (!destNode) return UI.showToast('Destination folder not found');
+            const destHandle = destNode.handle;
+            try {
+                await this.ensureRW(destHandle);
+                let nameExists = false;
+                try { await destHandle.getFileHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; }
+                if (!nameExists) { try { await destHandle.getDirectoryHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; } }
+                if (nameExists) { UI.showToast(`"${srcNode.name}" already exists in destination`); return; }
+                if (srcNode.kind === 'file') {
+                    const file = await srcNode.handle.getFile();
+                    const newHandle = await destHandle.getFileHandle(srcNode.name, { create: true });
+                    const writable = await newHandle.createWritable();
+                    await writable.write(file);
+                    await writable.close();
+                } else {
+                    await this._copyDirectory(srcNode.handle, destHandle, srcNode.name);
+                }
+                if (destFolderPath) { expandedFolders.add(destFolderPath); this.saveExpandedState(); }
+                await FSA.mutateAndRebuild();
+                UI.showToast(`Copied "${srcNode.name}"`);
+            } catch (e) { UI.showToast('Copy failed'); }
             UI.closeContextMenu();
         },
     };
@@ -1249,16 +1300,20 @@ const App = (() => {
                         TabManager.createNewTab(null, 'welcome.txt', window.LEGEND);
                     }
                 });
+                if (copiedNode) { addSeparator(); addItem('Paste', () => FSA.copyEntry(copiedNode, activeDirectoryPath || '')); }
             } else if (node.kind === 'directory') {
                 addItem('New File', () => FSA.newFile());
                 addItem('New Folder', () => FSA.newFolder());
                 addSeparator();
                 addItem('Rename', () => FSA.renameItem());
+                addItem('Copy', () => { copiedNode = node; UI.showToast(`"${node.name}" ready to paste`); });
+                if (copiedNode) addItem('Paste', () => FSA.copyEntry(copiedNode, node.path));
                 addSeparator();
                 addItem('Delete Folder', () => FSA.deleteFolder(), 'danger');
             } else {
                 addItem('Open', () => FSA.openFileFromNode(contextMenuTarget));
                 addItem('Rename', () => FSA.renameItem());
+                addItem('Copy', () => { copiedNode = contextMenuTarget; UI.showToast(`"${contextMenuTarget.name}" ready to paste`); });
                 addSeparator();
                 addItem('Delete File', () => FSA.deleteFile(), 'danger');
             }
@@ -1304,6 +1359,31 @@ const App = (() => {
                 const wasMobile = isMobile;
                 isMobile = window.innerWidth <= 768;
                 if (isMobile && !wasMobile) sidebarEl.classList.add('hidden');
+            });
+            // Sidebar resize
+            const sidebarResizeHandle = document.getElementById('sidebar-resize');
+            let sidebarResizing = false, sidebarResizeStartX = 0, sidebarResizeStartW = 0;
+            sidebarResizeHandle.addEventListener('mousedown', e => {
+                sidebarResizing = true;
+                sidebarResizeStartX = e.clientX;
+                sidebarResizeStartW = sidebarEl.offsetWidth;
+                sidebarEl.style.transition = 'none';
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+            document.addEventListener('mousemove', e => {
+                if (!sidebarResizing) return;
+                const w = Math.max(150, Math.min(600, sidebarResizeStartW + e.clientX - sidebarResizeStartX));
+                sidebarEl.style.width = w + 'px';
+            });
+            document.addEventListener('mouseup', () => {
+                if (!sidebarResizing) return;
+                sidebarResizing = false;
+                sidebarEl.style.transition = '';
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                localStorage.setItem('sidebarWidth', sidebarEl.offsetWidth + 'px');
             });
             treeContainer.addEventListener('dragover', e => {
                 if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
@@ -1466,6 +1546,8 @@ const slider = document.getElementById('width-slider');
             activeDirNameEl = document.getElementById('active-dir-name');
             rootDirNameEl = document.getElementById('root-dir-name');
             sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions');
+            const savedSidebarWidth = localStorage.getItem('sidebarWidth');
+            if (savedSidebarWidth) sidebarEl.style.width = savedSidebarWidth;
             UI.bindEvents();
             await FSA.initDB();
             FSA.loadExpandedState();
