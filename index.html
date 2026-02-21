@@ -814,6 +814,7 @@ const App = (() => {
                     if (tab.handle && await this.isSameEntry(tab.handle, oldHandle)) {
                         tab.name = trimmed;
                         tab.path = newPath;
+                        tab.handle = newHandle;
                         if (tab.element) tab.element.querySelector('.tab-name').textContent = trimmed;
                     }
                     if (isFolder && tab.path && tab.path.startsWith(oldPath + '/')) {
@@ -865,6 +866,7 @@ const App = (() => {
                 for (const tab of tabs) {
                     if (tab.path === srcPath) {
                         tab.path = newPath;
+                        tab.handle = newHandle;
                     } else if (tab.path && tab.path.startsWith(srcPath + '/')) {
                         tab.path = newPath + tab.path.substring(srcPath.length);
                     }
@@ -1388,7 +1390,7 @@ const App = (() => {
                     e.preventDefault();
                     const start = textarea.selectionStart;
                     const end = textarea.selectionEnd;
-                    const indent = ' ';
+                    const indent = '\t';
                     textarea.value = textarea.value.substring(0, start) + indent + textarea.value.substring(end);
                     textarea.selectionStart = textarea.selectionEnd = start + indent.length;
                     textarea.dispatchEvent(new Event('input'));
