@@ -2,69 +2,70 @@
 window.LEGEND = `<!--
   name: EDITOR
   type: progressive web app.
-  description: No dependency single-file text EDITOR
-  length: ~1500 lines (February 2026)
-  browser compatibility: Chrome & Edge (Only tested in Chrome though *lol*)
+  description: No-dependency single-file local filesystem text editor
+  length: ~2180 lines (February 2026)
+  browser compatibility: Chrome & Edge (File System Access API)
   ═══════════════════════════════════════════════════════════════════════
   DOCUMENT MAP:
   ────────
   <html lang="en">
     ├── <head>
     │   ├── <meta> charset · viewport · title · manifest · theme-color
-    │   └── <style>
+    │   └── <style> (minimal dark, squarish, fluid)
     └── <body>
            ├── <header>
            │   ├── <h1>EDITOR</h1>
-           │   └── #topbar-active-row active directory path
+           │   └── #topbar-active-row (active directory)
            │
            ├── <main>
            │   ├── <aside id="sidebar">
-           │   │   ├── #sidebar-header root dir label + refresh/clear icons
-           │   │   └── #tree-container file-tree (rendered by TreeManager)
+           │   │   ├── #sidebar-header (root label + refresh/clear)
+           │   │   └── #tree-container (lazy TreeManager)
            │   │
            │   └── .editor-area
-           │       ├── #tabs open-file tab strip
-           │       ├── #line-width-slider line-width control
+           │       ├── #tabs (draggable tab strip)
+           │       ├── #line-width-slider (chars or ∞)
            │       ├── .editor-wrapper
            │       │   ├── button#sidebar-toggle
-           │       │   ├── #gutter line-number gutter
-           │       │   └── #textarea main editing surface
-           │       └── .status cursor position + file info
+           │       │   ├── #gutter (live line numbers)
+           │       │   └── #textarea (core editing surface)
+           │       └── .status (cursor + file info)
            │
            └── <script> (IIFE: const App = (() => { … })())
                   │
-                  ├── STATE – currentDirHandle, tabs, currentTabId, expandedFolders, activeFilePath, …
+                  ├── STATE – currentDirHandle, tabs[], currentTabId,
+                  │           expandedFolders, activeFilePath,
+                  │           activeDirectoryPath …
                   │
-                  ├── FSA – file system, IndexedDB & all file operations
-                  │   ├── initDB / saveFolderHandle / loadSavedFolder / clearSavedFolder
-                  │   ├── queryPermission / ensureRW / reauthorize
-                  │   ├── resolvePath / buildTree
-                  │   ├── loadExpandedState / saveExpandedState
-                  │   ├── writeFile / isSameEntry
-                  │   ├── loadOpenTabs / saveOpenTabs
-                  │   ├── openFolder / openFile / openFileFromNode
-                  │   ├── newFile / newFolder
-                  │   ├── saveTab / saveCurrentFile / scheduleSave / flushSave
-                  │   ├── deleteFile / deleteFolder
-                  │   └── renameItem / moveEntry
+                  ├── FSA – FileSystemAccess + persistence
+                  │   ├── IndexedDB handle storage
+                  │   ├── Lazy tree (loadChildren + mutateAndRebuild)
+                  │   ├── CRUD + moveEntry (full drag & drop)
+                  │   ├── Auto-save (debounce 750 ms + flush)
+                  │   ├── Tab & expandedFolders persistence
+                  │   └── Permission / reauthorize
                   │
-                  ├── TreeManager – sidebar tree rendering & state (IIFE)
-                  │   ├── _renderTreeItem() recursive DOM builder
-                  │   ├── build / render / mutateAndRebuild
-                  │   ├── registerNode / getNode / highlightActive
-                  │   └── updateHeader / clear
+                  ├── TreeManager – sidebar tree (IIFE)
+                  │   ├── nodeByPath Map + fileTree root
+                  │   ├── _renderTreeItem() recursive + lazy
+                  │   ├── Drag & drop (move/ancestor highlight)
+                  │   ├── highlightActive() + updateHeader
+                  │   └── registerNode / getNode / clear
                   │
-                  ├── TabManager – tab creation, switching & closing
+                  ├── TabManager
                   │   ├── createNewTab / switchToTab / closeTab
+                  │   └── Drag-to-reorder tabs
                   │
-                  └── UI – DOM interactions & event wiring
-                       ├── bindEvents() keyboard shortcuts, drag-and-drop, long-press, resize
-                       ├── showToast / showInputDialog / showContextMenu / closeContextMenu
-                       ├── toggleSidebar
+                  └── UI – interactions & wiring
+                       ├── Context menu + long-press (mobile)
+                       ├── showToast / showInputDialog
+                       ├── Line width slider (∞ mode)
                        ├── updateLineNumbers / updateEditorStatus
-                       └── init
+                       └── bindEvents() (kbd: S/W/N/O, dnd, touch, resize)
+                  
   copyright © 2026 Jonatan Skäryd. All rights reserved.
-  the LEGEND is off limits for any automated process such as AI-AGENTS... It's a human work in progress.
+  the LEGEND is off limits for any automated process such as AI-AGENTS...
+  It's a human work in progress. Pure craft.
 -->`;
 </script>
 <!DOCTYPE html>
