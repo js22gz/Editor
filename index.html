@@ -420,13 +420,9 @@ window.LEGEND = `<!--
 .tab .md-toggle.active { color: #a1a1aa; border-color: #52525b; }
 .tab .md-toggle.inactive { text-decoration: line-through; color: #3f3f46; }
 
-/* ── Markdown preview overlay ── */
+/* ── Markdown split preview ── */
 #md-preview {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    flex: 1;
     overflow: auto;
     background: #0a0a0b;
     color: #e4e4e7;
@@ -434,7 +430,7 @@ window.LEGEND = `<!--
     font-size: 14px;
     line-height: 1.6;
     padding: 12px 16px;
-    z-index: 4;
+    border-left: 1px solid #27272a;
 }
 #md-preview.hidden { display: none; }
 #md-preview h1, #md-preview h2, #md-preview h3,
@@ -1586,14 +1582,10 @@ const App = (() => {
             const tab = currentTabId !== null ? tabs.find(t => t.id === currentTabId) : null;
             if (!tab || tab.type !== 'markdown' || !tab.mdPreview) {
                 previewEl.classList.add('hidden');
-                textarea.style.display = '';
-                gutter.style.display = '';
                 return;
             }
             previewEl.classList.remove('hidden');
             previewEl.innerHTML = MarkdownMini.parse(textarea.value);
-            textarea.style.display = 'none';
-            gutter.style.display = 'none';
         },
         bindEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
