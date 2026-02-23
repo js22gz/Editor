@@ -53,8 +53,11 @@ window.LEGEND = `<!--
                   │   ├── highlightActive() + updateHeader
                   │   └── registerNode / getNode / clear
                   │
+                  ├── TAB_TYPES – type registry (welcome · text)
+                  │
                   ├── TabManager
-                  │   ├── createNewTab / switchToTab / closeTab
+                  │   ├── createNewTab(handle, name, content, path, type)
+                  │   ├── switchToTab / closeTab
                   │   └── Drag-to-reorder tabs
                   │
                   └── UI – interactions & wiring
@@ -1107,10 +1110,17 @@ const App = (() => {
         };
     })();
     // ──────────────────────────────────────────────
+    // Tab type registry – add entries to extend
+    // ──────────────────────────────────────────────
+    const TAB_TYPES = {
+        welcome: { canSave: false, canDirty: false },
+        text:    { canSave: true,  canDirty: true  }
+    };
+    // ──────────────────────────────────────────────
     // TabManager – tab creation, switching & closing
     // ──────────────────────────────────────────────
     const TabManager = {
-        async createNewTab(handle, name, content = '', path = null) {
+        async createNewTab(handle, name, content = '', path = null, type = 'text') {
             if (handle) {
                 for (const t of tabs) {
                     if (t.handle && await FSA.isSameEntry(t.handle, handle)) {
@@ -1120,7 +1130,7 @@ const App = (() => {
                 }
             }
             const id = nextTabId++;
-            const tab = { id, name, handle, content, dirty: false, path, element: null };
+            const tab = { id, name, handle, content, dirty: false, path, type, element: null };
             tabs.push(tab);
             const tabEl = document.createElement('div');
             tabEl.className = 'tab';
@@ -1301,11 +1311,11 @@ const App = (() => {
                 addItem('Open Folder', () => FSA.openFolder());
                 addSeparator();
                 addItem('Open welcome.txt', () => {
-                    const existing = tabs.find(t => t.name === 'welcome.txt' && !t.handle);
+                    const existing = tabs.find(t => t.type === 'welcome');
                     if (existing) {
                         TabManager.switchToTab(existing.id);
                     } else {
-                        TabManager.createNewTab(null, 'welcome.txt', window.LEGEND);
+                        TabManager.createNewTab(null, 'welcome.txt', window.LEGEND, null, 'welcome');
                     }
                 });
                 if (copiedNode) { addSeparator(); addItem('Paste', () => FSA.copyEntry(copiedNode, activeDirectoryPath || '')); }
@@ -1474,10 +1484,12 @@ const App = (() => {
                 if (currentTabId) {
                     const tab = tabs.find(t => t.id === currentTabId);
                     if (tab) {
-                        tab.dirty = true;
-                        if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
+                        if (TAB_TYPES[tab.type]?.canDirty) {
+                            tab.dirty = true;
+                            if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
+                            FSA.scheduleSave();
+                        }
                         this.updateEditorStatus(tab);
-                        FSA.scheduleSave();
                     }
                 }
             });
@@ -1600,7 +1612,7 @@ const slider = document.getElementById('width-slider');
             }
             if (isMobile) sidebarEl.classList.add('hidden');
             if (!hadSavedTabs && tabs.length === 0) {
-                await TabManager.createNewTab(null, 'welcome.txt', window.LEGEND);
+                await TabManager.createNewTab(null, 'welcome.txt', window.LEGEND, null, 'welcome');
             }
         }
     };
