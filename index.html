@@ -1382,19 +1382,31 @@ const App = (() => {
                 e.preventDefault();
                 tabEl.classList.remove('drag-over');
                 const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
-                if (draggedId === id) return;
+                if (draggedId === id || draggedId === NaN) return;
+            
                 const fromIdx = tabs.findIndex(t => t.id === draggedId);
                 const toIdx = tabs.findIndex(t => t.id === id);
                 if (fromIdx === -1 || toIdx === -1) return;
-                const [moved] = tabs.splice(fromIdx, 1);
+            
+                const movedTab = tabs[fromIdx];
+                tabs.splice(fromIdx, 1);
+            
+                // decide before or after the drop target
                 const rect = tabEl.getBoundingClientRect();
-                const insertAfter = e.clientX > rect.left + rect.width / 2;
-                const adjustedToIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
-                tabs.splice(insertAfter ? adjustedToIdx + 1 : adjustedToIdx, 0, moved);
-                tabsContainer.append(...tabs.map(t => t.element));
+                const insertBefore = e.clientX < rect.left + rect.width / 2;
+            
+                tabs.splice(insertBefore ? toIdx : toIdx + 1, 0, movedTab);
+            
+                // only move the DOM node — no full re-append
+                if (insertBefore) {
+                    tabsContainer.insertBefore(movedTab.element, tabEl);
+                } else {
+                    tabsContainer.insertBefore(movedTab.element, tabEl.nextSibling);
+                }
+            
                 FSA.saveOpenTabs(currentTabId);
             });
-            tabsContainer.appendChild(tabEl);
+          tabsContainer.appendChild(tabEl);
             tab.element = tabEl;
             this.switchToTab(id);
             return tab;
