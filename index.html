@@ -1380,9 +1380,10 @@ const App = (() => {
             tabEl.addEventListener('dragleave', () => tabEl.classList.remove('drag-over'));
             tabEl.addEventListener('drop', e => {
                 e.preventDefault();
+                e.stopPropagation();
                 tabEl.classList.remove('drag-over');
                 const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
-                if (draggedId === id || draggedId === NaN) return;
+                if (draggedId === id || isNaN(draggedId)) return;
             
                 const fromIdx = tabs.findIndex(t => t.id === draggedId);
                 const toIdx = tabs.findIndex(t => t.id === id);
@@ -1394,8 +1395,10 @@ const App = (() => {
                 // decide before or after the drop target
                 const rect = tabEl.getBoundingClientRect();
                 const insertBefore = e.clientX < rect.left + rect.width / 2;
-            
-                tabs.splice(insertBefore ? toIdx : toIdx + 1, 0, movedTab);
+
+                // adjust toIdx since splice shifted indices when fromIdx < toIdx
+                const adjustedToIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
+                tabs.splice(insertBefore ? adjustedToIdx : adjustedToIdx + 1, 0, movedTab);
             
                 // only move the DOM node — no full re-append
                 if (insertBefore) {
@@ -1723,6 +1726,38 @@ const App = (() => {
                 }
             });
             treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); touchMoved = true; }, { passive: true });
+            // Allow dropping a tab past the last tab (append to end)
+            tabsContainer.addEventListener('dragover', e => {
+                if (!e.dataTransfer.types.includes('text/plain')) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+            });
+            tabsContainer.addEventListener('drop', e => {
+                e.preventDefault();
+                const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                if (isNaN(draggedId)) return;
+                const fromIdx = tabs.findIndex(t => t.id === draggedId);
+                if (fromIdx === -1) return;
+                const movedTab = tabs[fromIdx];
+                tabs.splice(fromIdx, 1);
+                tabs.push(movedTab);
+                tabsContainer.appendChild(movedTab.element);
+                FSA.saveOpenTabs(currentTabId);
+            });
+            textarea.addEventListener('mousedown', () => {
+                if (currentTabId) {
+                    const tab = tabs.find(t => t.id === currentTabId);
+                    if (tab) {
+                        tabsContainer.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                        tab.element.classList.add('active');
+                        if (tab.type === 'markdown' && tab.mdPreview) {
+                            clearTimeout(mdPreviewTimer);
+                            document.getElementById('md-preview').classList.add('hidden');
+                            textarea.classList.remove('md-active');
+                        }
+                    }
+                }
+            });
             textarea.addEventListener('input', () => {
                 this.updateLineNumbers();
                 if (currentTabId) {
