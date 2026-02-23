@@ -420,9 +420,13 @@ window.LEGEND = `<!--
 .tab .md-toggle.active { color: #a1a1aa; border-color: #52525b; }
 .tab .md-toggle.inactive { text-decoration: line-through; color: #3f3f46; }
 
-/* ── Markdown split preview ── */
+/* ── Markdown overlay preview ── */
 #md-preview {
-    flex: 1;
+    position: absolute;
+    top: 0;
+    left: 60px; /* after gutter */
+    right: 0;
+    bottom: 0;
     overflow: auto;
     background: #0a0a0b;
     color: #e4e4e7;
@@ -430,9 +434,11 @@ window.LEGEND = `<!--
     font-size: 14px;
     line-height: 1.6;
     padding: 12px 16px;
-    border-left: 1px solid #27272a;
+    z-index: 4;
+    pointer-events: none;
 }
 #md-preview.hidden { display: none; }
+#textarea.md-active { color: transparent; caret-color: #e4e4e7; }
 #md-preview h1, #md-preview h2, #md-preview h3,
 #md-preview h4, #md-preview h5, #md-preview h6 {
     margin: 0.8em 0 0.4em; font-weight: 600; line-height: 1.3;
@@ -1582,10 +1588,12 @@ const App = (() => {
             const tab = currentTabId !== null ? tabs.find(t => t.id === currentTabId) : null;
             if (!tab || tab.type !== 'markdown' || !tab.mdPreview) {
                 previewEl.classList.add('hidden');
+                textarea.classList.remove('md-active');
                 return;
             }
             previewEl.classList.remove('hidden');
             previewEl.innerHTML = MarkdownMini.parse(textarea.value);
+            textarea.classList.add('md-active');
         },
         bindEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
