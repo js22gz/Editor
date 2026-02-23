@@ -53,7 +53,7 @@ window.LEGEND = `<!--
                   │   ├── highlightActive() + updateHeader
                   │   └── registerNode / getNode / clear
                   │
-                  ├── TAB_TYPES – type registry (welcome · text)
+                  ├── TAB_TYPES – type registry (welcome · text · markdown)
                   │
                   ├── TabManager
                   │   ├── createNewTab(handle, name, content, path, type)
@@ -402,7 +402,80 @@ window.LEGEND = `<!--
 #tree-container {
     -webkit-overflow-scrolling: touch;
 }
-       
+
+/* ── Markdown tab toggle ── */
+.tab .md-toggle {
+    font-size: 10px;
+    font-family: ui-monospace, monospace;
+    color: #52525b;
+    cursor: pointer;
+    padding: 1px 4px;
+    border-radius: 3px;
+    user-select: none;
+    line-height: 1;
+    border: 1px solid transparent;
+    flex-shrink: 0;
+}
+.tab .md-toggle:hover { color: #a1a1aa; border-color: #3f3f46; }
+.tab .md-toggle.active { color: #a1a1aa; border-color: #52525b; }
+.tab .md-toggle.inactive { text-decoration: line-through; color: #3f3f46; }
+
+/* ── Markdown preview overlay ── */
+#md-preview {
+    position: absolute;
+    top: 0;
+    left: 60px; /* matches gutter width */
+    right: 0;
+    bottom: 0;
+    overflow: auto;
+    background: #0a0a0b;
+    color: #e4e4e7;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 12px 16px;
+    z-index: 4;
+    pointer-events: none;
+}
+#md-preview.hidden { display: none; }
+#md-preview h1, #md-preview h2, #md-preview h3,
+#md-preview h4, #md-preview h5, #md-preview h6 {
+    margin: 0.8em 0 0.4em; font-weight: 600; line-height: 1.3;
+}
+#md-preview h1 { font-size: 1.8em; }
+#md-preview h2 { font-size: 1.4em; }
+#md-preview h3 { font-size: 1.2em; }
+#md-preview p { margin: 0.6em 0; }
+#md-preview code {
+    font-family: ui-monospace, monospace;
+    background: #27272a;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+#md-preview pre {
+    background: #18181b;
+    padding: 12px 16px;
+    border-radius: 4px;
+    overflow-x: auto;
+    border: 1px solid #27272a;
+    margin: 0.8em 0;
+}
+#md-preview pre code { background: none; padding: 0; font-size: 13px; }
+#md-preview blockquote {
+    margin: 0.6em 0;
+    padding: 0 0 0 12px;
+    border-left: 3px solid #3f3f46;
+    color: #71717a;
+}
+#md-preview ul, #md-preview ol { margin: 0.6em 0; padding-left: 24px; }
+#md-preview li { margin: 0.2em 0; }
+#md-preview hr { border: none; border-top: 1px solid #27272a; margin: 1em 0; }
+#md-preview a { color: #71717a; text-decoration: underline; }
+#md-preview strong { font-weight: 700; }
+#md-preview del { text-decoration: line-through; color: #71717a; }
+#md-preview img { max-width: 100%; }
+        
     </style>
 </head>
 <body>
@@ -431,12 +504,139 @@ window.LEGEND = `<!--
                 <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle Sidebar">›</button>
                 <div id="gutter"></div>
                 <textarea id="textarea" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea>
+                <div id="md-preview" class="hidden"></div>
             </div>
             <div class="status"><span id="status"></span><span style="flex:1"></span><span id="editor-status">No file open</span></div>
         </div>
     </main>
 <script>
 'use strict';
+// ──────────────────────────────────────────────
+// MarkdownMini – tiny Markdown → HTML (zero dep)
+// ──────────────────────────────────────────────
+const MarkdownMini = (() => {
+    function escapeHtml(text) {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function parseInline(text) {
+        if (!text) return '';
+        return text
+            .replace(/`([^`]+)`/g, (_, code) => `<code>${escapeHtml(code)}</code>`)
+            .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) =>
+                `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}">`)
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) =>
+                `<a href="${escapeHtml(url)}">${parseInline(txt)}</a>`)
+            .replace(/(?<!["'=>])(https?:\/\/[^\s<>"']+)(?!["'])/g, url =>
+                `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`)
+            .replace(/~~(.+?)~~/g, (_, s) => `<del>${escapeHtml(s)}</del>`)
+            .replace(/\*\*([^*]+?)\*\*/g, (_, s) => `<strong>${escapeHtml(s)}</strong>`)
+            .replace(/__([^_]+?)__/g, (_, s) => `<strong>${escapeHtml(s)}</strong>`)
+            .replace(/\*([^*]+?)\*/g, (_, s) => `<em>${escapeHtml(s)}</em>`)
+            .replace(/_([^_]+?)_/g, (_, s) => `<em>${escapeHtml(s)}</em>`);
+    }
+
+    function parseBlockquote(lines, idx, html) {
+        const content = [];
+        while (idx < lines.length && lines[idx].trim().startsWith('>')) {
+            content.push(lines[idx].replace(/^>\s?/, ''));
+            idx++;
+        }
+        html.push(`<blockquote>${parse(content.join('\n'))}</blockquote>`);
+        return idx;
+    }
+
+    function parse(text) {
+        if (!text?.trim()) return '';
+        const lines = text.split(/\r?\n/);
+        const html = [];
+        let i = 0;
+        let inList = false;
+        let listType = '';
+
+        while (i < lines.length) {
+            const line = lines[i];
+            const trimmed = line.trim();
+
+            if (!trimmed) {
+                if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
+                i++;
+                continue;
+            }
+
+            if (trimmed.startsWith('```')) {
+                const lang = escapeHtml(trimmed.slice(3).trim());
+                const codeLines = [];
+                i++;
+                while (i < lines.length && !lines[i].trim().startsWith('```')) {
+                    codeLines.push(escapeHtml(lines[i]));
+                    i++;
+                }
+                html.push(`<pre><code${lang ? ` class="${lang}"` : ''}>${codeLines.join('\n')}</code></pre>`);
+                i++;
+                continue;
+            }
+
+            const headerMatch = trimmed.match(/^(#{1,6})\s+(.+?)\s*$/);
+            if (headerMatch) {
+                const level = headerMatch[1].length;
+                html.push(`<h${level}>${parseInline(headerMatch[2])}</h${level}>`);
+                i++;
+                continue;
+            }
+
+            if (/^([-*_]{3,})\s*$/.test(trimmed)) {
+                html.push('<hr>');
+                i++;
+                continue;
+            }
+
+            if (trimmed.startsWith('>')) {
+                if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
+                i = parseBlockquote(lines, i, html);
+                continue;
+            }
+
+            const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
+            if (listMatch) {
+                const isOrdered = listMatch[2].includes('.');
+                const newType = isOrdered ? 'ol' : 'ul';
+                if (!inList || newType !== listType) {
+                    if (inList) html.push(listType === 'ol' ? '</ol>' : '</ul>');
+                    html.push(`<${newType}>`);
+                    listType = newType;
+                    inList = true;
+                }
+                html.push(`<li>${parseInline(listMatch[3])}</li>`);
+                i++;
+                continue;
+            }
+
+            if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
+
+            const para = [];
+            while (i < lines.length) {
+                const t = lines[i].trim();
+                if (!t || t.startsWith('#') || t.startsWith('>') || t.startsWith('```') ||
+                    /^(\s*)([-*+]|\d+\.)\s/.test(lines[i]) || /^([-*_]{3,})\s*$/.test(t)) break;
+                para.push(lines[i].trim());
+                i++;
+            }
+            if (para.length) { html.push(`<p>${parseInline(para.join(' '))}</p>`); continue; }
+            i++;
+        }
+
+        if (inList) html.push(listType === 'ol' ? '</ol>' : '</ul>');
+        return html.join('\n');
+    }
+
+    return { parse, parseInline };
+})();
 const App = (() => {
     // ──────────────────────────────────────────────
     // STATE
@@ -1113,14 +1313,16 @@ const App = (() => {
     // Tab type registry – add entries to extend
     // ──────────────────────────────────────────────
     const TAB_TYPES = {
-        welcome: { canSave: false, canDirty: false },
-        text:    { canSave: true,  canDirty: true  }
+        welcome:  { canSave: false, canDirty: false },
+        text:     { canSave: true,  canDirty: true  },
+        markdown: { canSave: true,  canDirty: true  }
     };
     // ──────────────────────────────────────────────
     // TabManager – tab creation, switching & closing
     // ──────────────────────────────────────────────
     const TabManager = {
         async createNewTab(handle, name, content = '', path = null, type = 'text') {
+            if (type === 'text' && /\.(md|markdown)$/i.test(name)) type = 'markdown';
             if (handle) {
                 for (const t of tabs) {
                     if (t.handle && await FSA.isSameEntry(t.handle, handle)) {
@@ -1130,7 +1332,7 @@ const App = (() => {
                 }
             }
             const id = nextTabId++;
-            const tab = { id, name, handle, content, dirty: false, path, type, element: null };
+            const tab = { id, name, handle, content, dirty: false, path, type, element: null, mdPreview: type === 'markdown' };
             tabs.push(tab);
             const tabEl = document.createElement('div');
             tabEl.className = 'tab';
@@ -1146,7 +1348,21 @@ const App = (() => {
             const closeBtn = document.createElement('span');
             closeBtn.className = 'close';
             closeBtn.textContent = '×';
-            tabEl.append(tabName, dirtyInd, closeBtn);
+            if (type === 'markdown') {
+                const mdToggle = document.createElement('span');
+                mdToggle.className = 'md-toggle active';
+                mdToggle.title = 'Toggle Markdown preview';
+                mdToggle.textContent = 'MD';
+                mdToggle.onclick = e => {
+                    e.stopPropagation();
+                    tab.mdPreview = !tab.mdPreview;
+                    mdToggle.className = 'md-toggle' + (tab.mdPreview ? ' active' : ' inactive');
+                    if (currentTabId === tab.id) UI.updateMdPreview();
+                };
+                tabEl.append(mdToggle, tabName, dirtyInd, closeBtn);
+            } else {
+                tabEl.append(tabName, dirtyInd, closeBtn);
+            }
             tabEl.onclick = () => this.switchToTab(id);
             closeBtn.onclick = e => { e.stopPropagation(); this.closeTab(id); };
             tabEl.addEventListener('dragstart', e => {
@@ -1200,6 +1416,7 @@ const App = (() => {
                 gutter.scrollTop = tab.scrollTop;
             }
             UI.updateEditorStatus(tab);
+            UI.updateMdPreview();
             if (tab.path) {
                 activeFilePath = tab.path;
                 TreeManager.highlightActive();
@@ -1365,6 +1582,16 @@ const App = (() => {
             statusEl.textContent = `Ln ${line}, Col ${col} | ${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`;
             editorStatusEl.textContent = tab.name + modified;
         },
+        updateMdPreview() {
+            const previewEl = document.getElementById('md-preview');
+            const tab = currentTabId !== null ? tabs.find(t => t.id === currentTabId) : null;
+            if (!tab || tab.type !== 'markdown' || !tab.mdPreview) {
+                previewEl.classList.add('hidden');
+                return;
+            }
+            previewEl.classList.remove('hidden');
+            previewEl.innerHTML = MarkdownMini.parse(textarea.value);
+        },
         bindEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
             document.getElementById('sidebar-root-row').addEventListener('click', () => FSA.openFolder());
@@ -1490,6 +1717,7 @@ const App = (() => {
                             FSA.scheduleSave();
                         }
                         this.updateEditorStatus(tab);
+                        this.updateMdPreview();
                     }
                 }
             });
