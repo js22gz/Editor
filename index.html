@@ -651,6 +651,7 @@ const App = (() => {
     let contextMenuTarget = null;
     let copiedNode = null;
     let saveTimer = null;
+    let mdPreviewTimer = null;
     let saveInProgress = false;
     let isMobile = window.innerWidth <= 768;
     let lastLineCount = 1;
@@ -1313,6 +1314,7 @@ const App = (() => {
     // ──────────────────────────────────────────────
     // Tab type registry – add entries to extend
     // ──────────────────────────────────────────────
+    const MD_PREVIEW_DEBOUNCE_DELAY = 1000; // ms of inactivity before showing Markdown preview
     const TAB_TYPES = {
         welcome:  { canSave: false, canDirty: false },
         text:     { canSave: true,  canDirty: true  },
@@ -1720,7 +1722,14 @@ const App = (() => {
                             FSA.scheduleSave();
                         }
                         this.updateEditorStatus(tab);
-                        this.updateMdPreview();
+                        if (tab.type === 'markdown' && tab.mdPreview) {
+                            clearTimeout(mdPreviewTimer);
+                            document.getElementById('md-preview').classList.add('hidden');
+                            textarea.classList.remove('md-active');
+                            mdPreviewTimer = setTimeout(() => this.updateMdPreview(), MD_PREVIEW_DEBOUNCE_DELAY);
+                        } else {
+                            this.updateMdPreview();
+                        }
                     }
                 }
             });
