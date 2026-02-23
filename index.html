@@ -424,7 +424,7 @@ window.LEGEND = `<!--
 #md-preview {
     position: absolute;
     top: 0;
-    left: 60px; /* matches gutter width */
+    left: 0;
     right: 0;
     bottom: 0;
     overflow: auto;
@@ -435,7 +435,6 @@ window.LEGEND = `<!--
     line-height: 1.6;
     padding: 12px 16px;
     z-index: 4;
-    pointer-events: none;
 }
 #md-preview.hidden { display: none; }
 #md-preview h1, #md-preview h2, #md-preview h3,
@@ -582,7 +581,7 @@ const MarkdownMini = (() => {
                 continue;
             }
 
-            const headerMatch = trimmed.match(/^(#{1,6})\s+(.+?)\s*$/);
+            const headerMatch = trimmed.match(/^(#{1,6})[ \t]*(.+?)\s*$/);
             if (headerMatch) {
                 const level = headerMatch[1].length;
                 html.push(`<h${level}>${parseInline(headerMatch[2])}</h${level}>`);
@@ -622,12 +621,12 @@ const MarkdownMini = (() => {
             const para = [];
             while (i < lines.length) {
                 const t = lines[i].trim();
-                if (!t || t.startsWith('#') || t.startsWith('>') || t.startsWith('```') ||
+                if (!t || /^#{1,6}[ \t]*\S/.test(t) || t.startsWith('>') || t.startsWith('```') ||
                     /^(\s*)([-*+]|\d+\.)\s/.test(lines[i]) || /^([-*_]{3,})\s*$/.test(t)) break;
                 para.push(lines[i].trim());
                 i++;
             }
-            if (para.length) { html.push(`<p>${parseInline(para.join(' '))}</p>`); continue; }
+            if (para.length) { html.push(`<p>${para.map(parseInline).join('<br>')}</p>`); continue; }
             i++;
         }
 
@@ -1587,10 +1586,14 @@ const App = (() => {
             const tab = currentTabId !== null ? tabs.find(t => t.id === currentTabId) : null;
             if (!tab || tab.type !== 'markdown' || !tab.mdPreview) {
                 previewEl.classList.add('hidden');
+                textarea.style.display = '';
+                gutter.style.display = '';
                 return;
             }
             previewEl.classList.remove('hidden');
             previewEl.innerHTML = MarkdownMini.parse(textarea.value);
+            textarea.style.display = 'none';
+            gutter.style.display = 'none';
         },
         bindEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
