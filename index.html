@@ -1314,7 +1314,7 @@ const App = (() => {
     // ──────────────────────────────────────────────
     // Tab type registry – add entries to extend
     // ──────────────────────────────────────────────
-    const MD_PREVIEW_DEBOUNCE_DELAY = 1000; // ms of inactivity before showing Markdown preview
+    const MD_PREVIEW_DEBOUNCE_DELAY = 3000; // ms of inactivity before showing Markdown preview
     const TAB_TYPES = {
         welcome:  { canSave: false, canDirty: false },
         text:     { canSave: true,  canDirty: true  },
@@ -1741,6 +1741,15 @@ const App = (() => {
                 }
             });
             textarea.addEventListener('keydown', e => {
+                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                    const tab = currentTabId !== null ? tabs.find(t => t.id === currentTabId) : null;
+                    if (tab && tab.type === 'markdown' && tab.mdPreview) {
+                        clearTimeout(mdPreviewTimer);
+                        document.getElementById('md-preview').classList.add('hidden');
+                        textarea.classList.remove('md-active');
+                        mdPreviewTimer = setTimeout(() => UI.updateMdPreview(), MD_PREVIEW_DEBOUNCE_DELAY);
+                    }
+                }
                 if (e.key === 'Tab') {
                     e.preventDefault();
                     const start = textarea.selectionStart;
