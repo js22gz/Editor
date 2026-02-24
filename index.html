@@ -1020,16 +1020,17 @@ const App = (() => {
         async deleteFolder() {
             const target = contextMenuTarget;
             if (!target || target.kind !== 'directory') return;
-            if (target.children && target.children.length) {
-                UI.showToast('Cannot delete non-empty folder');
-                UI.closeContextMenu();
-                return;
+            const isNonEmpty = target.children && target.children.length;
+            if (isNonEmpty) {
+                const answer = await UI.showInputDialog(`Type "remove" to delete non-empty folder "${target.name}" and all its contents:`);
+                if (answer === null || answer.trim().toLowerCase() !== 'remove') { UI.closeContextMenu(); return; }
+            } else {
+                if (!confirm(`Delete folder "${target.name}"?`)) { UI.closeContextMenu(); return; }
             }
-            if (!confirm(`Delete folder "${target.name}"?`)) { UI.closeContextMenu(); return; }
             try {
                 const { parent, name } = await this.resolvePath(currentDirHandle, target.path);
                 await this.ensureRW(parent);
-                await parent.removeEntry(name);
+                await parent.removeEntry(name, { recursive: true });
                 expandedFolders.delete(target.path);
                 this.saveExpandedState();
                 await FSA.mutateAndRebuild();
