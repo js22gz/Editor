@@ -1427,6 +1427,18 @@ const App = (() => {
                 tabEl.classList.add('drag-over');
             });
             tabEl.addEventListener('dragleave', () => tabEl.classList.remove('drag-over'));
+            tabEl.addEventListener('mouseenter', () => {
+                if (!tab.path) {
+                    tabEl.title = tab.name;
+                    return;
+                }
+                const prefix = activeDirectoryPath ? activeDirectoryPath + '/' : null;
+                if (prefix && tab.path.startsWith(prefix)) {
+                    tabEl.title = tab.path.slice(prefix.length);
+                } else {
+                    tabEl.title = tab.path;
+                }
+            });
             tabEl.addEventListener('drop', e => {
                 e.preventDefault();
                 e.stopPropagation();
