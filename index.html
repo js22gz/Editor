@@ -1154,16 +1154,21 @@ const MarkdownMini = (() => {
         },
         async _copyDirectory(srcDirHandle, destParentHandle, name) {
             const newDirHandle = await destParentHandle.getDirectoryHandle(name, { create: true });
-            for await (const [entryName, entryHandle] of srcDirHandle) {
-                if (entryHandle.kind === 'file') {
-                    const file = await entryHandle.getFile();
-                    const newHandle = await newDirHandle.getFileHandle(entryName, { create: true });
-                    const writable = await newHandle.createWritable();
-                    await writable.write(file);
-                    await writable.close();
-                } else {
-                    await this._copyDirectory(entryHandle, newDirHandle, entryName);
+            try {
+                for await (const [entryName, entryHandle] of srcDirHandle) {
+                    if (entryHandle.kind === 'file') {
+                        const file = await entryHandle.getFile();
+                        const newHandle = await newDirHandle.getFileHandle(entryName, { create: true });
+                        const writable = await newHandle.createWritable();
+                        await writable.write(file);
+                        await writable.close();
+                    } else {
+                        await this._copyDirectory(entryHandle, newDirHandle, entryName);
+                    }
                 }
+            } catch (e) {
+                try { await destParentHandle.removeEntry(name, { recursive: true }); } catch (_) {}
+                throw e;
             }
         },
         async copyEntry(srcNode, destFolderPath) {
