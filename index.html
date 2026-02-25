@@ -1111,13 +1111,14 @@ const MarkdownMini = (() => {
             try {
                 await this.ensureRW(srcParent);
                 await this.ensureRW(destHandle);
+                if (srcNode.kind === 'directory') await this.ensureRW(srcNode.handle);
                 let nameExists = false;
                 try { await destHandle.getFileHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; }
                 if (!nameExists) { try { await destHandle.getDirectoryHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; } }
                 if (nameExists) { UI.showToast(`"${srcNode.name}" already exists in destination`); return; }
 
                 let updatedHandle = srcNode.handle;
-                if (srcNode.handle.move) {
+                if (srcNode.handle.move && srcNode.kind === 'file') {
                     await srcNode.handle.move(destHandle, srcNode.name);
                 } else if (srcNode.kind === 'file') {
                     const file = await srcNode.handle.getFile();
@@ -1128,8 +1129,21 @@ const MarkdownMini = (() => {
                     await srcParent.removeEntry(srcNode.name);
                     updatedHandle = newHandle;
                 } else {
-                    await this._copyDirectory(srcNode.handle, destHandle, srcNode.name);
-                    await srcParent.removeEntry(srcNode.name, { recursive: true });
+                    // For directories, prefer handle.move if available, but fall back to
+                    // copy-then-delete if it throws (e.g. cross-device or unsupported).
+                    let atomicMoved = false;
+                    if (srcNode.handle.move) {
+                        try {
+                            await srcNode.handle.move(destHandle, srcNode.name);
+                            atomicMoved = true;
+                        } catch (moveErr) {
+                            console.warn('handle.move failed, falling back to copy+delete:', moveErr);
+                        }
+                    }
+                    if (!atomicMoved) {
+                        await this._copyDirectory(srcNode.handle, destHandle, srcNode.name);
+                        await srcParent.removeEntry(srcNode.name, { recursive: true });
+                    }
                     updatedHandle = await destHandle.getDirectoryHandle(srcNode.name);
                 }
 
@@ -1149,7 +1163,14 @@ const MarkdownMini = (() => {
                 if (destFolderPath) { expandedFolders.add(destFolderPath); this.saveExpandedState(); }
                 await FSA.mutateAndRebuild();
                 UI.showToast(`Moved "${srcNode.name}"`);
-            } catch (e) { UI.showToast('Move failed'); }
+            } catch (e) {
+                console.error('Move failed:', e);
+                const msg = e.name === 'NotAllowedError' ? 'Move failed: permission denied – re-open the folder'
+                    : e.name === 'QuotaExceededError' ? 'Move failed: not enough disk space'
+                    : e.name === 'NotFoundError' ? `Move failed: file not found (${e.message})`
+                    : `Move failed: ${e.message || e}`;
+                UI.showToast(msg, 4000);
+            }
             UI.closeContextMenu();
         },
         async _copyDirectory(srcDirHandle, destParentHandle, name) {
@@ -1160,8 +1181,13 @@ const MarkdownMini = (() => {
                         const file = await entryHandle.getFile();
                         const newHandle = await newDirHandle.getFileHandle(entryName, { create: true });
                         const writable = await newHandle.createWritable();
-                        await writable.write(file);
-                        await writable.close();
+                        try {
+                            await writable.write(file);
+                            await writable.close();
+                        } catch (writeErr) {
+                            try { await writable.abort(); } catch (_) {}
+                            throw new Error(`Failed to copy "${entryName}": ${writeErr.message}`);
+                        }
                     } else {
                         await this._copyDirectory(entryHandle, newDirHandle, entryName);
                     }
@@ -1193,7 +1219,14 @@ const MarkdownMini = (() => {
                 if (destFolderPath) { expandedFolders.add(destFolderPath); this.saveExpandedState(); }
                 await FSA.mutateAndRebuild();
                 UI.showToast(`Copied "${srcNode.name}"`);
-            } catch (e) { UI.showToast('Copy failed'); }
+            } catch (e) {
+                console.error('Copy failed:', e);
+                const msg = e.name === 'NotAllowedError' ? 'Copy failed: permission denied – re-open the folder'
+                    : e.name === 'QuotaExceededError' ? 'Copy failed: not enough disk space'
+                    : e.name === 'NotFoundError' ? `Copy failed: file not found (${e.message})`
+                    : `Copy failed: ${e.message || e}`;
+                UI.showToast(msg, 4000);
+            }
             UI.closeContextMenu();
         },
     };
