@@ -587,14 +587,16 @@ const MarkdownMini = (() => {
     }
     function parseInline(text) {
         if (!text) return '';
+        // Escape backslashes first to handle escaped markup
+        text = text.replace(/\\([`*_~\\])/g, (_, char) => `&#92;${char}`); // Render as \char, but allow HTML escape later
         return text
-            // Code spans first
+            // Code spans
             .replace(/`([^`]+)`/g, (_, code) => `<code>${escapeHtml(code)}</code>`)
             // Images
-            .replace(/!$$   ([^   $$]*)\]$$   ([^)]+)   $$/g, (_, alt, url) =>
+            .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) =>
                 `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy">`)
-            // Links (recursive)
-            .replace(/$$   ([^   $$]+)\]$$   ([^)]+)   $$/g, (_, txt, url) =>
+            // Links
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) =>
                 `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${parseInline(txt)}</a>`)
             // Autolinks
             .replace(/(?<!["'=>])(https?:\/\/[^\s<>"']+)(?!["'])/g, url =>
@@ -622,20 +624,20 @@ const MarkdownMini = (() => {
         const lines = text.split(/\r?\n/);
         const html = [];
         let i = 0;
-        let inList = false;
-        let listType = '';
+        let listStack = []; // For nested lists: array of {type: 'ol'/'ul', indent: number}
         let inCode = false;
         while (i < lines.length) {
             let line = lines[i];
             const trimmed = line.trim();
             if (!trimmed) {
-                if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
-                if (inCode) { html.push('</pre></code>'); inCode = false; }
+                if (listStack.length) { closeLists(html, listStack, 0); }
+                if (inCode) { html.push('</code></pre>'); inCode = false; }
                 i++;
                 continue;
             }
             // Fenced code blocks
             if (trimmed.startsWith('```') && !inCode) {
+                closeLists(html, listStack, 0);
                 const lang = trimmed.slice(3).trim();
                 html.push(`<pre><code${lang ? ` class="language-${lang}"` : ''}>`);
                 i++;
@@ -644,11 +646,11 @@ const MarkdownMini = (() => {
                     i++;
                 }
                 html.push('</code></pre>');
-                i++; // skip closing ```
+                i++;
                 continue;
             }
-            // Indented code blocks (4 spaces or tab)
-            if ((line.startsWith('    ') || line.startsWith('\t')) && !inList) {
+            // Indented code blocks
+            if ((line.startsWith('    ') || line.startsWith('\t')) && !listStack.length) {
                 if (!inCode) { html.push('<pre><code>'); inCode = true; }
                 html.push(escapeHtml(line.slice(line[0] === '\t' ? 1 : 4)) + '\n');
                 i++;
@@ -658,6 +660,7 @@ const MarkdownMini = (() => {
             // Headers
             const headerMatch = trimmed.match(/^(#{1,6})[ \t]+(.+?)(?:\s*#*)?$/);
             if (headerMatch) {
+                closeLists(html, listStack, 0);
                 const level = headerMatch[1].length;
                 html.push(`<h${level}>${parseInline(headerMatch[2])}</h${level}>`);
                 i++;
@@ -665,33 +668,46 @@ const MarkdownMini = (() => {
             }
             // Horizontal rule
             if (/^([-*_]{3,})\s*$/.test(trimmed)) {
+                closeLists(html, listStack, 0);
                 html.push('<hr>');
                 i++;
                 continue;
             }
             // Blockquote
             if (trimmed.startsWith('>')) {
-                if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
+                closeLists(html, listStack, 0);
                 i = parseBlockquote(lines, i, html);
                 continue;
             }
-            // Lists
+            // Lists (with nesting and tasks)
             const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
             if (listMatch) {
+                const indent = listMatch[1].length;
                 const isOrdered = listMatch[2].includes('.');
-                const newType = isOrdered ? 'ol' : 'ul';
-                if (!inList || newType !== listType) {
-                    if (inList) html.push(listType === 'ol' ? '</ol>' : '</ul>');
-                    html.push(`<${newType}>`);
-                    listType = newType;
-                    inList = true;
+                const listType = isOrdered ? 'ol' : 'ul';
+                let itemText = listMatch[3];
+                // Handle task lists for ul only
+                const taskMatch = itemText.match(/^(\[ \]|\[x\])\s*(.+)$/i);
+                if (taskMatch && !isOrdered) {
+                    itemText = `<input type="checkbox"${taskMatch[1].toLowerCase() === '[x]' ? ' checked' : ''} disabled> ${taskMatch[2]}`;
                 }
-                html.push(`<li>${parseInline(listMatch[3])}</li>`);
+                // Manage nesting
+                while (listStack.length && indent < listStack[listStack.length - 1].indent) {
+                    html.push(listStack.pop().type === 'ol' ? '</ol>' : '</ul>');
+                }
+                if (!listStack.length || indent > listStack[listStack.length - 1].indent || listType !== listStack[listStack.length - 1].type) {
+                    if (listStack.length && indent <= listStack[listStack.length - 1].indent) {
+                        html.push(listStack.pop().type === 'ol' ? '</ol>' : '</ul>');
+                    }
+                    html.push(`<${listType}>`);
+                    listStack.push({ type: listType, indent });
+                }
+                html.push(`<li>${parseInline(itemText)}</li>`);
                 i++;
                 continue;
             }
-            // Close open structures
-            if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
+            // Close lists if needed
+            closeLists(html, listStack, 0);
             // Paragraphs
             const para = [];
             while (i < lines.length) {
@@ -702,24 +718,31 @@ const MarkdownMini = (() => {
                     (line.startsWith('    ') || line.startsWith('\t'))) {
                     break;
                 }
-                // Basic hard break: if ends with two spaces, add <br>
+                // Hard break if ends with two spaces
+                let paraLine = line.trimEnd();
                 if (line.endsWith('  ')) {
-                    para.push(line.trimEnd() + '<br>');
-                } else {
-                    para.push(line.trim());
+                    paraLine += '<br>';
                 }
+                para.push(paraLine);
                 i++;
             }
             if (para.length) {
                 html.push(`<p>${parseInline(para.join(' '))}</p>`);
             }
         }
-        if (inList) html.push(listType === 'ol' ? '</ol>' : '</ul>');
+        closeLists(html, listStack, 0);
         if (inCode) html.push('</code></pre>');
         return html.join('');
     }
+    function closeLists(html, listStack, targetIndent) {
+        while (listStack.length && listStack[listStack.length - 1].indent >= targetIndent) {
+            html.push(listStack.pop().type === 'ol' ? '</ol>' : '</ul>');
+        }
+    }
     return { parse, parseInline };
 })();
+  
+  
   const App = (() => {
     // ──────────────────────────────────────────────
     // STATE
