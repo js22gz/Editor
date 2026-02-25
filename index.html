@@ -1676,7 +1676,10 @@ const App = (() => {
         },
         bindEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
-            document.getElementById('sidebar-root-row').addEventListener('click', () => FSA.openFolder());
+            document.getElementById('sidebar-root-row').addEventListener('click', e => {
+                if (e.target.id === 'refresh-folder' || e.target.id === 'clear-folder') return;
+                FSA.openFolder();
+            });
             document.getElementById('topbar-active-row').addEventListener('click', () => {
                 activeDirectoryPath = null;
                 TreeManager.highlightActive();
@@ -1735,6 +1738,24 @@ const App = (() => {
                     return;
                 }
                 if (!e.target.closest('.context-menu')) UI.closeContextMenu();
+            });
+            document.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
+                    e.preventDefault();
+                    if (currentTabId) TabManager.closeTab(currentTabId);
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                    e.preventDefault();
+                    FSA.saveCurrentFile();
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+                    e.preventDefault();
+                    FSA.newFile();
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+                    e.preventDefault();
+                    FSA.openFolder();
+                }
             });
             treeContainer.addEventListener('contextmenu', e => {
                 const folder = e.target.closest('.folder-header');
