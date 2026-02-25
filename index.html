@@ -585,31 +585,50 @@ const MarkdownMini = (() => {
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
     }
-    function parseInline(text) {
-        if (!text) return '';
-        // Escape backslashes first to handle escaped markup
-        text = text.replace(/\\([`*_~\\])/g, (_, char) => `&#92;${char}`); // Render as \char, but allow HTML escape later
-        return text
-            // Code spans
-            .replace(/`([^`]+)`/g, (_, code) => `<code>${escapeHtml(code)}</code>`)
-            // Images
-            .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) =>
-                `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy">`)
-            // Links
-            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) =>
-                `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${parseInline(txt)}</a>`)
-            // Autolinks
-            .replace(/(?<!["'=>])(https?:\/\/[^\s<>"']+)(?!["'])/g, url =>
-                `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>`)
-            // Strikethrough
-            .replace(/~~(.+?)~~/g, (_, s) => `<del>${escapeHtml(s)}</del>`)
-            // Bold
-            .replace(/\*\*([^*]+?)\*\*/g, (_, s) => `<strong>${escapeHtml(s)}</strong>`)
-            .replace(/__([^_]+?)__/g, (_, s) => `<strong>${escapeHtml(s)}</strong>`)
-            // Italic
-            .replace(/\*([^*]+?)\*/g, (_, s) => `<em>${escapeHtml(s)}</em>`)
-            .replace(/_([^_]+?)_/g, (_, s) => `<em>${escapeHtml(s)}</em>`);
+function parseInline(text) {
+    if (!text) return '';
+    const output = [];
+    let i = 0;
+    const length = text.length;
+
+    while (i < length) {
+        // Find next potential markup
+        const nextMarkup = text.search(/[![\`*_~\\h]/, i); // Add starters like h for http, etc.
+        if (nextMarkup === -1) {
+            // No more markup, escape remaining
+            output.push(escapeHtml(text.slice(i)));
+            break;
+        }
+        // Escape text before markup
+        output.push(escapeHtml(text.slice(i, nextMarkup)));
+        i = nextMarkup;
+
+        // Check for backslash escape
+        if (text[i] === '\\' && i + 1 < length && /[`*_~\\]/.test(text[i + 1])) {
+            output.push(escapeHtml(text[i + 1])); // Just the char, backslash skipped
+            i += 2;
+            continue;
+        }
+
+        // Handle each type (code, image, link, etc.) with specific regex from position i
+        // Example for code:
+        const codeMatch = text.slice(i).match(/^`([^`]+)`/);
+        if (codeMatch) {
+            output.push(`<code>${escapeHtml(codeMatch[1])}</code>`);
+            i += codeMatch[0].length;
+            continue;
+        }
+
+        // Similarly for bold: /^(\*\*|__)(.+?)(\*\*|__)/ but careful with nesting if adding
+        // For autolink: if starts with http(s)://, match until invalid char, wrap in <a>
+
+        // If no match, treat as literal char
+        output.push(escapeHtml(text[i]));
+        i++;
     }
+    return output.join('');
+}
+  
     function parseBlockquote(lines, idx, html) {
         const content = [];
         while (idx < lines.length && lines[idx].trim().startsWith('>')) {
