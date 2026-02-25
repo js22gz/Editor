@@ -585,24 +585,29 @@ const MarkdownMini = (() => {
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
     }
-
     function parseInline(text) {
         if (!text) return '';
         return text
+            // Code spans first
             .replace(/`([^`]+)`/g, (_, code) => `<code>${escapeHtml(code)}</code>`)
-            .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) =>
-                `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}">`)
-            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) =>
-                `<a href="${escapeHtml(url)}">${parseInline(txt)}</a>`)
+            // Images
+            .replace(/!$$   ([^   $$]*)\]$$   ([^)]+)   $$/g, (_, alt, url) =>
+                `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy">`)
+            // Links (recursive)
+            .replace(/$$   ([^   $$]+)\]$$   ([^)]+)   $$/g, (_, txt, url) =>
+                `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${parseInline(txt)}</a>`)
+            // Autolinks
             .replace(/(?<!["'=>])(https?:\/\/[^\s<>"']+)(?!["'])/g, url =>
-                `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`)
+                `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>`)
+            // Strikethrough
             .replace(/~~(.+?)~~/g, (_, s) => `<del>${escapeHtml(s)}</del>`)
+            // Bold
             .replace(/\*\*([^*]+?)\*\*/g, (_, s) => `<strong>${escapeHtml(s)}</strong>`)
             .replace(/__([^_]+?)__/g, (_, s) => `<strong>${escapeHtml(s)}</strong>`)
+            // Italic
             .replace(/\*([^*]+?)\*/g, (_, s) => `<em>${escapeHtml(s)}</em>`)
             .replace(/_([^_]+?)_/g, (_, s) => `<em>${escapeHtml(s)}</em>`);
     }
-
     function parseBlockquote(lines, idx, html) {
         const content = [];
         while (idx < lines.length && lines[idx].trim().startsWith('>')) {
@@ -612,7 +617,6 @@ const MarkdownMini = (() => {
         html.push(`<blockquote>${parse(content.join('\n'))}</blockquote>`);
         return idx;
     }
-
     function parse(text) {
         if (!text?.trim()) return '';
         const lines = text.split(/\r?\n/);
@@ -620,50 +624,58 @@ const MarkdownMini = (() => {
         let i = 0;
         let inList = false;
         let listType = '';
-
+        let inCode = false;
         while (i < lines.length) {
-            const line = lines[i];
+            let line = lines[i];
             const trimmed = line.trim();
-
             if (!trimmed) {
                 if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
+                if (inCode) { html.push('</pre></code>'); inCode = false; }
                 i++;
                 continue;
             }
-
-            if (trimmed.startsWith('```')) {
-                const lang = escapeHtml(trimmed.slice(3).trim());
-                const codeLines = [];
+            // Fenced code blocks
+            if (trimmed.startsWith('```') && !inCode) {
+                const lang = trimmed.slice(3).trim();
+                html.push(`<pre><code${lang ? ` class="language-${lang}"` : ''}>`);
                 i++;
                 while (i < lines.length && !lines[i].trim().startsWith('```')) {
-                    codeLines.push(escapeHtml(lines[i]));
+                    html.push(escapeHtml(lines[i]) + '\n');
                     i++;
                 }
-                html.push(`<pre><code${lang ? ` class="${lang}"` : ''}>${codeLines.join('\n')}</code></pre>`);
+                html.push('</code></pre>');
+                i++; // skip closing ```
+                continue;
+            }
+            // Indented code blocks (4 spaces or tab)
+            if ((line.startsWith('    ') || line.startsWith('\t')) && !inList) {
+                if (!inCode) { html.push('<pre><code>'); inCode = true; }
+                html.push(escapeHtml(line.slice(line[0] === '\t' ? 1 : 4)) + '\n');
                 i++;
                 continue;
             }
-
-            const headerMatch = trimmed.match(/^(#{1,6})[ \t]*(.+?)\s*$/);
+            if (inCode) { html.push('</code></pre>'); inCode = false; }
+            // Headers
+            const headerMatch = trimmed.match(/^(#{1,6})[ \t]+(.+?)(?:\s*#*)?$/);
             if (headerMatch) {
                 const level = headerMatch[1].length;
                 html.push(`<h${level}>${parseInline(headerMatch[2])}</h${level}>`);
                 i++;
                 continue;
             }
-
+            // Horizontal rule
             if (/^([-*_]{3,})\s*$/.test(trimmed)) {
                 html.push('<hr>');
                 i++;
                 continue;
             }
-
+            // Blockquote
             if (trimmed.startsWith('>')) {
                 if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
                 i = parseBlockquote(lines, i, html);
                 continue;
             }
-
+            // Lists
             const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
             if (listMatch) {
                 const isOrdered = listMatch[2].includes('.');
@@ -678,28 +690,37 @@ const MarkdownMini = (() => {
                 i++;
                 continue;
             }
-
+            // Close open structures
             if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
-
+            // Paragraphs
             const para = [];
             while (i < lines.length) {
-                const t = lines[i].trim();
-                if (!t || /^#{1,6}[ \t]*\S/.test(t) || t.startsWith('>') || t.startsWith('```') ||
-                    /^(\s*)([-*+]|\d+\.)\s/.test(lines[i]) || /^([-*_]{3,})\s*$/.test(t)) break;
-                para.push(lines[i].trim());
+                line = lines[i];
+                const t = line.trim();
+                if (!t || t.startsWith('#') || t.startsWith('>') || t.startsWith('```') ||
+                    /^(\s*)([-*+]|\d+\.)\s/.test(line) || /^([-*_]{3,})\s*$/.test(t) ||
+                    (line.startsWith('    ') || line.startsWith('\t'))) {
+                    break;
+                }
+                // Basic hard break: if ends with two spaces, add <br>
+                if (line.endsWith('  ')) {
+                    para.push(line.trimEnd() + '<br>');
+                } else {
+                    para.push(line.trim());
+                }
                 i++;
             }
-            if (para.length) { html.push(`<p>${para.map(parseInline).join('<br>')}</p>`); continue; }
-            i++;
+            if (para.length) {
+                html.push(`<p>${parseInline(para.join(' '))}</p>`);
+            }
         }
-
         if (inList) html.push(listType === 'ol' ? '</ol>' : '</ul>');
-        return html.join('\n');
+        if (inCode) html.push('</code></pre>');
+        return html.join('');
     }
-
     return { parse, parseInline };
 })();
-const App = (() => {
+  const App = (() => {
     // ──────────────────────────────────────────────
     // STATE
     // ──────────────────────────────────────────────
