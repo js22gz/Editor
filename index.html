@@ -949,16 +949,20 @@ const MarkdownMini = (() => {
                 UI.showToast(e.message.includes('permission') ? 'Re-open folder to grant write access' : 'Failed to open file');
             }
         },
+        async getTargetDir() {
+            const targetPath = contextMenuTarget?.kind === 'directory' ? contextMenuTarget.path : (activeDirectoryPath || '');
+            const { parent: dirParent, name: dirName } = await this.resolvePath(currentDirHandle, targetPath);
+            const dir = targetPath ? await dirParent.getDirectoryHandle(dirName) : dirParent;
+            await this.ensureRW(dir);
+            return { dir, targetPath };
+        },
         async newFile() {
             if (!currentDirHandle) return UI.showToast('Open a folder first');
             const name = await UI.showDialog({promptTitle: 'New file name:'});
             if (!name?.trim()) return;
             const trimmed = name.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return UI.showToast('Invalid filename');
-            let targetPath = contextMenuTarget && contextMenuTarget.kind === 'directory' ? contextMenuTarget.path : (activeDirectoryPath || '');
-            const { parent: dirParent, name: dirName } = await this.resolvePath(currentDirHandle, targetPath);
-            const parent = targetPath ? await dirParent.getDirectoryHandle(dirName) : dirParent;
-            await this.ensureRW(parent);
+            const { dir: parent, targetPath } = await this.getTargetDir();
             const fileHandle = await parent.getFileHandle(trimmed, { create: true });
             await this.writeFile(fileHandle, '');
             if (targetPath) { expandedFolders.add(targetPath); this.saveExpandedState(); }
@@ -972,10 +976,7 @@ const MarkdownMini = (() => {
             if (!name?.trim()) return;
             const trimmed = name.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return UI.showToast('Invalid folder name');
-            let targetPath = contextMenuTarget && contextMenuTarget.kind === 'directory' ? contextMenuTarget.path : (activeDirectoryPath || '');
-            const { parent: dirParent, name: dirName } = await this.resolvePath(currentDirHandle, targetPath);
-            const parent = targetPath ? await dirParent.getDirectoryHandle(dirName) : dirParent;
-            await this.ensureRW(parent);
+            const { dir: parent, targetPath } = await this.getTargetDir();
             await parent.getDirectoryHandle(trimmed, { create: true });
             if (targetPath) { expandedFolders.add(targetPath); this.saveExpandedState(); }
             await FSA.mutateAndRebuild();
@@ -1499,10 +1500,12 @@ const MarkdownMini = (() => {
                 if (fromIdx === -1 || toIdx === -1) return;
             
                 const movedTab = tabs[fromIdx];
+                // after splice removal, recalculate target index
                 tabs.splice(fromIdx, 1);
             
                 // decide before or after the drop target
                 const rect = tabEl.getBoundingClientRect();
+                // insertBefore decides left or right half of drop target
                 const insertBefore = e.clientX < rect.left + rect.width / 2;
 
                 // adjust toIdx since splice shifted indices when fromIdx < toIdx
@@ -1529,6 +1532,7 @@ const MarkdownMini = (() => {
                 if (cur) {
                     cur.content = textarea.value;
                     cur.scrollTop = textarea.scrollTop;
+                    if (cur.dirty) FSA.saveTab(cur);
                 }
             }
             currentTabId = id;
@@ -1708,7 +1712,12 @@ const MarkdownMini = (() => {
             const lineCount = (textarea.value.match(/\n/g) || []).length + 1;
             if (lineCount === lastLineCount) return;
             lastLineCount = lineCount;
-            gutter.textContent = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
+            const frag = document.createDocumentFragment();
+            for (let i = 1; i <= lineCount; i++) {
+                if (i > 1) frag.appendChild(document.createTextNode('\n'));
+                frag.appendChild(document.createTextNode(String(i)));
+            }
+            gutter.replaceChildren(frag);
         },
         updateEditorStatus(tab) {
             const pos = textarea.selectionStart || 0;
