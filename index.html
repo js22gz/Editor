@@ -696,7 +696,8 @@ const MarkdownMini = (() => {
                     listType = newType;
                     inList = true;
                 }
-                html.push(`<li>${parseInline(listMatch[3])}</li>`);
+                const liText = listMatch[3].replace(/^\[x\]\s*/i, '☑ ').replace(/^\[ \]\s*/, '☐ ');
+                html.push(`<li>${parseInline(liText)}</li>`);
                 i++;
                 continue;
             }
@@ -744,6 +745,15 @@ const MarkdownMini = (() => {
     let activeDirectoryPath = null;
     // DOM references
     let textarea, gutter, tabsContainer, treeContainer, sidebarHeader, sidebarEl, statusEl, editorStatusEl, activeDirNameEl, rootDirNameEl, sidebarHeaderActionsEl;
+    const Utils = {
+        debounce(fn, delay) {
+            let timer;
+            return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };
+        },
+        moveArrayItem(arr, fromIdx, toIdx) {
+            arr.splice(toIdx, 0, arr.splice(fromIdx, 1)[0]);
+        }
+    };
     const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
     const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/;
     // ──────────────────────────────────────────────
@@ -1005,14 +1015,11 @@ const MarkdownMini = (() => {
             const tab = tabs.find(t => t.id === currentTabId);
             if (tab) this.saveTab(tab);
         },
-        scheduleSave() {
-            clearTimeout(saveTimer);
-            saveTimer = setTimeout(() => {
-                if (saveInProgress || !currentTabId) return;
-                const tab = tabs.find(t => t.id === currentTabId);
-                if (tab?.dirty) this.saveTab(tab);
-            }, 750);
-        },
+        scheduleSave: Utils.debounce(function() {
+            if (saveInProgress || !currentTabId) return;
+            const tab = tabs.find(t => t.id === currentTabId);
+            if (tab?.dirty) FSA.saveTab(tab);
+        }, 750),
         async flushSave() {
             if (saveInProgress) return;
             saveInProgress = true;
@@ -1422,6 +1429,23 @@ const MarkdownMini = (() => {
     // TabManager – tab creation, switching & closing
     // ──────────────────────────────────────────────
     const TabManager = {
+        handleTabDrop(e, targetTabId) {
+            e.preventDefault();
+            e.stopPropagation();
+            const targetEl = e.currentTarget;
+            targetEl.classList.remove('drag-over');
+            const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+            if (draggedId === targetTabId || isNaN(draggedId)) return;
+            const fromIdx = tabs.findIndex(t => t.id === draggedId);
+            const toIdx = tabs.findIndex(t => t.id === targetTabId);
+            if (fromIdx === -1 || toIdx === -1) return;
+            const rect = targetEl.getBoundingClientRect();
+            const insertBefore = e.clientX < rect.left + rect.width / 2;
+            const adjustedToIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
+            Utils.moveArrayItem(tabs, fromIdx, insertBefore ? adjustedToIdx : adjustedToIdx + 1);
+            tabs.forEach(tab => tabsContainer.appendChild(tab.element));
+            FSA.saveOpenTabs(currentTabId);
+        },
         async createNewTab(handle, name, content = '', path = null, type = 'text') {
             if (type === 'text' && /\.(md|markdown)$/i.test(name)) type = 'markdown';
             if (handle) {
@@ -1488,45 +1512,14 @@ const MarkdownMini = (() => {
                     tabEl.title = tab.path;
                 }
             });
-            tabEl.addEventListener('drop', e => {
-                e.preventDefault();
-                e.stopPropagation();
-                tabEl.classList.remove('drag-over');
-                const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
-                if (draggedId === id || isNaN(draggedId)) return;
-            
-                const fromIdx = tabs.findIndex(t => t.id === draggedId);
-                const toIdx = tabs.findIndex(t => t.id === id);
-                if (fromIdx === -1 || toIdx === -1) return;
-            
-                const movedTab = tabs[fromIdx];
-                // after splice removal, recalculate target index
-                tabs.splice(fromIdx, 1);
-            
-                // decide before or after the drop target
-                const rect = tabEl.getBoundingClientRect();
-                // insertBefore decides left or right half of drop target
-                const insertBefore = e.clientX < rect.left + rect.width / 2;
-
-                // adjust toIdx since splice shifted indices when fromIdx < toIdx
-                const adjustedToIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
-                tabs.splice(insertBefore ? adjustedToIdx : adjustedToIdx + 1, 0, movedTab);
-            
-                // only move the DOM node — no full re-append
-                if (insertBefore) {
-                    tabsContainer.insertBefore(movedTab.element, tabEl);
-                } else {
-                    tabsContainer.insertBefore(movedTab.element, tabEl.nextSibling);
-                }
-            
-                FSA.saveOpenTabs(currentTabId);
-            });
+            tabEl.addEventListener('drop', e => TabManager.handleTabDrop(e, id));
           tabsContainer.appendChild(tabEl);
             tab.element = tabEl;
             this.switchToTab(id);
             return tab;
         },
         switchToTab(id) {
+            if (mdPreviewTimer) clearTimeout(mdPreviewTimer);
             if (currentTabId !== null) {
                 const cur = tabs.find(t => t.id === currentTabId);
                 if (cur) {
@@ -1556,6 +1549,7 @@ const MarkdownMini = (() => {
             FSA.saveOpenTabs(id);
         },
         async closeTab(id) {
+            if (mdPreviewTimer) clearTimeout(mdPreviewTimer);
             const idx = tabs.findIndex(t => t.id === id);
             if (idx === -1) return;
             const tab = tabs[idx];
@@ -1712,12 +1706,7 @@ const MarkdownMini = (() => {
             const lineCount = (textarea.value.match(/\n/g) || []).length + 1;
             if (lineCount === lastLineCount) return;
             lastLineCount = lineCount;
-            const frag = document.createDocumentFragment();
-            for (let i = 1; i <= lineCount; i++) {
-                if (i > 1) frag.appendChild(document.createTextNode('\n'));
-                frag.appendChild(document.createTextNode(String(i)));
-            }
-            gutter.replaceChildren(frag);
+            gutter.textContent = Array.from({length: lineCount}, (_, i) => i + 1).join('\n');
         },
         updateEditorStatus(tab) {
             const pos = textarea.selectionStart || 0;
@@ -2016,6 +2005,7 @@ const MarkdownMini = (() => {
                 TreeManager.updateHeader();
                 const savedTabs = FSA.loadOpenTabs();
                 hadSavedTabs = savedTabs.length > 0;
+                let restored = 0;
                 let activeTabPath = null;
                 for (const st of savedTabs) {
                     try {
@@ -2029,7 +2019,8 @@ const MarkdownMini = (() => {
                         const content = await file.text();
                         await TabManager.createNewTab(fileHandle, st.name, content, st.path);
                         if (st.active) activeTabPath = st.path;
-                    } catch {}
+                        restored++;
+                    } catch (e) { console.warn('Failed to restore tab', st.path, e); }
                 }
                 if (activeTabPath) {
                     const activeTab = tabs.find(t => t.path === activeTabPath);
@@ -2037,7 +2028,7 @@ const MarkdownMini = (() => {
                 } else if (tabs.length > 0) {
                     TabManager.switchToTab(tabs[0].id);
                 }
-                if (savedTabs.length > 0) UI.showToast(`Restored ${savedTabs.length} tab${savedTabs.length > 1 ? 's' : ''}`);
+                if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
             } else if (saved.status === 'needs-auth') {
                 await FSA.clearSavedFolder();
                 UI.showToast('Saved folder access expired – open folder again', 4000);
