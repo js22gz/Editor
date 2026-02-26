@@ -2028,7 +2028,7 @@ const MarkdownMini = (() => {
                 } else if (tabs.length > 0) {
                     TabManager.switchToTab(tabs[0].id);
                 }
-                if (savedTabs.length > 0) UI.showToast(`Restored ${savedTabs.length} tab${savedTabs.length > 1 ? 's' : ''}`);
+                if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
             } else if (saved.status === 'needs-auth') {
                 await FSA.clearSavedFolder();
                 UI.showToast('Saved folder access expired – open folder again', 4000);
