@@ -794,17 +794,15 @@ const MarkdownMini = (() => {
         async resolvePath(baseHandle, pathStr = '') {
             if (!baseHandle) throw new Error('No base handle');
             if (!pathStr || pathStr === '/') {
-                return { handle: baseHandle, parent: baseHandle, name: baseHandle.name, path: '/' };
+                return { parent: baseHandle, name: baseHandle.name, path: '/' };
             }
             const parts = pathStr.split('/').filter(Boolean);
-            let current = baseHandle;
             let parent = baseHandle;
             const name = parts[parts.length - 1];
             for (let i = 0; i < parts.length - 1; i++) {
-                current = await current.getDirectoryHandle(parts[i]);
-                parent = current;
+                parent = await parent.getDirectoryHandle(parts[i]);
             }
-            return { handle: current, parent, name, path: pathStr };
+            return { parent, name, path: pathStr };
         },
         // ── LAZY TREE LOADING (new core) ──
         async loadChildren(dirNode) {
@@ -896,7 +894,7 @@ const MarkdownMini = (() => {
                 await this.saveFolderHandle(currentDirHandle);
                 expandedFolders.clear();
                 activeDirectoryPath = null;
-                await TreeManager.build(currentDirHandle);
+                await FSA.build(currentDirHandle);
                 TreeManager.render();
                 TreeManager.updateHeader();
                 UI.showToast('Folder opened successfully');
@@ -1074,22 +1072,7 @@ const MarkdownMini = (() => {
                 }
 
                 const newPath = oldPath.substring(0, oldPath.lastIndexOf('/') + 1) + trimmed || trimmed;
-                for (const tab of tabs) {
-                    if (tab.path === oldPath) {
-                        tab.name = trimmed;
-                        tab.path = newPath;
-                        tab.handle = updatedHandle;
-                        if (tab.element) tab.element.querySelector('.tab-name').textContent = trimmed;
-                    }
-                    if (isFolder && tab.path && tab.path.startsWith(oldPath + '/')) {
-                        tab.path = newPath + tab.path.substring(oldPath.length);
-                    }
-                }
-                if (activeFilePath === oldPath) activeFilePath = newPath;
-                else if (isFolder && activeFilePath && activeFilePath.startsWith(oldPath + '/')) {
-                    activeFilePath = newPath + activeFilePath.substring(oldPath.length);
-                }
-
+                this._updateTabPaths(oldPath, newPath, updatedHandle, trimmed);
                 await FSA.mutateAndRebuild();
                 UI.showToast(`Renamed to ${trimmed}`);
             } catch (e) {
@@ -1148,18 +1131,7 @@ const MarkdownMini = (() => {
                 }
 
                 const newPath = destFolderPath ? `${destFolderPath}/${srcNode.name}` : srcNode.name;
-                for (const tab of tabs) {
-                    if (tab.path === srcPath) {
-                        tab.path = newPath;
-                        tab.handle = updatedHandle;
-                    } else if (tab.path && tab.path.startsWith(srcPath + '/')) {
-                        tab.path = newPath + tab.path.substring(srcPath.length);
-                    }
-                }
-                if (activeFilePath === srcPath) activeFilePath = newPath;
-                else if (activeFilePath && activeFilePath.startsWith(srcPath + '/')) {
-                    activeFilePath = newPath + activeFilePath.substring(srcPath.length);
-                }
+                this._updateTabPaths(srcPath, newPath, updatedHandle);
                 if (destFolderPath) { expandedFolders.add(destFolderPath); this.saveExpandedState(); }
                 await FSA.mutateAndRebuild();
                 UI.showToast(`Moved "${srcNode.name}"`);
@@ -1172,6 +1144,24 @@ const MarkdownMini = (() => {
                 UI.showToast(msg, 4000);
             }
             UI.closeContextMenu();
+        },
+        _updateTabPaths(oldPath, newPath, updatedHandle, newName = null) {
+            for (const tab of tabs) {
+                if (tab.path === oldPath) {
+                    tab.path = newPath;
+                    tab.handle = updatedHandle;
+                    if (newName != null) {
+                        tab.name = newName;
+                        if (tab.element) tab.element.querySelector('.tab-name').textContent = newName;
+                    }
+                } else if (tab.path && tab.path.startsWith(oldPath + '/')) {
+                    tab.path = newPath + tab.path.substring(oldPath.length);
+                }
+            }
+            if (activeFilePath === oldPath) activeFilePath = newPath;
+            else if (activeFilePath && activeFilePath.startsWith(oldPath + '/')) {
+                activeFilePath = newPath + activeFilePath.substring(oldPath.length);
+            }
         },
         async _copyDirectory(srcDirHandle, destParentHandle, name) {
             const newDirHandle = await destParentHandle.getDirectoryHandle(name, { create: true });
@@ -1332,9 +1322,6 @@ const MarkdownMini = (() => {
             set fileTree(v) { fileTree = v; },
             getNode(path) { return nodeByPath.get(path); },
             registerNode(path, node) { nodeByPath.set(path, node); },
-            async build(rootHandle) {
-                return FSA.build(rootHandle);
-            },
             render() {
                 treeContainer.replaceChildren();
                 if (!fileTree) {
@@ -1927,22 +1914,6 @@ const MarkdownMini = (() => {
                     textarea.selectionStart = textarea.selectionEnd = start + 1;
                     textarea.dispatchEvent(new Event('input'));
                 }
-                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                    e.preventDefault();
-                    FSA.saveCurrentFile();
-                }
-                if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
-                    e.preventDefault();
-                    if (currentTabId) TabManager.closeTab(currentTabId);
-                }
-                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
-                    e.preventDefault();
-                    FSA.newFile();
-                }
-                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
-                    e.preventDefault();
-                    FSA.openFolder();
-                }
             });
             
             const slider = document.getElementById('width-slider');
@@ -1995,7 +1966,7 @@ const MarkdownMini = (() => {
             let hadSavedTabs = false;
             if (saved.status === 'granted') {
                 currentDirHandle = saved.handle;
-                await TreeManager.build(currentDirHandle);
+                await FSA.build(currentDirHandle);
                 for (const path of [...expandedFolders].sort((a,b) => a.split('/').length - b.split('/').length)) {
                     const node = TreeManager.getNode(path);
                     if (node && node.kind === 'directory') await FSA.loadChildren(node);
