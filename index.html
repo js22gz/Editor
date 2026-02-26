@@ -105,7 +105,8 @@ window.LEGEND = `<!--
                   │   ├── Full CRUD + drag & drop (move/copy/rename)
                   │   ├── Auto-save (debounce 750 ms + flush)
                   │   ├── Tab & expandedFolders & sidebarWidth persistence
-                  │   └── Permission
+                  │   ├── restoreSession() – folder + tab restore (called on init, pageshow, visibilitychange)
+                  │   └── Permission (requestPermission on cold-start / PWA launch)
                   │
                   ├── TreeManager – sidebar tree (IIFE)
                   │   ├── nodeByPath Map + fileTree root
@@ -796,7 +797,13 @@ const MarkdownMini = (() => {
                     const handle = req.result;
                     if (!handle) return resolve({ status: 'none' });
                     const perm = await this.queryPermission(handle);
-                    resolve(perm === 'granted' ? { status: 'granted', handle } : { status: 'needs-auth', handle });
+                    if (perm === 'granted') return resolve({ status: 'granted', handle });
+                    // Try to re-request permission – silently succeeds on PWA launch (treated as user gesture)
+                    try {
+                        const requested = await handle.requestPermission({ mode: 'readwrite' });
+                        if (requested === 'granted') return resolve({ status: 'granted', handle });
+                    } catch (err) { console.warn('requestPermission failed:', err); }
+                    resolve({ status: 'needs-auth', handle });
                 };
                 req.onerror = () => resolve({ status: 'none' });
             });
@@ -919,6 +926,52 @@ const MarkdownMini = (() => {
                 const saved = localStorage.getItem('openTabs');
                 return saved ? JSON.parse(saved) : [];
             } catch { return []; }
+        },
+        async restoreSession() {
+            FSA.loadExpandedState();
+            const saved = await FSA.loadSavedFolder();
+            let hadSavedTabs = false;
+            if (saved.status === 'granted') {
+                currentDirHandle = saved.handle;
+                await FSA.build(currentDirHandle);
+                for (const path of [...expandedFolders].sort((a,b) => a.split('/').length - b.split('/').length)) {
+                    const node = TreeManager.getNode(path);
+                    if (node && node.kind === 'directory') await FSA.loadChildren(node);
+                }
+                TreeManager.render();
+                TreeManager.updateHeader();
+                const savedTabs = FSA.loadOpenTabs();
+                hadSavedTabs = savedTabs.length > 0;
+                let restored = 0;
+                let activeTabPath = null;
+                for (const st of savedTabs) {
+                    try {
+                        const parts = st.path.split('/');
+                        let handle = currentDirHandle;
+                        for (let i = 0; i < parts.length - 1; i++) {
+                            handle = await handle.getDirectoryHandle(parts[i]);
+                        }
+                        const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
+                        const file = await fileHandle.getFile();
+                        const content = await file.text();
+                        await TabManager.createNewTab(fileHandle, st.name, content, st.path);
+                        if (st.active) activeTabPath = st.path;
+                        restored++;
+                    } catch (e) { console.warn('Failed to restore tab', st.path, e); }
+                }
+                if (activeTabPath) {
+                    const activeTab = tabs.find(t => t.path === activeTabPath);
+                    if (activeTab) TabManager.switchToTab(activeTab.id);
+                } else if (tabs.length > 0) {
+                    TabManager.switchToTab(tabs[0].id);
+                }
+                if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+            } else if (saved.status === 'needs-auth') {
+                UI.showToast('Folder access needed – grant access when prompted to restore your session', 4000);
+            }
+            if (!hadSavedTabs && tabs.length === 0) {
+                await TabManager.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
+            }
         },
         async openFolder() {
             try {
@@ -2016,52 +2069,16 @@ const MarkdownMini = (() => {
             if (savedSidebarWidth) sidebarEl.style.width = savedSidebarWidth;
             UI.bindEvents();
             await FSA.initDB();
-            FSA.loadExpandedState();
-            const saved = await FSA.loadSavedFolder();
-            let hadSavedTabs = false;
-            if (saved.status === 'granted') {
-                currentDirHandle = saved.handle;
-                await FSA.build(currentDirHandle);
-                for (const path of [...expandedFolders].sort((a,b) => a.split('/').length - b.split('/').length)) {
-                    const node = TreeManager.getNode(path);
-                    if (node && node.kind === 'directory') await FSA.loadChildren(node);
-                }
-                TreeManager.render();
-                TreeManager.updateHeader();
-                const savedTabs = FSA.loadOpenTabs();
-                hadSavedTabs = savedTabs.length > 0;
-                let restored = 0;
-                let activeTabPath = null;
-                for (const st of savedTabs) {
-                    try {
-                        const parts = st.path.split('/');
-                        let handle = currentDirHandle;
-                        for (let i = 0; i < parts.length - 1; i++) {
-                            handle = await handle.getDirectoryHandle(parts[i]);
-                        }
-                        const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
-                        const file = await fileHandle.getFile();
-                        const content = await file.text();
-                        await TabManager.createNewTab(fileHandle, st.name, content, st.path);
-                        if (st.active) activeTabPath = st.path;
-                        restored++;
-                    } catch (e) { console.warn('Failed to restore tab', st.path, e); }
-                }
-                if (activeTabPath) {
-                    const activeTab = tabs.find(t => t.path === activeTabPath);
-                    if (activeTab) TabManager.switchToTab(activeTab.id);
-                } else if (tabs.length > 0) {
-                    TabManager.switchToTab(tabs[0].id);
-                }
-                if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-            } else if (saved.status === 'needs-auth') {
-                await FSA.clearSavedFolder();
-                UI.showToast('Saved folder access expired – open folder again', 4000);
-            }
+            await FSA.restoreSession();
             if (isMobile) sidebarEl.classList.add('hidden');
-            if (!hadSavedTabs && tabs.length === 0) {
-                await TabManager.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
-            }
+            // Re-run restore when page returns from bfcache (back/forward nav or wake from sleep)
+            window.addEventListener('pageshow', async (e) => {
+                if (e.persisted && !currentDirHandle) await FSA.restoreSession();
+            });
+            // Re-run restore when page becomes visible after being hidden (lock-screen / tab switch)
+            document.addEventListener('visibilitychange', async () => {
+                if (document.visibilityState === 'visible' && !currentDirHandle) await FSA.restoreSession();
+            });
         }
     };
     return { init: UI.init };
