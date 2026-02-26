@@ -1183,6 +1183,31 @@ const MarkdownMini = (() => {
                     if (newName != null) {
                         tab.name = newName;
                         if (tab.element) tab.element.querySelector('.tab-name').textContent = newName;
+                        if (tab.type === 'text' || tab.type === 'markdown') {
+                            const newType = /\.(md|markdown)$/i.test(newName) ? 'markdown' : 'text';
+                            if (newType !== tab.type) {
+                                tab.type = newType;
+                                tab.mdPreview = newType === 'markdown';
+                                if (tab.element) {
+                                    const existingToggle = tab.element.querySelector('.md-toggle');
+                                    if (existingToggle) existingToggle.remove();
+                                    if (newType === 'markdown') {
+                                        const mdToggle = document.createElement('span');
+                                        mdToggle.className = 'md-toggle active';
+                                        mdToggle.title = 'Toggle Markdown preview';
+                                        mdToggle.textContent = 'MD';
+                                        mdToggle.onclick = e => {
+                                            e.stopPropagation();
+                                            tab.mdPreview = !tab.mdPreview;
+                                            mdToggle.className = 'md-toggle' + (tab.mdPreview ? ' active' : ' inactive');
+                                            if (currentTabId === tab.id) UI.updateMdPreview();
+                                        };
+                                        tab.element.insertBefore(mdToggle, tab.element.querySelector('.tab-name'));
+                                    }
+                                }
+                                if (currentTabId === tab.id) UI.updateMdPreview();
+                            }
+                        }
                     }
                 } else if (tab.path && tab.path.startsWith(oldPath + '/')) {
                     tab.path = newPath + tab.path.substring(oldPath.length);
