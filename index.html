@@ -2073,11 +2073,23 @@ const MarkdownMini = (() => {
             if (isMobile) sidebarEl.classList.add('hidden');
             // Re-run restore when page returns from bfcache (back/forward nav or wake from sleep)
             window.addEventListener('pageshow', async (e) => {
-                if (e.persisted && !currentDirHandle) await FSA.restoreSession();
+                if (!e.persisted) return;
+                if (!currentDirHandle) { await FSA.restoreSession(); return; }
+                // Re-validate permission in case it lapsed while the page was cached
+                const perm = await FSA.queryPermission(currentDirHandle);
+                if (perm !== 'granted') {
+                    try { await currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
+                }
             });
             // Re-run restore when page becomes visible after being hidden (lock-screen / tab switch)
             document.addEventListener('visibilitychange', async () => {
-                if (document.visibilityState === 'visible' && !currentDirHandle) await FSA.restoreSession();
+                if (document.visibilityState !== 'visible') return;
+                if (!currentDirHandle) { await FSA.restoreSession(); return; }
+                // Re-validate permission in case it lapsed during sleep
+                const perm = await FSA.queryPermission(currentDirHandle);
+                if (perm !== 'granted') {
+                    try { await currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
+                }
             });
         }
     };
