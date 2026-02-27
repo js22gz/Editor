@@ -1657,6 +1657,15 @@ const MarkdownMini = (() => {
             document.body.appendChild(t);
             setTimeout(() => t.remove(), duration);
         },
+        showActionToast(message, callback, duration = 8000) {
+            const t = document.createElement('div');
+            t.className = 'toast';
+            t.textContent = message;
+            t.style.cssText += 'cursor:pointer;text-decoration:underline;';
+            const timer = setTimeout(() => t.remove(), duration);
+            t.addEventListener('click', () => { clearTimeout(timer); t.remove(); callback(); });
+            document.body.appendChild(t);
+        },
         showDialog({promptTitle, defaultValue = '', isConfirm = false, confirmMessage = '', danger = false} = {}) {
             return new Promise(resolve => {
                 const modal = document.createElement('div');
@@ -2078,7 +2087,9 @@ const MarkdownMini = (() => {
                 // Re-validate permission in case it lapsed while the page was cached
                 const perm = await FSA.queryPermission(currentDirHandle);
                 if (perm !== 'granted') {
-                    try { await currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
+                    UI.showActionToast('Tap to restore folder access', async () => {
+                        try { await currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
+                    });
                 }
             });
             // Re-run restore when page becomes visible after being hidden (lock-screen / tab switch)
@@ -2088,7 +2099,9 @@ const MarkdownMini = (() => {
                 // Re-validate permission in case it lapsed during sleep
                 const perm = await FSA.queryPermission(currentDirHandle);
                 if (perm !== 'granted') {
-                    try { await currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
+                    UI.showActionToast('Tap to restore folder access', async () => {
+                        try { await currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
+                    });
                 }
             });
         }
