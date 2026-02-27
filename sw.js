@@ -1,9 +1,11 @@
-const CACHE_NAME = 'Editor-v1';
+const CACHE_NAME = 'Editor-v2';
 const urlsToCache = [
   './',
-  'index.html',     // explicit
+  'index.html',
   'manifest.json',
-  // logos if you keep them
+  'favicon.ico',
+  'logo192.png',
+  'logo512.png',
 ];
 
 self.addEventListener('install', e => {
