@@ -1757,13 +1757,19 @@ const MarkdownMini = (() => {
             tabs.forEach(tab => tabsContainer.appendChild(tab.element));
             FSA.saveOpenTabs(currentTabId);
         },
+      
         async createNewTab(handle, name, content = '', path = null, type = 'text') {
-            if (type === 'text' && /\.(md|markdown)$/i.test(name)) type = 'markdown';
-            let ext = null;
+            let ext = ExtensionManager.getForFile(name);
+            if (ext) {
+                type = 'extension';
+            } else if (type === 'text' && /\.(md|markdown)$/i.test(name)) {
+                type = 'markdown';
+            }
+            let ext = null; // keep the rest of the function unchanged
             if (type === 'text' || type === 'extension') {
-                ext = ExtensionManager.getForFile(name);
+                ext = ExtensionManager.getForFile(name); // this line stays for safety
                 if (ext) type = 'extension';
-                else if (type === 'extension') type = 'text'; // fallback if extension was uninstalled between sessions
+                else if (type === 'extension') type = 'text';
             }
             if (handle) {
                 for (const t of tabs) {
