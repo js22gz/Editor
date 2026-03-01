@@ -1371,7 +1371,7 @@ const MarkdownMini = (() => {
                                     } else if (newType === 'extension') {
                                         const extToggle = TabManager._createExtToggle(tab, ext);
                                         tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
-                                    } else if (newType === 'text' && newName !== 'Welcome' && newName !== 'Legend') {
+                                    } else if (newType === 'text') {
                                         const extToggle = TabManager._createExtToggle(tab, null);
                                         tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
                                     }
@@ -1771,6 +1771,7 @@ const MarkdownMini = (() => {
                     tab.type = 'text';
                     extToggle.className = 'md-toggle inactive';
                     if (tab.extFrame) tab.extFrame.classList.add('hidden');
+                    // Clear currentTabId so switchToTab won't save stale textarea content
                     currentTabId = null;
                     TabManager.switchToTab(tab.id);
                 } else {
@@ -1863,7 +1864,7 @@ const MarkdownMini = (() => {
             } else if (type === 'extension') {
                 const extToggle = this._createExtToggle(tab, ext);
                 tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
-            } else if (type === 'text' && name !== 'Welcome' && name !== 'Legend') {
+            } else if (type === 'text') {
                 const extToggle = this._createExtToggle(tab, null);
                 tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
             } else {
