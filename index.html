@@ -116,7 +116,19 @@ window.LEGEND = `<!--
                   │   ├── highlightActive() + updateHeader
                   │   └── registerNode / getNode / clear
                   │
-                  ├── TAB_TYPES – type registry (welcome · legend · text · markdown)
+                  ├── TAB_TYPES – type registry (welcome · legend · text · markdown · extension)
+                  │
+                  ├── ExtensionManager – pluggable extension system
+                  │   ├── loadAll() – restore saved extensions from IndexedDB
+                  │   ├── install() – pick *-extension.html, parse meta, persist handle
+                  │   ├── uninstall(name) – remove extension from IndexedDB
+                  │   ├── _parseMeta(html) – extract extension-name & extension-types
+                  │   ├── getForFile(filename) – match file to extension by type
+                  │   └── renderTab(tab) – load extension HTML in sandboxed iframe
+                  │       postMessage protocol:
+                  │         editor → ext:  { type: 'editor:load', content, filename }
+                  │         ext → editor:  { type: 'extension:save', content }
+                  │         ext → editor:  { type: 'extension:dirty' }
                   │
                   ├── TabManager
                   │   ├── createNewTab(handle, name, content, path, type)
@@ -602,6 +614,21 @@ window.LEGEND = `<!--
         #md-preview strong { font-weight: 700; }
         #md-preview del { text-decoration: line-through; color: var(--text-muted); }
         #md-preview img { max-width: 100%; }
+
+        /* ── Extension iframe ── */
+        #ext-frame {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border: none;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            background: var(--bg-editor);
+        }
+        #ext-frame.hidden { display: none; }
         
     </style>
 </head>
@@ -641,6 +668,7 @@ window.LEGEND = `<!--
                 <div id="gutter"></div>
                 <textarea id="textarea" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea>
                 <div id="md-preview" class="hidden"></div>
+                <iframe id="ext-frame" class="hidden" sandbox="allow-scripts"></iframe>
             </div>
             <div class="status"><span id="status"></span><span style="flex:1"></span><span id="editor-status">No file open</span></div>
         </div>
@@ -817,8 +845,12 @@ const MarkdownMini = (() => {
         async initDB() {
             if (this.db) return;
             return new Promise(resolve => {
-                const req = indexedDB.open('FileEditor', 1);
-                req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
+                const req = indexedDB.open('FileEditor', 2);
+                req.onupgradeneeded = e => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles');
+                    if (!db.objectStoreNames.contains('extensions')) db.createObjectStore('extensions');
+                };
                 req.onsuccess = e => { this.db = e.target.result; resolve(); };
                 req.onerror = () => resolve();
             });
@@ -1570,7 +1602,120 @@ const MarkdownMini = (() => {
         welcome:  { canSave: false, canDirty: false },
         legend:   { canSave: false, canDirty: false },
         text:     { canSave: true,  canDirty: true  },
-        markdown: { canSave: true,  canDirty: true  }
+        markdown: { canSave: true,  canDirty: true  },
+        extension:{ canSave: true,  canDirty: true  }
+    };
+    // ──────────────────────────────────────────────
+    // ExtensionManager – discover, install & render
+    // ──────────────────────────────────────────────
+    const ExtensionManager = {
+        extensions: [],
+        async loadAll() {
+            await FSA.initDB();
+            return new Promise(resolve => {
+                const tx = FSA.db.transaction('extensions');
+                const store = tx.objectStore('extensions');
+                const req = store.getAll();
+                const keyReq = store.getAllKeys();
+                tx.oncomplete = async () => {
+                    const handles = req.result;
+                    const keys = keyReq.result;
+                    this.extensions = [];
+                    for (let i = 0; i < handles.length; i++) {
+                        try {
+                            const handle = handles[i];
+                            const perm = await FSA.queryPermission(handle);
+                            if (perm !== 'granted') {
+                                try { await handle.requestPermission({ mode: 'read' }); } catch { continue; }
+                            }
+                            const file = await handle.getFile();
+                            const html = await file.text();
+                            const meta = this._parseMeta(html);
+                            if (meta) {
+                                this.extensions.push({ key: keys[i], name: meta.name, types: meta.types, handle, html });
+                            }
+                        } catch (e) {
+                            console.warn('Failed to load extension:', keys[i], e);
+                        }
+                    }
+                    resolve();
+                };
+                tx.onerror = () => resolve();
+            });
+        },
+        async install() {
+            try {
+                const [fileHandle] = await window.showOpenFilePicker({
+                    types: [{ description: 'Extension HTML', accept: { 'text/html': ['.html'] } }]
+                });
+                const file = await fileHandle.getFile();
+                if (!file.name.endsWith('-extension.html')) {
+                    UI.showToast('Extension files must be named *-extension.html');
+                    return;
+                }
+                const html = await file.text();
+                const meta = this._parseMeta(html);
+                if (!meta) {
+                    UI.showToast('Missing extension-name or extension-types meta tags');
+                    return;
+                }
+                const existing = this.extensions.find(e => e.name === meta.name);
+                if (existing) {
+                    existing.handle = fileHandle;
+                    existing.html = html;
+                    existing.types = meta.types;
+                } else {
+                    this.extensions.push({ key: meta.name, name: meta.name, types: meta.types, handle: fileHandle, html });
+                }
+                await FSA.initDB();
+                const tx = FSA.db.transaction('extensions', 'readwrite');
+                tx.objectStore('extensions').put(fileHandle, meta.name);
+                UI.showToast(`Extension "${meta.name}" installed (${meta.types.join(', ')})`);
+            } catch (e) {
+                if (e.name !== 'AbortError') UI.showToast('Extension install cancelled or failed');
+            }
+        },
+        async uninstall(name) {
+            this.extensions = this.extensions.filter(e => e.name !== name);
+            await FSA.initDB();
+            const tx = FSA.db.transaction('extensions', 'readwrite');
+            tx.objectStore('extensions').delete(name);
+            UI.showToast(`Extension "${name}" removed`);
+        },
+        _parseMeta(html) {
+            const nameMatch = html.match(/<meta\s+name=["']extension-name["']\s+content=["']([^"']+)["']/i);
+            const typesMatch = html.match(/<meta\s+name=["']extension-types["']\s+content=["']([^"']+)["']/i);
+            if (!nameMatch || !typesMatch) return null;
+            return {
+                name: nameMatch[1],
+                types: typesMatch[1].split(',').map(t => t.trim().toLowerCase())
+            };
+        },
+        getForFile(filename) {
+            const lower = filename.toLowerCase();
+            for (const ext of this.extensions) {
+                for (const type of ext.types) {
+                    if (lower.endsWith(type)) return ext;
+                }
+            }
+            return null;
+        },
+        renderTab(tab) {
+            const extFrame = document.getElementById('ext-frame');
+            if (extFrame._blobUrl) URL.revokeObjectURL(extFrame._blobUrl);
+            const blob = new Blob([tab.extension.html], { type: 'text/html' });
+            const blobUrl = URL.createObjectURL(blob);
+            extFrame._blobUrl = blobUrl;
+            extFrame.src = blobUrl;
+            extFrame.classList.remove('hidden');
+            extFrame.onload = () => {
+                extFrame.contentWindow.postMessage({
+                    type: 'editor:load',
+                    content: tab.content,
+                    filename: tab.name
+                }, '*');
+            };
+        }
     };
     // ──────────────────────────────────────────────
     // TabManager – tab creation, switching & closing
@@ -1595,6 +1740,11 @@ const MarkdownMini = (() => {
         },
         async createNewTab(handle, name, content = '', path = null, type = 'text') {
             if (type === 'text' && /\.(md|markdown)$/i.test(name)) type = 'markdown';
+            let ext = null;
+            if (type === 'text') {
+                ext = ExtensionManager.getForFile(name);
+                if (ext) type = 'extension';
+            }
             if (handle) {
                 for (const t of tabs) {
                     if (t.handle && await FSA.isSameEntry(t.handle, handle)) {
@@ -1604,7 +1754,7 @@ const MarkdownMini = (() => {
                 }
             }
             const id = nextTabId++;
-            const tab = { id, name, handle, content, dirty: false, path, type, element: null, mdPreview: type === 'markdown' };
+            const tab = { id, name, handle, content, dirty: false, path, type, element: null, mdPreview: type === 'markdown', extension: ext };
             tabs.push(tab);
             const tabEl = document.createElement('div');
             tabEl.className = 'tab';
@@ -1667,11 +1817,14 @@ const MarkdownMini = (() => {
         },
         switchToTab(id) {
             if (mdPreviewTimer) clearTimeout(mdPreviewTimer);
+            const extFrame = document.getElementById('ext-frame');
             if (currentTabId !== null) {
                 const cur = tabs.find(t => t.id === currentTabId);
                 if (cur) {
-                    cur.content = textarea.value;
-                    cur.scrollTop = textarea.scrollTop;
+                    if (cur.type !== 'extension') {
+                        cur.content = textarea.value;
+                        cur.scrollTop = textarea.scrollTop;
+                    }
                     if (cur.dirty) FSA.saveTab(cur);
                 }
             }
@@ -1679,8 +1832,17 @@ const MarkdownMini = (() => {
             const tab = tabs.find(t => t.id === id);
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             tab.element.classList.add('active');
-            textarea.value = tab.content || '';
-            textarea.readOnly = !TAB_TYPES[tab.type]?.canDirty;
+            if (tab.type === 'extension') {
+                textarea.style.display = 'none';
+                ExtensionManager.renderTab(tab);
+            } else {
+                extFrame.classList.add('hidden');
+                if (extFrame._blobUrl) { URL.revokeObjectURL(extFrame._blobUrl); extFrame._blobUrl = null; }
+                extFrame.removeAttribute('src');
+                textarea.style.display = '';
+                textarea.value = tab.content || '';
+                textarea.readOnly = !TAB_TYPES[tab.type]?.canDirty;
+            }
             lastLineCount = 0;
             UI.updateLineNumbers();
             if (tab.scrollTop !== undefined) {
@@ -1860,6 +2022,8 @@ const MarkdownMini = (() => {
                         TabManager.createNewTab(null, 'legend.txt', window.LEGEND, null, 'legend');
                     }
                 });
+                addSeparator();
+                addItem('Install Extension', () => ExtensionManager.install());
                 if (copiedNode) { addSeparator(); addItem('Paste', () => FSA.copyEntry(copiedNode, activeDirectoryPath || '')); }
             } else if (node.kind === 'directory') {
                 addItem('New File', () => FSA.newFile());
@@ -2032,6 +2196,22 @@ const MarkdownMini = (() => {
                     return;
                 }
                 if (!e.target.closest('.context-menu')) UI.closeContextMenu();
+            });
+            window.addEventListener('message', e => {
+                if (!e.data || typeof e.data !== 'object') return;
+                const extFrame = document.getElementById('ext-frame');
+                if (e.source !== extFrame.contentWindow) return;
+                const tab = currentTabId !== null ? tabs.find(t => t.id === currentTabId) : null;
+                if (!tab || tab.type !== 'extension') return;
+                if (e.data.type === 'extension:save') {
+                    tab.content = e.data.content;
+                    tab.dirty = true;
+                    if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
+                    FSA.scheduleSave();
+                } else if (e.data.type === 'extension:dirty') {
+                    tab.dirty = true;
+                    if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
+                }
             });
             document.addEventListener('keydown', e => {
                 if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
@@ -2245,6 +2425,7 @@ const MarkdownMini = (() => {
                 document.getElementById('md-preview').style.left = '0';
             }
             await FSA.initDB();
+            await ExtensionManager.loadAll();
             await FSA.restoreSession();
             if (isMobile) sidebarEl.classList.add('hidden');
             // Re-run restore when page returns from bfcache (back/forward nav or wake from sleep)
