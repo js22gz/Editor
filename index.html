@@ -1034,6 +1034,7 @@ const MarkdownMini = (() => {
                 hadSavedTabs = restored > 0;
                 if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
             } else if (saved.status === 'needs-auth') {
+                const pendingTabs = FSA.loadOpenTabs();
                 UI.showActionToast(
                     'Tap to restore folder access',
                     async () => {
@@ -1056,7 +1057,14 @@ const MarkdownMini = (() => {
                             TreeManager.render();
                             TreeManager.updateHeader();
 
-                            const restored = await TabManager.restoreOpenTabs(currentDirHandle);
+                            // Remove welcome tab before restoring saved tabs
+                            const welcomeIdx = tabs.findIndex(t => t.type === 'welcome');
+                            if (welcomeIdx !== -1) {
+                                tabs[welcomeIdx].element.remove();
+                                tabs.splice(welcomeIdx, 1);
+                            }
+
+                            const restored = await TabManager.restoreOpenTabs(currentDirHandle, pendingTabs);
                             if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
                             else if (tabs.length === 0) {
                                 await TabManager.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
@@ -1892,8 +1900,8 @@ const MarkdownMini = (() => {
             }
             this.switchToTab(tabs[Math.min(idx, tabs.length - 1)].id);
         },
-        async restoreOpenTabs(dirHandle) {
-            const savedTabs = FSA.loadOpenTabs();
+        async restoreOpenTabs(dirHandle, savedTabs) {
+            if (!savedTabs) savedTabs = FSA.loadOpenTabs();
             let restored = 0;
             let activeTabPath = null;
 
@@ -2413,6 +2421,7 @@ const MarkdownMini = (() => {
             slider.dispatchEvent(new Event('input'));
            
             window.addEventListener('beforeunload', e => {
+                if (currentDirHandle) FSA.saveOpenTabs(currentTabId);
                 if (tabs.some(t => t.dirty)) {
                     FSA.flushSave();
                     e.preventDefault();
@@ -2469,7 +2478,11 @@ const MarkdownMini = (() => {
             });
             // Re-run restore when page becomes visible after being hidden (lock-screen / tab switch)
             document.addEventListener('visibilitychange', async () => {
-                if (document.visibilityState !== 'visible') return;
+                if (document.visibilityState !== 'visible') {
+                    // Save tab state before page may be frozen/killed
+                    if (currentDirHandle) FSA.saveOpenTabs(currentTabId);
+                    return;
+                }
                 if (!currentDirHandle) { await FSA.restoreSession(); return; }
                 // Re-validate permission in case it lapsed during sleep
                 const perm = await FSA.queryPermission(currentDirHandle);
