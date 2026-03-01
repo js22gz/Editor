@@ -1004,6 +1004,7 @@ const MarkdownMini = (() => {
                     type: t.type,
                     active: t.id === currentId
                 }));
+                if (data.length === 0 && !currentDirHandle) return;
                 localStorage.setItem('openTabs', JSON.stringify(data));
             } catch {}
         },
