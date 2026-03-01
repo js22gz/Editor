@@ -1759,19 +1759,15 @@ const MarkdownMini = (() => {
         },
       
         async createNewTab(handle, name, content = '', path = null, type = 'text') {
-            let ext = ExtensionManager.getForFile(name);
+        let ext = ExtensionManager.getForFile(name);
+        
             if (ext) {
                 type = 'extension';
-            } else if (type === 'text' && /\.(md|markdown)$/i.test(name)) {
+            } 
+            else if (type === 'text' && /\.(md|markdown)$/i.test(name)) {
                 type = 'markdown';
             }
-            let ext = null; // keep the rest of the function unchanged
-            if (type === 'text' || type === 'extension') {
-                ext = ExtensionManager.getForFile(name); // this line stays for safety
-                if (ext) type = 'extension';
-                else if (type === 'extension') type = 'text';
-            }
-            if (handle) {
+          if (handle) {
                 for (const t of tabs) {
                     if (t.handle && await FSA.isSameEntry(t.handle, handle)) {
                         this.switchToTab(t.id);
