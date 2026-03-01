@@ -642,8 +642,8 @@ window.LEGEND = `<!--
                   <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
                   <button class="settings-btn" id="settings-font-reset" title="Reset font size" aria-label="Reset font size">ø</button>
                   <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
-                  <button class="settings-btn" id="settings-ext-install" title="Install extension">+ext</button>
-                  <button class="settings-btn" id="settings-ext-uninstall" title="Uninstall extension">−ext</button>
+                  <button class="settings-btn" id="settings-ext-install" title="Install extension" aria-label="Install extension">+ext</button>
+                  <button class="settings-btn" id="settings-ext-uninstall" title="Uninstall extension" aria-label="Uninstall extension">−ext</button>
               </div>
           </div>
       </header>
@@ -1754,7 +1754,7 @@ const MarkdownMini = (() => {
             if (type === 'text' || type === 'extension') {
                 ext = ExtensionManager.getForFile(name);
                 if (ext) type = 'extension';
-                else if (type === 'extension') type = 'text'; // fallback if extension no longer available
+                else if (type === 'extension') type = 'text'; // fallback if extension was uninstalled between sessions
             }
             if (handle) {
                 for (const t of tabs) {
