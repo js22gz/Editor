@@ -195,7 +195,7 @@ window.LEGEND = `<!--
             left: 50%;
             transform: translateX(-50%);
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             align-items: center;
             z-index: 10;
         }
@@ -218,15 +218,6 @@ window.LEGEND = `<!--
             display: flex;
             align-items: center;
             gap: 4px;
-            position: absolute;
-            top: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--bg-surface);
-            border: 1px solid var(--border-color);
-            border-top: none;
-            padding: 6px 8px;
-            border-radius: 0 0 6px 6px;
             white-space: nowrap;
         }
 
@@ -626,7 +617,7 @@ window.LEGEND = `<!--
 <body>
       <header>
           <div id="title-area">
-              <button id="settings-toggle" title="Toggle settings">EDITOR›</button>
+              <button id="settings-toggle" title="Toggle settings">EDITOR ›</button>
               <div id="settings-panel" class="hidden">
                   <button class="settings-btn active" id="settings-toggle-slider" title="Toggle width slider">⇔</button>
                   <button class="settings-btn active" id="settings-toggle-gutter" title="Toggle gutter">#</button>
@@ -1952,7 +1943,7 @@ const MarkdownMini = (() => {
                 const panel = document.getElementById('settings-panel');
                 const btn = document.getElementById('settings-toggle');
                 const isNowHidden = panel.classList.toggle('hidden');
-                btn.textContent = isNowHidden ? 'EDITOR›' : 'EDITOR‹';
+                btn.textContent = isNowHidden ? 'EDITOR ›' : 'EDITOR ‹';
             });
             // Toggle width slider
             document.getElementById('settings-toggle-slider').addEventListener('click', function() {
