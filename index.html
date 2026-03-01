@@ -1,139 +1,3 @@
-<script>
-window.WELCOME = `EDITOR
-══════
-
-Welcome! EDITOR is a no-dependency, single-file text editor that runs entirely
-in your browser. Your files stay on your device — nothing is uploaded anywhere.
-
-───────────────────────────────────────────────────────────────────────────────
-GETTING STARTED
-───────────────────────────────────────────────────────────────────────────────
-
-  1. Open a folder   Right-click the sidebar  →  Open Folder
-                     (or press ⌘O / Ctrl+O)
-
-  2. Browse files    Click any file in the sidebar to open it in a new tab.
-
-  3. Edit & save     Type freely. Changes are auto-saved after 750 ms of
-                     inactivity. Force-save any time with ⌘S / Ctrl+S.
-
-  4. New file        Right-click the sidebar  →  New File
-                     (or press ⌘N / Ctrl+N)
-
-───────────────────────────────────────────────────────────────────────────────
-FEATURES AT A GLANCE
-───────────────────────────────────────────────────────────────────────────────
-
-  Tabs              Open many files at once. Drag tabs to reorder them.
-                    Close the active tab with ⌘W / Ctrl+W.
-
-  Sidebar           Full folder tree with lazy loading. Supports drag & drop
-                    to move files, plus create, rename, copy, and delete.
-
-  Markdown          Files ending in .md get a live preview that renders
-                    automatically after a few seconds of inactivity.
-
-  Line width        Use the ruler slider (top-right) to set a soft-wrap
-                    column, or push it all the way right for no limit (∞).
-
-  Offline           EDITOR is a Progressive Web App — it works without a
-                    network connection after the first load.
-
-───────────────────────────────────────────────────────────────────────────────
-KEYBOARD SHORTCUTS
-───────────────────────────────────────────────────────────────────────────────
-
-  ⌘S / Ctrl+S       Save current file
-  ⌘W / Ctrl+W       Close current tab
-  ⌘N / Ctrl+N       New file
-  ⌘O / Ctrl+O       Open file
-
-───────────────────────────────────────────────────────────────────────────────
-TIPS
-───────────────────────────────────────────────────────────────────────────────
-
-  • Right-click the sidebar for context actions (new, rename, copy, delete).
-  • Drag files in the tree to move them between folders.
-  • Long-press on mobile to open the context menu.
-  • Right-click the sidebar  →  Open legend.txt  to read the source map.
-
-───────────────────────────────────────────────────────────────────────────────
-
-This tab is read-only. Close it with ⌘W / Ctrl+W whenever you're ready.
-`;
-window.LEGEND = `<!--
-  name: EDITOR
-  type: progressive web app
-  description: No-dependency single-file text editor
-  browser compatibility: Chrome & Edge (File System Access API)
-  ═══════════════════════════════════════════════════════════════════════
-  DOCUMENT MAP:
-  ────────
-  <html lang="en">
-    ├── <head>
-    │    ├── <meta> charset · viewport · title · manifest · theme-color
-    │    └── <style> (minimal dark, squarish, fluid)
-    └── <body>
-         ├── <header>
-         │    └── #title-area (centered)
-         │         ├── #settings-toggle (EDITOR›/EDITOR‹ title + settings toggle)
-         │         └── #settings-panel (width-slider toggle, gutter toggle, font ±)
-         │
-         ├── <main>
-         │    ├── <aside id="sidebar">
-         │    │    ├── #sidebar-header (root label + refresh/clear + active directory)
-         │    │    └── #tree-container (lazy TreeManager)
-         │    │
-         │    ├── #sidebar-resize
-         │    └── .editor-area
-         │        ├── #tabs (draggable tab strip)
-         │        ├── #line-width-slider (chars or ∞)
-         │        ├── .editor-wrapper
-         │        │   ├── button#sidebar-toggle
-         │        │   ├── #gutter (live line numbers)
-         │        │   └── #textarea (core editing surface)
-         │        └── .status (cursor + file info)
-         │
-         └── <script> (IIFE: const App = (() => { … })())
-                  │
-                  ├── STATE – currentDirHandle, tabs[], currentTabId,
-                  │           expandedFolders, activeFilePath,
-                  │           activeDirectoryPath …
-                  │
-                  ├── FSA – FileSystemAccess + persistence
-                  │   ├── IndexedDB handle storage
-                  │   ├── Lazy tree (loadChildren + mutateAndRebuild)
-                  │   ├── Full CRUD + drag & drop (move/copy/rename)
-                  │   ├── Auto-save (debounce 750 ms + flush)
-                  │   ├── Tab & expandedFolders & sidebarWidth persistence
-                  │   ├── restoreSession() – folder + tab restore (called on init, pageshow, visibilitychange)
-                  │   └── Permission (requestPermission on cold-start / PWA launch)
-                  │
-                  ├── TreeManager – sidebar tree (IIFE)
-                  │   ├── nodeByPath Map + fileTree root
-                  │   ├── _renderTreeItem() recursive + lazy
-                  │   ├── Drag & drop (move/ancestor highlight)
-                  │   ├── highlightActive() + updateHeader
-                  │   └── registerNode / getNode / clear
-                  │
-                  ├── TAB_TYPES – type registry (welcome · legend · text · markdown)
-                  │
-                  ├── TabManager
-                  │   ├── createNewTab(handle, name, content, path, type)
-                  │   ├── switchToTab / closeTab
-                  │   └── Drag-to-reorder tabs
-                  │
-                  └── UI – interactions & wiring
-                      ├── Context menu + long-press (mobile)
-                      ├── showToast / showDialog (unified notifications)
-                      ├── Line width slider (∞ mode)
-                      ├── Sidebar resize
-                      ├── updateLineNumbers / updateEditorStatus
-                      └── bindEvents() (kbd: ⌘S/W/N/O, dnd, touch, resize)
-                 
-  copyright © 2026 Jonatan Skäryd. All rights reserved.
--->`;
-</script>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -221,19 +85,10 @@ window.LEGEND = `<!--
             white-space: nowrap;
         }
 
-.settings-btn {
-    flex-shrink: 0;
-}
-      
-@media (max-width: 640px) {
-    #settings-panel { gap: 2px; }
-    .settings-btn {
-        width: 32px;
-        height: 32px;
-        font-size: 10px;
-    }
-}
-      
+        @media (max-width: 640px) {
+            #settings-panel { gap: 2px; }
+            .settings-btn { width: 32px; height: 32px; font-size: 10px; }
+        }
         #settings-panel.hidden { display: none; }
         .settings-btn {
             background: var(--bg-base);
@@ -655,6 +510,143 @@ window.LEGEND = `<!--
         </div>
     </main>
 <script>
+window.WELCOME = `EDITOR
+══════
+
+Welcome! EDITOR is a no-dependency, single-file text editor that runs entirely
+in your browser. Your files stay on your device — nothing is uploaded anywhere.
+
+───────────────────────────────────────────────────────────────────────────────
+GETTING STARTED
+───────────────────────────────────────────────────────────────────────────────
+
+  1. Open a folder   Right-click the sidebar  →  Open Folder
+                     (or press ⌘O / Ctrl+O)
+
+  2. Browse files    Click any file in the sidebar to open it in a new tab.
+
+  3. Edit & save     Type freely. Changes are auto-saved after 750 ms of
+                     inactivity. Force-save any time with ⌘S / Ctrl+S.
+
+  4. New file        Right-click the sidebar  →  New File
+                     (or press ⌘N / Ctrl+N)
+
+───────────────────────────────────────────────────────────────────────────────
+FEATURES AT A GLANCE
+───────────────────────────────────────────────────────────────────────────────
+
+  Tabs              Open many files at once. Drag tabs to reorder them.
+                    Close the active tab with ⌘W / Ctrl+W.
+
+  Sidebar           Full folder tree with lazy loading. Supports drag & drop
+                    to move files, plus create, rename, copy, and delete.
+
+  Markdown          Files ending in .md get a live preview that renders
+                    automatically after a few seconds of inactivity.
+
+  Line width        Use the ruler slider (top-right) to set a soft-wrap
+                    column, or push it all the way right for no limit (∞).
+
+  Offline           EDITOR is a Progressive Web App — it works without a
+                    network connection after the first load.
+
+───────────────────────────────────────────────────────────────────────────────
+KEYBOARD SHORTCUTS
+───────────────────────────────────────────────────────────────────────────────
+
+  ⌘S / Ctrl+S       Save current file
+  ⌘W / Ctrl+W       Close current tab
+  ⌘N / Ctrl+N       New file
+  ⌘O / Ctrl+O       Open file
+
+───────────────────────────────────────────────────────────────────────────────
+TIPS
+───────────────────────────────────────────────────────────────────────────────
+
+  • Right-click the sidebar for context actions (new, rename, copy, delete).
+  • Drag files in the tree to move them between folders.
+  • Long-press on mobile to open the context menu.
+  • Right-click the sidebar  →  Open legend.txt  to read the source map.
+
+───────────────────────────────────────────────────────────────────────────────
+
+This tab is read-only. Close it with ⌘W / Ctrl+W whenever you're ready.
+`;
+window.LEGEND = `<!--
+  name: EDITOR
+  type: progressive web app
+  description: No-dependency single-file text editor
+  browser compatibility: Chrome & Edge (File System Access API)
+  ═══════════════════════════════════════════════════════════════════════
+  DOCUMENT MAP:
+  ────────
+  <html lang="en">
+    ├── <head>
+    │    ├── <meta> charset · viewport · title · manifest · theme-color
+    │    └── <style> (minimal dark, squarish, fluid)
+    └── <body>
+         ├── <header>
+         │    └── #title-area (centered)
+         │         ├── #settings-toggle (EDITOR›/EDITOR‹ title + settings toggle)
+         │         └── #settings-panel (width-slider toggle, gutter toggle, font ±)
+         │
+         ├── <main>
+         │    ├── <aside id="sidebar">
+         │    │    ├── #sidebar-header (root label + refresh/clear + active directory)
+         │    │    └── #tree-container (lazy TreeManager)
+         │    │
+         │    ├── #sidebar-resize
+         │    └── .editor-area
+         │        ├── #tabs (draggable tab strip)
+         │        ├── #line-width-slider (chars or ∞)
+         │        ├── .editor-wrapper
+         │        │   ├── button#sidebar-toggle
+         │        │   ├── #gutter (live line numbers)
+         │        │   └── #textarea (core editing surface)
+         │        └── .status (cursor + file info)
+         │
+         └── <script> (IIFE: const App = (() => { … })())
+                  │
+                  ├── STATE – currentDirHandle, tabs[], currentTabId,
+                  │           expandedFolders, activeFilePath,
+                  │           activeDirectoryPath …
+                  │
+                  ├── FSA – FileSystemAccess + persistence
+                  │   ├── IndexedDB handle storage
+                  │   ├── Lazy tree (loadChildren + mutateAndRebuild)
+                  │   ├── Full CRUD + drag & drop (move/copy/rename)
+                  │   ├── Auto-save (debounce 750 ms + flush)
+                  │   ├── Tab & expandedFolders & sidebarWidth persistence
+                  │   ├── restoreSession() – folder + tab restore (called on init, pageshow, visibilitychange)
+                  │   └── Permission (requestPermission on cold-start / PWA launch)
+                  │
+                  ├── TreeManager – sidebar tree (IIFE)
+                  │   ├── nodeByPath Map + fileTree root
+                  │   ├── _renderTreeItem() recursive + lazy
+                  │   ├── Drag & drop (move/ancestor highlight)
+                  │   ├── highlightActive() + updateHeader
+                  │   └── registerNode / getNode / clear
+                  │
+                  ├── TAB_TYPES – type registry (welcome · legend · text · markdown)
+                  │
+                  ├── TabManager
+                  │   ├── createNewTab(handle, name, content, path, type)
+                  │   ├── switchToTab / closeTab
+                  │   └── Drag-to-reorder tabs
+                  │
+                  └── UI – interactions & wiring
+                      ├── Context menu + long-press (mobile)
+                      ├── showToast / showDialog (unified notifications)
+                      ├── Line width slider (∞ mode)
+                      ├── Sidebar resize
+                      ├── updateLineNumbers / updateEditorStatus
+                      └── bindEvents() (kbd: ⌘S/W/N/O, dnd, touch, resize)
+                 
+  copyright © 2026 Jonatan Skäryd. All rights reserved.
+-->`;
+</script>
+
+<script>
 'use strict';
 // ──────────────────────────────────────────────
 // MarkdownMini – tiny Markdown → HTML (zero dep)
@@ -1050,7 +1042,7 @@ const MarkdownMini = (() => {
                 await TabManager.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
             }
         },
-      async openFolder() {
+        async openFolder() {
             try {
                 currentDirHandle = await window.showDirectoryPicker();
                 await this.saveFolderHandle(currentDirHandle);
@@ -1083,7 +1075,7 @@ const MarkdownMini = (() => {
                 await TabManager.createNewTab(node.handle, node.name, content, node.path);
                 if (isMobile) {
                     sidebarEl.classList.add('hidden');
-                    document.getElementById('sidebar-toggle').textContent = '>';
+                    document.getElementById('sidebar-toggle').textContent = '›';
                 }
             } catch (e) {
                 UI.showToast(e.message.includes('permission') ? 'Re-open folder to grant write access' : 'Failed to open file');
@@ -1668,7 +1660,7 @@ const MarkdownMini = (() => {
                 }
             });
             tabEl.addEventListener('drop', e => TabManager.handleTabDrop(e, id));
-          tabsContainer.appendChild(tabEl);
+            tabsContainer.appendChild(tabEl);
             tab.element = tabEl;
             this.switchToTab(id);
             return tab;
@@ -1722,7 +1714,7 @@ const MarkdownMini = (() => {
             }
             this.switchToTab(tabs[Math.min(idx, tabs.length - 1)].id);
         },
-      async restoreOpenTabs(dirHandle) {
+        async restoreOpenTabs(dirHandle) {
             const savedTabs = FSA.loadOpenTabs();
             let restored = 0;
             let activeTabPath = null;
