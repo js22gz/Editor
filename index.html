@@ -1617,8 +1617,7 @@ const MarkdownMini = (() => {
                 const store = tx.objectStore('extensions');
                 const req = store.getAll();
                 const keyReq = store.getAllKeys();
-                keyReq.onsuccess = () => {};
-                req.onsuccess = async () => {
+                tx.oncomplete = async () => {
                     const handles = req.result;
                     const keys = keyReq.result;
                     this.extensions = [];
@@ -1641,7 +1640,7 @@ const MarkdownMini = (() => {
                     }
                     resolve();
                 };
-                req.onerror = () => resolve();
+                tx.onerror = () => resolve();
             });
         },
         async install() {
@@ -1834,13 +1833,13 @@ const MarkdownMini = (() => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             tab.element.classList.add('active');
             if (tab.type === 'extension') {
-                textarea.style.visibility = 'hidden';
+                textarea.style.display = 'none';
                 ExtensionManager.renderTab(tab);
             } else {
                 extFrame.classList.add('hidden');
                 if (extFrame._blobUrl) { URL.revokeObjectURL(extFrame._blobUrl); extFrame._blobUrl = null; }
                 extFrame.removeAttribute('src');
-                textarea.style.visibility = '';
+                textarea.style.display = '';
                 textarea.value = tab.content || '';
                 textarea.readOnly = !TAB_TYPES[tab.type]?.canDirty;
             }
@@ -2200,6 +2199,8 @@ const MarkdownMini = (() => {
             });
             window.addEventListener('message', e => {
                 if (!e.data || typeof e.data !== 'object') return;
+                const extFrame = document.getElementById('ext-frame');
+                if (e.source !== extFrame.contentWindow) return;
                 const tab = currentTabId !== null ? tabs.find(t => t.id === currentTabId) : null;
                 if (!tab || tab.type !== 'extension') return;
                 if (e.data.type === 'extension:save') {
