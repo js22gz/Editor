@@ -616,7 +616,7 @@ window.LEGEND = `<!--
         #md-preview img { max-width: 100%; }
 
         /* ── Extension iframe ── */
-        #ext-frame {
+        .ext-frame {
             position: absolute;
             top: 0;
             left: 0;
@@ -628,7 +628,7 @@ window.LEGEND = `<!--
             z-index: 5;
             background: var(--bg-editor);
         }
-        #ext-frame.hidden { display: none; }
+        .ext-frame.hidden { display: none; }
         
     </style>
 </head>
@@ -642,6 +642,8 @@ window.LEGEND = `<!--
                   <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
                   <button class="settings-btn" id="settings-font-reset" title="Reset font size" aria-label="Reset font size">ø</button>
                   <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
+                  <button class="settings-btn" id="settings-ext-install" title="Install extension" aria-label="Install extension">+ext</button>
+                  <button class="settings-btn" id="settings-ext-uninstall" title="Uninstall extension" aria-label="Uninstall extension">−ext</button>
               </div>
           </div>
       </header>
@@ -668,7 +670,6 @@ window.LEGEND = `<!--
                 <div id="gutter"></div>
                 <textarea id="textarea" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea>
                 <div id="md-preview" class="hidden"></div>
-                <iframe id="ext-frame" class="hidden" sandbox="allow-scripts"></iframe>
             </div>
             <div class="status"><span id="status"></span><span style="flex:1"></span><span id="editor-status">No file open</span></div>
         </div>
@@ -1000,6 +1001,7 @@ const MarkdownMini = (() => {
                 const data = tabs.filter(t => t.path).map(t => ({
                     path: t.path,
                     name: t.name,
+                    type: t.type,
                     active: t.id === currentId
                 }));
                 localStorage.setItem('openTabs', JSON.stringify(data));
@@ -1150,7 +1152,7 @@ const MarkdownMini = (() => {
         async saveTab(tab) {
             if (!tab || !tab.handle || !tab.dirty) return;
             try {
-                const content = (currentTabId === tab.id) ? textarea.value : tab.content;
+                const content = (currentTabId === tab.id && tab.type !== 'extension') ? textarea.value : tab.content;
                 await this.writeFile(tab.handle, content);
                 tab.content = content;
                 tab.dirty = false;
@@ -1701,20 +1703,28 @@ const MarkdownMini = (() => {
             return null;
         },
         renderTab(tab) {
-            const extFrame = document.getElementById('ext-frame');
-            if (extFrame._blobUrl) URL.revokeObjectURL(extFrame._blobUrl);
-            const blob = new Blob([tab.extension.html], { type: 'text/html' });
-            const blobUrl = URL.createObjectURL(blob);
-            extFrame._blobUrl = blobUrl;
-            extFrame.src = blobUrl;
-            extFrame.classList.remove('hidden');
-            extFrame.onload = () => {
-                extFrame.contentWindow.postMessage({
-                    type: 'editor:load',
-                    content: tab.content,
-                    filename: tab.name
-                }, '*');
-            };
+            if (!tab.extFrame) {
+                const iframe = document.createElement('iframe');
+                iframe.className = 'ext-frame hidden';
+                iframe.sandbox = 'allow-scripts';
+                document.querySelector('.editor-wrapper').appendChild(iframe);
+                tab.extFrame = iframe;
+            }
+            tab.extFrame.classList.remove('hidden');
+            if (!tab.blobUrl) {
+                const blob = new Blob([tab.extension.html], { type: 'text/html' });
+                tab.blobUrl = URL.createObjectURL(blob);
+            }
+            if (tab.extFrame.src !== tab.blobUrl) {
+                tab.extFrame.src = tab.blobUrl;
+                tab.extFrame.onload = () => {
+                    tab.extFrame.contentWindow.postMessage({
+                        type: 'editor:load',
+                        content: tab.content,
+                        filename: tab.name
+                    }, '*');
+                };
+            }
         }
     };
     // ──────────────────────────────────────────────
@@ -1741,9 +1751,10 @@ const MarkdownMini = (() => {
         async createNewTab(handle, name, content = '', path = null, type = 'text') {
             if (type === 'text' && /\.(md|markdown)$/i.test(name)) type = 'markdown';
             let ext = null;
-            if (type === 'text') {
+            if (type === 'text' || type === 'extension') {
                 ext = ExtensionManager.getForFile(name);
                 if (ext) type = 'extension';
+                else if (type === 'extension') type = 'text'; // fallback if extension was uninstalled between sessions
             }
             if (handle) {
                 for (const t of tabs) {
@@ -1817,7 +1828,6 @@ const MarkdownMini = (() => {
         },
         switchToTab(id) {
             if (mdPreviewTimer) clearTimeout(mdPreviewTimer);
-            const extFrame = document.getElementById('ext-frame');
             if (currentTabId !== null) {
                 const cur = tabs.find(t => t.id === currentTabId);
                 if (cur) {
@@ -1828,18 +1838,20 @@ const MarkdownMini = (() => {
                     if (cur.dirty) FSA.saveTab(cur);
                 }
             }
+            // Hide all per-tab extension iframes
+            tabs.forEach(t => { if (t.extFrame) t.extFrame.classList.add('hidden'); });
             currentTabId = id;
             const tab = tabs.find(t => t.id === id);
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             tab.element.classList.add('active');
+            const gutterUserHidden = localStorage.getItem('gutterVisible') === 'false';
             if (tab.type === 'extension') {
                 textarea.style.display = 'none';
+                if (!gutterUserHidden) gutter.style.display = 'none';
                 ExtensionManager.renderTab(tab);
             } else {
-                extFrame.classList.add('hidden');
-                if (extFrame._blobUrl) { URL.revokeObjectURL(extFrame._blobUrl); extFrame._blobUrl = null; }
-                extFrame.removeAttribute('src');
                 textarea.style.display = '';
+                if (!gutterUserHidden) gutter.style.display = '';
                 textarea.value = tab.content || '';
                 textarea.readOnly = !TAB_TYPES[tab.type]?.canDirty;
             }
@@ -1863,6 +1875,10 @@ const MarkdownMini = (() => {
             if (idx === -1) return;
             const tab = tabs[idx];
             if (tab.dirty && !await UI.showDialog({isConfirm: true, confirmMessage: `"${tab.name}" has unsaved changes. Close anyway?`})) return;
+            if (tab.extFrame) {
+                if (tab.blobUrl) URL.revokeObjectURL(tab.blobUrl);
+                tab.extFrame.remove();
+            }
             tabs.splice(idx, 1);
             tab.element.remove();
             if (tabs.length === 0) {
@@ -1892,7 +1908,7 @@ const MarkdownMini = (() => {
                     const file = await fileHandle.getFile();
                     const content = await file.text();
 
-                    await this.createNewTab(fileHandle, st.name, content, st.path);
+                    await this.createNewTab(fileHandle, st.name, content, st.path, st.type || 'text');
                     if (st.active) activeTabPath = st.path;
                     restored++;
                 } catch (e) {
@@ -2022,8 +2038,6 @@ const MarkdownMini = (() => {
                         TabManager.createNewTab(null, 'legend.txt', window.LEGEND, null, 'legend');
                     }
                 });
-                addSeparator();
-                addItem('Install Extension', () => ExtensionManager.install());
                 if (copiedNode) { addSeparator(); addItem('Paste', () => FSA.copyEntry(copiedNode, activeDirectoryPath || '')); }
             } else if (node.kind === 'directory') {
                 addItem('New File', () => FSA.newFile());
@@ -2062,13 +2076,17 @@ const MarkdownMini = (() => {
             gutter.textContent = Array.from({length: lineCount}, (_, i) => i + 1).join('\n');
         },
         updateEditorStatus(tab) {
-            const pos = textarea.selectionStart || 0;
-            const before = textarea.value.substring(0, pos);
-            const lines = before.split('\n');
-            const line = lines.length;
-            const col = lines[lines.length - 1].length + 1;
             const modified = tab.dirty ? ' • Modified' : '';
-            statusEl.textContent = `Ln ${line}, Col ${col} | ${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`;
+            if (tab.type === 'extension') {
+                statusEl.textContent = `${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`;
+            } else {
+                const pos = textarea.selectionStart || 0;
+                const before = textarea.value.substring(0, pos);
+                const lines = before.split('\n');
+                const line = lines.length;
+                const col = lines[lines.length - 1].length + 1;
+                statusEl.textContent = `Ln ${line}, Col ${col} | ${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`;
+            }
             editorStatusEl.textContent = tab.name + modified;
         },
         updateMdPreview() {
@@ -2143,6 +2161,17 @@ const MarkdownMini = (() => {
                 applyFontSize(DEFAULT_FONT_SIZE);
                 localStorage.setItem('editorFontSize', DEFAULT_FONT_SIZE);
             });
+            document.getElementById('settings-ext-install').addEventListener('click', () => ExtensionManager.install());
+            document.getElementById('settings-ext-uninstall').addEventListener('click', async () => {
+                if (ExtensionManager.extensions.length === 0) {
+                    UI.showToast('No extensions installed');
+                    return;
+                }
+                const names = ExtensionManager.extensions.map(e => e.name);
+                const name = await UI.showDialog({ promptTitle: 'Uninstall extension:\n' + names.join(', '), defaultValue: names[0] });
+                if (name && names.includes(name)) ExtensionManager.uninstall(name);
+                else if (name) UI.showToast('Extension not found');
+            });
             window.addEventListener('resize', () => {
                 const wasMobile = isMobile;
                 isMobile = window.innerWidth <= 768;
@@ -2199,10 +2228,8 @@ const MarkdownMini = (() => {
             });
             window.addEventListener('message', e => {
                 if (!e.data || typeof e.data !== 'object') return;
-                const extFrame = document.getElementById('ext-frame');
-                if (e.source !== extFrame.contentWindow) return;
-                const tab = currentTabId !== null ? tabs.find(t => t.id === currentTabId) : null;
-                if (!tab || tab.type !== 'extension') return;
+                const tab = tabs.find(t => t.type === 'extension' && t.extFrame && t.extFrame.contentWindow === e.source);
+                if (!tab) return;
                 if (e.data.type === 'extension:save') {
                     tab.content = e.data.content;
                     tab.dirty = true;
