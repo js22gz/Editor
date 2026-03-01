@@ -213,12 +213,38 @@ window.LEGEND = `<!--
             flex-shrink: 0;
             transition: color 0.2s;
         }
+
+      
         #settings-toggle:hover { background: var(--border-color); color: var(--text-primary); }
         #settings-panel {
             display: flex;
             align-items: center;
+            transition: opacity 0.15s ease;
             gap: 4px;
         }
+
+#header-controls {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+      
+#settings-toggle, .settings-btn {
+    flex-shrink: 0;
+}
+#settings-panel {
+}
+      
+@media (max-width: 640px) {
+    #settings-panel { gap: 2px; }
+    .settings-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 10px;
+    }
+}
+      
         #settings-panel.hidden { display: none; }
         .settings-btn {
             background: var(--bg-base);
@@ -600,18 +626,20 @@ window.LEGEND = `<!--
     </style>
 </head>
 <body>
-    <header>
-        <h1>EDITOR</h1>
-        <button id="settings-toggle" title="Toggle settings">›</button>
-        <div id="settings-panel" class="hidden">
-            <button class="settings-btn active" id="settings-toggle-slider" title="Toggle width slider">⇔</button>
-            <button class="settings-btn active" id="settings-toggle-gutter" title="Toggle gutter">#</button>
-            <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
-            <button class="settings-btn" id="settings-font-reset" title="Reset font size" aria-label="Reset font size">ø</button>
-            <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
-        </div>
-    </header>
-    <main>
+      <header>
+          <h1>EDITOR</h1>
+          <div id="header-controls">
+              <button id="settings-toggle" title="Toggle settings">›</button>
+              <div id="settings-panel" class="hidden">
+                  <button class="settings-btn active" id="settings-toggle-slider" title="Toggle width slider">⇔</button>
+                  <button class="settings-btn active" id="settings-toggle-gutter" title="Toggle gutter">#</button>
+                  <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
+                  <button class="settings-btn" id="settings-font-reset" title="Reset font size" aria-label="Reset font size">ø</button>
+                  <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
+              </div>
+          </div>
+      </header>
+      <main>
         <aside id="sidebar">
             <div id="sidebar-header">
                 <div id="sidebar-root-row" class="sidebar-header-row" title="Click to open folder">
