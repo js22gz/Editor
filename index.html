@@ -1003,105 +1003,66 @@ const MarkdownMini = (() => {
             FSA.loadExpandedState();
             const saved = await FSA.loadSavedFolder();
             let hadSavedTabs = false;
+
             if (saved.status === 'granted') {
                 currentDirHandle = saved.handle;
                 await FSA.build(currentDirHandle);
-                for (const path of [...expandedFolders].sort((a,b) => a.split('/').length - b.split('/').length)) {
+
+                for (const path of [...expandedFolders]
+                        .sort((a, b) => a.split('/').length - b.split('/').length)) {
                     const node = TreeManager.getNode(path);
                     if (node && node.kind === 'directory') await FSA.loadChildren(node);
                 }
                 TreeManager.render();
                 TreeManager.updateHeader();
-                const savedTabs = FSA.loadOpenTabs();
-                hadSavedTabs = savedTabs.length > 0;
-                let restored = 0;
-                let activeTabPath = null;
-                for (const st of savedTabs) {
-                    try {
-                        const parts = st.path.split('/');
-                        let handle = currentDirHandle;
-                        for (let i = 0; i < parts.length - 1; i++) {
-                            handle = await handle.getDirectoryHandle(parts[i]);
-                        }
-                        const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
-                        const file = await fileHandle.getFile();
-                        const content = await file.text();
-                        await TabManager.createNewTab(fileHandle, st.name, content, st.path);
-                        if (st.active) activeTabPath = st.path;
-                        restored++;
-                    } catch (e) { console.warn('Failed to restore tab', st.path, e); }
-                }
-                if (activeTabPath) {
-                    const activeTab = tabs.find(t => t.path === activeTabPath);
-                    if (activeTab) TabManager.switchToTab(activeTab.id);
-                } else if (tabs.length > 0) {
-                    TabManager.switchToTab(tabs[0].id);
-                }
+
+                const restored = await TabManager.restoreOpenTabs(currentDirHandle);
+                hadSavedTabs = restored > 0;
                 if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
             } else if (saved.status === 'needs-auth') {
-              // ← THIS is where the action toast should live for cold starts
-              UI.showActionToast(
-                  'Tap to restore folder access',
-                  async () => {
-                      try {
-                          const state = await saved.handle.requestPermission({ mode: 'readwrite' });
-                          if (state !== 'granted') {
-                              UI.showToast('Access was not granted');
-                              return;
-                          }
-          
-                          currentDirHandle = saved.handle;
-                          await FSA.build(currentDirHandle);
-          
-                          // Re-apply expanded folders + tabs (same code you already have)
-                          FSA.loadExpandedState();
-                          for (const path of [...expandedFolders]
-                                  .sort((a, b) => a.split('/').length - b.split('/').length)) {
-                              const node = TreeManager.getNode(path);
-                              if (node && node.kind === 'directory') {
-                                  await FSA.loadChildren(node);
-                              }
-                          }
-                          TreeManager.render();
-                          TreeManager.updateHeader();
-          
-                          const savedTabs = FSA.loadOpenTabs();
-                          let restored = 0;
-                          let activeTabPath = null;
-                          for (const st of savedTabs) {
-                              try {
-                                  // ... your existing tab-restore loop (copy-paste from above) ...
-                                  restored++;
-                                  if (st.active) activeTabPath = st.path;
-                              } catch (e) { console.warn('Failed to restore tab', st.path, e); }
-                          }
-          
-                          if (activeTabPath) {
-                              const activeTab = tabs.find(t => t.path === activeTabPath);
-                              if (activeTab) TabManager.switchToTab(activeTab.id);
-                          } else if (tabs.length > 0) {
-                              TabManager.switchToTab(tabs[0].id);
-                          }
-          
-                          if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-                          else if (tabs.length === 0) {
-                              await TabManager.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
-                          }
-          
-                          UI.showToast('Folder access restored ✓', 1800);
-                      } catch (err) {
-                          console.warn('Re-grant failed:', err);
-                          UI.showToast('Failed to restore access');
-                      }
-                  },
-                  15000   // longer timeout so user has time to read & tap
-              );
-          }
+                UI.showActionToast(
+                    'Tap to restore folder access',
+                    async () => {
+                        try {
+                            const state = await saved.handle.requestPermission({ mode: 'readwrite' });
+                            if (state !== 'granted') {
+                                UI.showToast('Access was not granted');
+                                return;
+                            }
+
+                            currentDirHandle = saved.handle;
+                            await FSA.build(currentDirHandle);
+
+                            FSA.loadExpandedState();
+                            for (const path of [...expandedFolders]
+                                    .sort((a, b) => a.split('/').length - b.split('/').length)) {
+                                const node = TreeManager.getNode(path);
+                                if (node && node.kind === 'directory') await FSA.loadChildren(node);
+                            }
+                            TreeManager.render();
+                            TreeManager.updateHeader();
+
+                            const restored = await TabManager.restoreOpenTabs(currentDirHandle);
+                            if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+                            else if (tabs.length === 0) {
+                                await TabManager.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
+                            }
+
+                            UI.showToast('Folder access restored ✓', 1800);
+                        } catch (err) {
+                            console.warn('Re-grant failed:', err);
+                            UI.showToast('Failed to restore access');
+                        }
+                    },
+                    15000
+                );
+            }
+
             if (!hadSavedTabs && tabs.length === 0) {
                 await TabManager.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
             }
         },
-        async openFolder() {
+      async openFolder() {
             try {
                 currentDirHandle = await window.showDirectoryPicker();
                 await this.saveFolderHandle(currentDirHandle);
@@ -1772,6 +1733,39 @@ const MarkdownMini = (() => {
                 return;
             }
             this.switchToTab(tabs[Math.min(idx, tabs.length - 1)].id);
+        },
+      async restoreOpenTabs(dirHandle) {
+            const savedTabs = FSA.loadOpenTabs();
+            let restored = 0;
+            let activeTabPath = null;
+
+            for (const st of savedTabs) {
+                try {
+                    const parts = st.path.split('/').filter(Boolean);
+                    let handle = dirHandle;
+                    for (let i = 0; i < parts.length - 1; i++) {
+                        handle = await handle.getDirectoryHandle(parts[i]);
+                    }
+                    const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
+                    const file = await fileHandle.getFile();
+                    const content = await file.text();
+
+                    await this.createNewTab(fileHandle, st.name, content, st.path);
+                    if (st.active) activeTabPath = st.path;
+                    restored++;
+                } catch (e) {
+                    console.warn('Failed to restore tab', st.path, e);
+                }
+            }
+
+            if (activeTabPath) {
+                const activeTab = tabs.find(t => t.path === activeTabPath);
+                if (activeTab) this.switchToTab(activeTab.id);
+            } else if (tabs.length > 0) {
+                this.switchToTab(tabs[0].id);
+            }
+
+            return restored;
         }
     };
     // ──────────────────────────────────────────────
