@@ -642,8 +642,6 @@ window.LEGEND = `<!--
                   <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
                   <button class="settings-btn" id="settings-font-reset" title="Reset font size" aria-label="Reset font size">ø</button>
                   <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
-                  <button class="settings-btn" id="settings-ext-install" title="Install extension" aria-label="Install extension">+ext</button>
-                  <button class="settings-btn" id="settings-ext-uninstall" title="Uninstall extension" aria-label="Uninstall extension">−ext</button>
               </div>
           </div>
       </header>
@@ -1349,10 +1347,12 @@ const MarkdownMini = (() => {
                         tab.name = newName;
                         if (tab.element) tab.element.querySelector('.tab-name').textContent = newName;
                         if (tab.type === 'text' || tab.type === 'markdown') {
-                            const newType = /\.(md|markdown)$/i.test(newName) ? 'markdown' : 'text';
+                            const ext = ExtensionManager.getForFile(newName);
+                            const newType = ext ? 'extension' : /\.(md|markdown)$/i.test(newName) ? 'markdown' : 'text';
                             if (newType !== tab.type) {
                                 tab.type = newType;
                                 tab.mdPreview = newType === 'markdown';
+                                tab.extension = ext || null;
                                 if (tab.element) {
                                     const existingToggle = tab.element.querySelector('.md-toggle');
                                     if (existingToggle) existingToggle.remove();
@@ -1368,6 +1368,12 @@ const MarkdownMini = (() => {
                                             if (currentTabId === tab.id) UI.updateMdPreview();
                                         };
                                         tab.element.insertBefore(mdToggle, tab.element.querySelector('.tab-name'));
+                                    } else if (newType === 'extension') {
+                                        const extToggle = TabManager._createExtToggle(tab, ext);
+                                        tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
+                                    } else if (newType === 'text' && newName !== 'Welcome' && newName !== 'Legend') {
+                                        const extToggle = TabManager._createExtToggle(tab, null);
+                                        tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
                                     }
                                 }
                                 if (currentTabId === tab.id) UI.updateMdPreview();
@@ -1757,6 +1763,56 @@ const MarkdownMini = (() => {
             tabs.forEach(tab => tabsContainer.appendChild(tab.element));
             FSA.saveOpenTabs(currentTabId);
         },
+
+        _makeExtToggleHandler(tab, extToggle) {
+            return e => {
+                e.stopPropagation();
+                if (tab.type === 'extension') {
+                    tab.type = 'text';
+                    extToggle.className = 'md-toggle inactive';
+                    if (tab.extFrame) tab.extFrame.classList.add('hidden');
+                    currentTabId = null;
+                    TabManager.switchToTab(tab.id);
+                } else {
+                    if (currentTabId === tab.id) tab.content = textarea.value;
+                    tab.type = 'extension';
+                    extToggle.className = 'md-toggle active';
+                    currentTabId = null;
+                    TabManager.switchToTab(tab.id);
+                }
+            };
+        },
+
+        _createExtToggle(tab, ext) {
+            const extToggle = document.createElement('span');
+            if (ext) {
+                extToggle.className = 'md-toggle active';
+                extToggle.title = 'Toggle extension: ' + ext.name;
+                extToggle.textContent = ext.name;
+                extToggle.onclick = this._makeExtToggleHandler(tab, extToggle);
+            } else {
+                extToggle.className = 'md-toggle inactive';
+                extToggle.title = 'No extension installed – click to install';
+                extToggle.textContent = 'ext';
+                extToggle.onclick = async e => {
+                    e.stopPropagation();
+                    await ExtensionManager.install();
+                    const newExt = ExtensionManager.getForFile(tab.name);
+                    if (newExt) {
+                        tab.extension = newExt;
+                        if (currentTabId === tab.id) tab.content = textarea.value;
+                        tab.type = 'extension';
+                        extToggle.textContent = newExt.name;
+                        extToggle.title = 'Toggle extension: ' + newExt.name;
+                        extToggle.className = 'md-toggle active';
+                        extToggle.onclick = TabManager._makeExtToggleHandler(tab, extToggle);
+                        currentTabId = null;
+                        TabManager.switchToTab(tab.id);
+                    }
+                };
+            }
+            return extToggle;
+        },
       
         async createNewTab(handle, name, content = '', path = null, type = 'text') {
         let ext = ExtensionManager.getForFile(name);
@@ -1804,6 +1860,12 @@ const MarkdownMini = (() => {
                     if (currentTabId === tab.id) UI.updateMdPreview();
                 };
                 tabEl.append(mdToggle, tabName, dirtyInd, closeBtn);
+            } else if (type === 'extension') {
+                const extToggle = this._createExtToggle(tab, ext);
+                tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
+            } else if (type === 'text' && name !== 'Welcome' && name !== 'Legend') {
+                const extToggle = this._createExtToggle(tab, null);
+                tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
             } else {
                 tabEl.append(tabName, dirtyInd, closeBtn);
             }
@@ -2171,17 +2233,6 @@ const MarkdownMini = (() => {
             document.getElementById('settings-font-reset').addEventListener('click', () => {
                 applyFontSize(DEFAULT_FONT_SIZE);
                 localStorage.setItem('editorFontSize', DEFAULT_FONT_SIZE);
-            });
-            document.getElementById('settings-ext-install').addEventListener('click', () => ExtensionManager.install());
-            document.getElementById('settings-ext-uninstall').addEventListener('click', async () => {
-                if (ExtensionManager.extensions.length === 0) {
-                    UI.showToast('No extensions installed');
-                    return;
-                }
-                const names = ExtensionManager.extensions.map(e => e.name);
-                const name = await UI.showDialog({ promptTitle: 'Uninstall extension:\n' + names.join(', '), defaultValue: names[0] });
-                if (name && names.includes(name)) ExtensionManager.uninstall(name);
-                else if (name) UI.showToast('Extension not found');
             });
             window.addEventListener('resize', () => {
                 const wasMobile = isMobile;
