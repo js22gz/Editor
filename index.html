@@ -188,6 +188,7 @@ window.LEGEND = `<!--
             padding: 0 12px;
             flex-shrink: 0;
             gap: 6px;
+            position: relative;
         }
         h1 {
             font-weight: 700;
@@ -195,9 +196,12 @@ window.LEGEND = `<!--
             letter-spacing: -0.5px;
             pointer-events: none;
             margin: 0;
-            flex-shrink: 0;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
         }
         #settings-toggle {
+            margin-left: auto;
             background: none;
             border: none;
             color: var(--text-secondary);
@@ -603,6 +607,7 @@ window.LEGEND = `<!--
             <button class="settings-btn active" id="settings-toggle-slider" title="Toggle width slider">⇔</button>
             <button class="settings-btn active" id="settings-toggle-gutter" title="Toggle gutter">#</button>
             <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
+            <button class="settings-btn" id="settings-font-reset" title="Reset font size" aria-label="Reset font size">ø</button>
             <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
         </div>
     </header>
@@ -1950,6 +1955,7 @@ const MarkdownMini = (() => {
             const applyFontSize = sz => {
                 textarea.style.fontSize = sz + 'px';
                 gutter.style.fontSize = sz + 'px';
+                document.getElementById('md-preview').style.fontSize = sz + 'px';
             };
             document.getElementById('settings-font-decrease').addEventListener('click', () => {
                 const cur = parseInt(textarea.style.fontSize) || DEFAULT_FONT_SIZE;
@@ -1966,6 +1972,10 @@ const MarkdownMini = (() => {
                     applyFontSize(next);
                     localStorage.setItem('editorFontSize', next);
                 }
+            });
+            document.getElementById('settings-font-reset').addEventListener('click', () => {
+                applyFontSize(DEFAULT_FONT_SIZE);
+                localStorage.setItem('editorFontSize', DEFAULT_FONT_SIZE);
             });
             window.addEventListener('resize', () => {
                 const wasMobile = isMobile;
@@ -2221,6 +2231,7 @@ const MarkdownMini = (() => {
             if (savedFontSize) {
                 textarea.style.fontSize = savedFontSize + 'px';
                 gutter.style.fontSize = savedFontSize + 'px';
+                document.getElementById('md-preview').style.fontSize = savedFontSize + 'px';
             }
             if (localStorage.getItem('sliderVisible') === 'false') {
                 document.getElementById('line-width-slider').classList.add('hidden');
