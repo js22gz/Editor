@@ -76,11 +76,12 @@ window.LEGEND = `<!--
     └── <body>
          ├── <header>
          │    ├── <h1>EDITOR</h1>
-         │    └── #topbar-active-row (active directory)
+         │    ├── #settings-toggle (›/‹ expand settings)
+         │    └── #settings-panel (width-slider toggle, gutter toggle, font ±)
          │
          ├── <main>
          │    ├── <aside id="sidebar">
-         │    │    ├── #sidebar-header (root label + refresh/clear)
+         │    │    ├── #sidebar-header (root label + refresh/clear + active directory)
          │    │    └── #tree-container (lazy TreeManager)
          │    │
          │    ├── #sidebar-resize
@@ -177,17 +178,16 @@ window.LEGEND = `<!--
         }
    
         header {
-            height: auto;
-            min-height: 76px;
+            height: 44px;
+            min-height: 44px;
             background: var(--bg-surface);
             border-bottom: 1px solid var(--border-color);
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             align-items: center;
-            justify-content: center;
-            padding: 5px 0px;
+            padding: 0 12px;
             flex-shrink: 0;
-            gap: 3px;
+            gap: 6px;
         }
         h1 {
             font-weight: 700;
@@ -195,7 +195,45 @@ window.LEGEND = `<!--
             letter-spacing: -0.5px;
             pointer-events: none;
             margin: 0;
+            flex-shrink: 0;
         }
+        #settings-toggle {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 2px 5px;
+            border-radius: 4px;
+            flex-shrink: 0;
+            transition: color 0.2s;
+        }
+        #settings-toggle:hover { background: var(--border-color); color: var(--text-primary); }
+        #settings-panel {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        #settings-panel.hidden { display: none; }
+        .settings-btn {
+            background: var(--bg-base);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-family: ui-monospace, monospace;
+            cursor: pointer;
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 3px;
+            transition: background 0.15s, color 0.15s;
+            flex-shrink: 0;
+        }
+        .settings-btn:hover { background: var(--border-color); color: var(--text-primary); }
+        .settings-btn.active { background: var(--bg-active); color: var(--text-strong); border-color: var(--border-subtle); }
    
         main { flex: 1; display: flex; overflow: hidden; }
    
@@ -234,20 +272,14 @@ window.LEGEND = `<!--
         .sidebar-header-row:hover { color: var(--text-primary); }
         .sidebar-header-label { color: var(--text-dim); margin-right: 6px; }
         #topbar-active-row {
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
             color: var(--text-subtle);
-            cursor: pointer;
-            padding: 2px 8px;
-            border-radius: 4px;
-            width: 100%;
-            text-align: left;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
         #topbar-active-row:hover { color: var(--text-primary); }
+        #gutter.hidden { display: none; }
+        #line-width-slider.hidden { display: none; }
         .directory-clear { cursor: pointer; margin-left: 8px; }
    
         #tree-container {
@@ -566,7 +598,13 @@ window.LEGEND = `<!--
 <body>
     <header>
         <h1>EDITOR</h1>
-        <div id="topbar-active-row" title="Click to reset active directory"><span class="sidebar-header-label">ACTIVE:</span> <span id="active-dir-name">/</span></div>
+        <button id="settings-toggle" title="Toggle settings">›</button>
+        <div id="settings-panel" class="hidden">
+            <button class="settings-btn active" id="settings-toggle-slider" title="Toggle width slider">⇔</button>
+            <button class="settings-btn active" id="settings-toggle-gutter" title="Toggle gutter">#</button>
+            <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
+            <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
+        </div>
     </header>
     <main>
         <aside id="sidebar">
@@ -575,6 +613,7 @@ window.LEGEND = `<!--
                     <span><span class="sidebar-header-label">ROOT:</span> <span id="root-dir-name">Click to open folder</span></span>
                     <span id="sidebar-header-actions"></span>
                 </div>
+                <div id="topbar-active-row" class="sidebar-header-row" title="Click to reset active directory"><span class="sidebar-header-label">ACTIVE:</span> <span id="active-dir-name">/</span></div>
             </div>
             <div id="tree-container"></div>
         </aside>
@@ -1884,6 +1923,50 @@ const MarkdownMini = (() => {
                 TreeManager.highlightActive();
                 TreeManager.updateHeader();
             });
+            // Settings toggle
+            document.getElementById('settings-toggle').addEventListener('click', () => {
+                const panel = document.getElementById('settings-panel');
+                const btn = document.getElementById('settings-toggle');
+                const isNowHidden = panel.classList.toggle('hidden');
+                btn.textContent = isNowHidden ? '›' : '‹';
+            });
+            // Toggle width slider
+            document.getElementById('settings-toggle-slider').addEventListener('click', function() {
+                const sliderEl = document.getElementById('line-width-slider');
+                const nowHidden = sliderEl.classList.toggle('hidden');
+                this.classList.toggle('active', !nowHidden);
+                localStorage.setItem('sliderVisible', !nowHidden);
+            });
+            // Toggle gutter
+            document.getElementById('settings-toggle-gutter').addEventListener('click', function() {
+                const nowHidden = gutter.classList.toggle('hidden');
+                this.classList.toggle('active', !nowHidden);
+                const previewEl = document.getElementById('md-preview');
+                previewEl.style.left = nowHidden ? '0' : '60px';
+                localStorage.setItem('gutterVisible', !nowHidden);
+            });
+            // Font size
+            const MIN_FONT = 10, MAX_FONT = 24, DEFAULT_FONT_SIZE = 14;
+            const applyFontSize = sz => {
+                textarea.style.fontSize = sz + 'px';
+                gutter.style.fontSize = sz + 'px';
+            };
+            document.getElementById('settings-font-decrease').addEventListener('click', () => {
+                const cur = parseInt(textarea.style.fontSize) || DEFAULT_FONT_SIZE;
+                if (cur > MIN_FONT) {
+                    const next = cur - 1;
+                    applyFontSize(next);
+                    localStorage.setItem('editorFontSize', next);
+                }
+            });
+            document.getElementById('settings-font-increase').addEventListener('click', () => {
+                const cur = parseInt(textarea.style.fontSize) || DEFAULT_FONT_SIZE;
+                if (cur < MAX_FONT) {
+                    const next = cur + 1;
+                    applyFontSize(next);
+                    localStorage.setItem('editorFontSize', next);
+                }
+            });
             window.addEventListener('resize', () => {
                 const wasMobile = isMobile;
                 isMobile = window.innerWidth <= 768;
@@ -2133,6 +2216,21 @@ const MarkdownMini = (() => {
             const savedSidebarWidth = localStorage.getItem('sidebarWidth');
             if (savedSidebarWidth) sidebarEl.style.width = savedSidebarWidth;
             UI.bindEvents();
+            // Restore settings
+            const savedFontSize = parseInt(localStorage.getItem('editorFontSize'));
+            if (savedFontSize) {
+                textarea.style.fontSize = savedFontSize + 'px';
+                gutter.style.fontSize = savedFontSize + 'px';
+            }
+            if (localStorage.getItem('sliderVisible') === 'false') {
+                document.getElementById('line-width-slider').classList.add('hidden');
+                document.getElementById('settings-toggle-slider').classList.remove('active');
+            }
+            if (localStorage.getItem('gutterVisible') === 'false') {
+                gutter.classList.add('hidden');
+                document.getElementById('settings-toggle-gutter').classList.remove('active');
+                document.getElementById('md-preview').style.left = '0';
+            }
             await FSA.initDB();
             await FSA.restoreSession();
             if (isMobile) sidebarEl.classList.add('hidden');
