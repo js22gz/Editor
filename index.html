@@ -827,7 +827,14 @@ const MarkdownMini = (() => {
         getTab(id) { return this.tabs.find(t => t.id === id); },
         getActiveTab() { return this.currentTabId !== null ? this.getTab(this.currentTabId) : null; },
     });
+    const _boundCache = new Map();
     const State = new Proxy(_storeBase, {
+        get(target, prop) {
+            const value = Reflect.get(target, prop);
+            if (typeof value !== 'function') return value;
+            if (!_boundCache.has(prop)) _boundCache.set(prop, value.bind(target));
+            return _boundCache.get(prop);
+        },
         set(target, prop, value) {
             if (target[prop] === value) return true;
             target[prop] = value;
