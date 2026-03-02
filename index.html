@@ -96,10 +96,14 @@ window.LEGEND = `<!--
          │
          └── <script> (IIFE: const App = (() => { … })())
                   │
-                  ├── STATE – State { currentDirHandle, tabs[], currentTabId,
+                   ├── STATE – State { currentDirHandle, tabs[], currentTabId,
                   │           expandedFolders, activeFilePath,
                   │           activeDirectoryPath, copiedNode,
                   │           getTab(), getActiveTab() }
+                  │
+                  ├── Permission – { guard(handle, action) } requestPermission helper
+                  │
+                  ├── PathUtils – { resolve(base, pathStr), updateTabPaths(old, new, handle, name) }
                   │
                   ├── FSA – FileSystemAccess + persistence
                   │   ├── IndexedDB handle storage
@@ -107,8 +111,7 @@ window.LEGEND = `<!--
                   │   ├── Full CRUD + drag & drop (move/copy/rename)
                   │   ├── Auto-save (debounce 750 ms + flush)
                   │   ├── Tab & expandedFolders & sidebarWidth persistence
-                  │   ├── restoreSession() – folder + tab restore (called on init, pageshow, visibilitychange)
-                  │   └── Permission (requestPermission on cold-start / PWA launch)
+                  │   └── restoreSession() – folder + tab restore (called on init, pageshow, visibilitychange)
                   │
                   ├── TreeManager – sidebar tree (IIFE)
                   │   ├── nodeByPath Map + fileTree root
@@ -144,7 +147,10 @@ window.LEGEND = `<!--
                       ├── Line width slider (∞ mode)
                       ├── Sidebar resize
                       ├── updateLineNumbers / updateEditorStatus
-                      └── bindEvents() (kbd: ⌘S/W/N/O, dnd, touch, resize)
+                      └── bindEvents() → bindKeyboardShortcuts() · bindSidebarAndTreeEvents()
+                                        bindTabDragAndDrop() · bindTextareaEvents()
+                                        bindSettingsPanel() · bindContextMenuAndLongPress()
+                                        bindWindowLifecycle()
                  
   copyright © 2026 Jonatan Skäryd. All rights reserved.
 -->`;
@@ -842,6 +848,84 @@ const MarkdownMini = (() => {
             arr.splice(toIdx, 0, arr.splice(fromIdx, 1)[0]);
         }
     };
+    const Permission = {
+        async guard(handle, action = 'operation') {
+            if (!handle) throw new Error('No handle');
+            let state = await FSA.queryPermission(handle);
+            if (state === 'granted') return handle;
+            state = await handle.requestPermission({ mode: 'readwrite' });
+            if (state !== 'granted') throw new Error(`${action} permission denied`);
+            return handle;
+        }
+    };
+
+    const PathUtils = {
+        async resolve(base, pathStr = '') {
+            if (!base) throw new Error('No base handle');
+            if (!pathStr || pathStr === '/') {
+                return { parent: base, name: base.name, path: '/' };
+            }
+            const parts = pathStr.split('/').filter(Boolean);
+            let parent = base;
+            const name = parts[parts.length - 1];
+            for (let i = 0; i < parts.length - 1; i++) {
+                parent = await parent.getDirectoryHandle(parts[i]);
+            }
+            return { parent, name, path: pathStr };
+        },
+        updateTabPaths(oldPath, newPath, updatedHandle, newName = null) {
+            for (const tab of State.tabs) {
+                if (tab.path === oldPath) {
+                    tab.path = newPath;
+                    tab.handle = updatedHandle;
+                    if (newName != null) {
+                        tab.name = newName;
+                        if (tab.element) tab.element.querySelector('.tab-name').textContent = newName;
+                        if (tab.type === 'text' || tab.type === 'markdown') {
+                            const ext = ExtensionManager.getForFile(newName);
+                            const newType = ext ? 'extension' : /\.(md|markdown)$/i.test(newName) ? 'markdown' : 'text';
+                            if (newType !== tab.type) {
+                                tab.type = newType;
+                                tab.mdPreview = newType === 'markdown';
+                                tab.extension = ext || null;
+                                if (tab.element) {
+                                    const existingToggle = tab.element.querySelector('.md-toggle');
+                                    if (existingToggle) existingToggle.remove();
+                                    if (newType === 'markdown') {
+                                        const mdToggle = document.createElement('span');
+                                        mdToggle.className = 'md-toggle active';
+                                        mdToggle.title = 'Toggle Markdown preview';
+                                        mdToggle.textContent = 'MD';
+                                        mdToggle.onclick = e => {
+                                            e.stopPropagation();
+                                            tab.mdPreview = !tab.mdPreview;
+                                            mdToggle.className = 'md-toggle' + (tab.mdPreview ? ' active' : ' inactive');
+                                            if (State.currentTabId === tab.id) UI.updateMdPreview();
+                                        };
+                                        tab.element.insertBefore(mdToggle, tab.element.querySelector('.tab-name'));
+                                    } else if (newType === 'extension') {
+                                        const extToggle = TabManager._createExtToggle(tab, ext);
+                                        tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
+                                    } else if (newType === 'text') {
+                                        const extToggle = TabManager._createExtToggle(tab, null);
+                                        tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
+                                    }
+                                }
+                                if (State.currentTabId === tab.id) UI.updateMdPreview();
+                            }
+                        }
+                    }
+                } else if (tab.path && tab.path.startsWith(oldPath + '/')) {
+                    tab.path = newPath + tab.path.substring(oldPath.length);
+                }
+            }
+            if (State.activeFilePath === oldPath) State.activeFilePath = newPath;
+            else if (State.activeFilePath && State.activeFilePath.startsWith(oldPath + '/')) {
+                State.activeFilePath = newPath + State.activeFilePath.substring(oldPath.length);
+            }
+        }
+    };
+
     const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
     const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/;
     // ──────────────────────────────────────────────
@@ -865,14 +949,6 @@ const MarkdownMini = (() => {
         async queryPermission(handle) {
             if (!handle) return 'denied';
             try { return await handle.queryPermission({ mode: 'readwrite' }); } catch { return 'denied'; }
-        },
-        async ensureRW(handle) {
-            if (!handle) throw new Error('No handle');
-            let state = await this.queryPermission(handle);
-            if (state === 'granted') return handle;
-            state = await handle.requestPermission({ mode: 'readwrite' });
-            if (state !== 'granted') throw new Error('Write permission denied');
-            return handle;
         },
         async saveFolderHandle(handle) {
             await this.initDB();
@@ -920,19 +996,6 @@ const MarkdownMini = (() => {
             const writable = await handle.createWritable();
             await writable.write(content);
             await writable.close();
-        },
-        async resolvePath(baseHandle, pathStr = '') {
-            if (!baseHandle) throw new Error('No base handle');
-            if (!pathStr || pathStr === '/') {
-                return { parent: baseHandle, name: baseHandle.name, path: '/' };
-            }
-            const parts = pathStr.split('/').filter(Boolean);
-            let parent = baseHandle;
-            const name = parts[parts.length - 1];
-            for (let i = 0; i < parts.length - 1; i++) {
-                parent = await parent.getDirectoryHandle(parts[i]);
-            }
-            return { parent, name, path: pathStr };
         },
         // ── LAZY TREE LOADING (new core) ──
         async loadChildren(dirNode) {
@@ -1132,9 +1195,9 @@ const MarkdownMini = (() => {
         },
         async getTargetDir() {
             const targetPath = contextMenuTarget?.kind === 'directory' ? contextMenuTarget.path : (State.activeDirectoryPath || '');
-            const { parent: dirParent, name: dirName } = await this.resolvePath(State.currentDirHandle, targetPath);
+            const { parent: dirParent, name: dirName } = await PathUtils.resolve(State.currentDirHandle, targetPath);
             const dir = targetPath ? await dirParent.getDirectoryHandle(dirName) : dirParent;
-            await this.ensureRW(dir);
+            await Permission.guard(dir);
             return { dir, targetPath };
         },
         async newFile() {
@@ -1209,8 +1272,8 @@ const MarkdownMini = (() => {
                         break;
                     }
                 }
-                const { parent, name } = await this.resolvePath(State.currentDirHandle, target.path);
-                await this.ensureRW(parent);
+                const { parent, name } = await PathUtils.resolve(State.currentDirHandle, target.path);
+                await Permission.guard(parent);
                 await parent.removeEntry(name);
                 await FSA.mutateAndRebuild();
                 UI.showToast('File deleted');
@@ -1228,8 +1291,8 @@ const MarkdownMini = (() => {
                 if (!await UI.showDialog({isConfirm: true, confirmMessage: `Delete folder "${target.name}"?`, danger: true})) { UI.closeContextMenu(); return; }
             }
             try {
-                const { parent, name } = await this.resolvePath(State.currentDirHandle, target.path);
-                await this.ensureRW(parent);
+                const { parent, name } = await PathUtils.resolve(State.currentDirHandle, target.path);
+                await Permission.guard(parent);
                 await parent.removeEntry(name, { recursive: true });
                 State.expandedFolders.delete(target.path);
                 this.saveExpandedState();
@@ -1253,8 +1316,8 @@ const MarkdownMini = (() => {
             }
             try {
                 const oldPath = target.path;
-                const { parent } = await this.resolvePath(State.currentDirHandle, oldPath);
-                await this.ensureRW(parent);
+                const { parent } = await PathUtils.resolve(State.currentDirHandle, oldPath);
+                await Permission.guard(parent);
                 const oldHandle = target.handle;
                 let updatedHandle = oldHandle;
 
@@ -1273,7 +1336,7 @@ const MarkdownMini = (() => {
                 }
 
                 const newPath = oldPath.substring(0, oldPath.lastIndexOf('/') + 1) + trimmed || trimmed;
-                this._updateTabPaths(oldPath, newPath, updatedHandle, trimmed);
+                PathUtils.updateTabPaths(oldPath, newPath, updatedHandle, trimmed);
                 await FSA.mutateAndRebuild();
                 UI.showToast(`Renamed to ${trimmed}`);
             } catch (e) {
@@ -1287,15 +1350,15 @@ const MarkdownMini = (() => {
             const srcNode = TreeManager.getNode(srcPath);
             if (!srcNode) return;
             if (srcNode.kind === 'directory' && destFolderPath.startsWith(srcPath + '/')) return UI.showToast('Cannot move folder into itself');
-            const { parent: srcParent } = await this.resolvePath(State.currentDirHandle, srcPath);
+            const { parent: srcParent } = await PathUtils.resolve(State.currentDirHandle, srcPath);
             const destNode = TreeManager.getNode(destFolderPath || '/');
             if (!destNode) return UI.showToast('Destination folder not found');
             const destHandle = destNode.handle;
             if (await this.isSameEntry(srcParent, destHandle)) return;
             try {
-                await this.ensureRW(srcParent);
-                await this.ensureRW(destHandle);
-                if (srcNode.kind === 'directory') await this.ensureRW(srcNode.handle);
+                await Permission.guard(srcParent);
+                await Permission.guard(destHandle);
+                if (srcNode.kind === 'directory') await Permission.guard(srcNode.handle);
                 let nameExists = false;
                 try { await destHandle.getFileHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; }
                 if (!nameExists) { try { await destHandle.getDirectoryHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; } }
@@ -1332,7 +1395,7 @@ const MarkdownMini = (() => {
                 }
 
                 const newPath = destFolderPath ? `${destFolderPath}/${srcNode.name}` : srcNode.name;
-                this._updateTabPaths(srcPath, newPath, updatedHandle);
+                PathUtils.updateTabPaths(srcPath, newPath, updatedHandle);
                 if (destFolderPath) { State.expandedFolders.add(destFolderPath); this.saveExpandedState(); }
                 await FSA.mutateAndRebuild();
                 UI.showToast(`Moved "${srcNode.name}"`);
@@ -1345,57 +1408,6 @@ const MarkdownMini = (() => {
                 UI.showToast(msg, 4000);
             }
             UI.closeContextMenu();
-        },
-        _updateTabPaths(oldPath, newPath, updatedHandle, newName = null) {
-            for (const tab of State.tabs) {
-                if (tab.path === oldPath) {
-                    tab.path = newPath;
-                    tab.handle = updatedHandle;
-                    if (newName != null) {
-                        tab.name = newName;
-                        if (tab.element) tab.element.querySelector('.tab-name').textContent = newName;
-                        if (tab.type === 'text' || tab.type === 'markdown') {
-                            const ext = ExtensionManager.getForFile(newName);
-                            const newType = ext ? 'extension' : /\.(md|markdown)$/i.test(newName) ? 'markdown' : 'text';
-                            if (newType !== tab.type) {
-                                tab.type = newType;
-                                tab.mdPreview = newType === 'markdown';
-                                tab.extension = ext || null;
-                                if (tab.element) {
-                                    const existingToggle = tab.element.querySelector('.md-toggle');
-                                    if (existingToggle) existingToggle.remove();
-                                    if (newType === 'markdown') {
-                                        const mdToggle = document.createElement('span');
-                                        mdToggle.className = 'md-toggle active';
-                                        mdToggle.title = 'Toggle Markdown preview';
-                                        mdToggle.textContent = 'MD';
-                                        mdToggle.onclick = e => {
-                                            e.stopPropagation();
-                                            tab.mdPreview = !tab.mdPreview;
-                                            mdToggle.className = 'md-toggle' + (tab.mdPreview ? ' active' : ' inactive');
-                                            if (State.currentTabId === tab.id) UI.updateMdPreview();
-                                        };
-                                        tab.element.insertBefore(mdToggle, tab.element.querySelector('.tab-name'));
-                                    } else if (newType === 'extension') {
-                                        const extToggle = TabManager._createExtToggle(tab, ext);
-                                        tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
-                                    } else if (newType === 'text') {
-                                        const extToggle = TabManager._createExtToggle(tab, null);
-                                        tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
-                                    }
-                                }
-                                if (State.currentTabId === tab.id) UI.updateMdPreview();
-                            }
-                        }
-                    }
-                } else if (tab.path && tab.path.startsWith(oldPath + '/')) {
-                    tab.path = newPath + tab.path.substring(oldPath.length);
-                }
-            }
-            if (State.activeFilePath === oldPath) State.activeFilePath = newPath;
-            else if (State.activeFilePath && State.activeFilePath.startsWith(oldPath + '/')) {
-                State.activeFilePath = newPath + State.activeFilePath.substring(oldPath.length);
-            }
         },
         async _copyDirectory(srcDirHandle, destParentHandle, name) {
             const newDirHandle = await destParentHandle.getDirectoryHandle(name, { create: true });
@@ -1426,7 +1438,7 @@ const MarkdownMini = (() => {
             if (!destNode) return UI.showToast('Destination folder not found');
             const destHandle = destNode.handle;
             try {
-                await this.ensureRW(destHandle);
+                await Permission.guard(destHandle);
                 let nameExists = false;
                 try { await destHandle.getFileHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; }
                 if (!nameExists) { try { await destHandle.getDirectoryHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; } }
@@ -1622,7 +1634,6 @@ const MarkdownMini = (() => {
     // ──────────────────────────────────────────────
     // Tab type registry – add entries to extend
     // ──────────────────────────────────────────────
-    const MD_PREVIEW_DEBOUNCE_DELAY = 3000; // ms of inactivity before showing Markdown preview
     const TAB_TYPES = {
         welcome:  { canSave: false, canDirty: false },
         legend:   { canSave: false, canDirty: false },
@@ -2194,7 +2205,27 @@ const MarkdownMini = (() => {
             previewEl.innerHTML = MarkdownMini.parse(textarea.value);
             textarea.classList.add('md-active');
         },
-        bindEvents() {
+        bindKeyboardShortcuts() {
+            document.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
+                    e.preventDefault();
+                    if (State.currentTabId) TabManager.closeTab(State.currentTabId);
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                    e.preventDefault();
+                    FSA.saveCurrentFile();
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+                    e.preventDefault();
+                    FSA.newFile();
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+                    e.preventDefault();
+                    FSA.openFolder();
+                }
+            });
+        },
+        bindSidebarAndTreeEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
             document.getElementById('sidebar-root-row').addEventListener('click', e => {
                 if (e.target.id === 'refresh-folder' || e.target.id === 'clear-folder') return;
@@ -2204,60 +2235,6 @@ const MarkdownMini = (() => {
                 State.activeDirectoryPath = null;
                 TreeManager.highlightActive();
                 TreeManager.updateHeader();
-            });
-            // Settings toggle
-            document.getElementById('settings-toggle').addEventListener('click', () => {
-                const panel = document.getElementById('settings-panel');
-                const btn = document.getElementById('settings-toggle');
-                const isNowHidden = panel.classList.toggle('hidden');
-                btn.textContent = isNowHidden ? 'EDITOR ›' : 'EDITOR ‹';
-            });
-            // Toggle width slider
-            document.getElementById('settings-toggle-slider').addEventListener('click', function() {
-                const sliderEl = document.getElementById('line-width-slider');
-                const nowHidden = sliderEl.classList.toggle('hidden');
-                this.classList.toggle('active', !nowHidden);
-                localStorage.setItem('sliderVisible', !nowHidden);
-            });
-            // Toggle gutter
-            document.getElementById('settings-toggle-gutter').addEventListener('click', function() {
-                const nowHidden = gutter.classList.toggle('hidden');
-                this.classList.toggle('active', !nowHidden);
-                const previewEl = document.getElementById('md-preview');
-                previewEl.style.left = nowHidden ? '0' : '60px';
-                localStorage.setItem('gutterVisible', !nowHidden);
-            });
-            // Font size
-            const MIN_FONT = 10, MAX_FONT = 24, DEFAULT_FONT_SIZE = 14;
-            const applyFontSize = sz => {
-                textarea.style.fontSize = sz + 'px';
-                gutter.style.fontSize = sz + 'px';
-                document.getElementById('md-preview').style.fontSize = sz + 'px';
-            };
-            document.getElementById('settings-font-decrease').addEventListener('click', () => {
-                const cur = parseInt(textarea.style.fontSize) || DEFAULT_FONT_SIZE;
-                if (cur > MIN_FONT) {
-                    const next = cur - 1;
-                    applyFontSize(next);
-                    localStorage.setItem('editorFontSize', next);
-                }
-            });
-            document.getElementById('settings-font-increase').addEventListener('click', () => {
-                const cur = parseInt(textarea.style.fontSize) || DEFAULT_FONT_SIZE;
-                if (cur < MAX_FONT) {
-                    const next = cur + 1;
-                    applyFontSize(next);
-                    localStorage.setItem('editorFontSize', next);
-                }
-            });
-            document.getElementById('settings-font-reset').addEventListener('click', () => {
-                applyFontSize(DEFAULT_FONT_SIZE);
-                localStorage.setItem('editorFontSize', DEFAULT_FONT_SIZE);
-            });
-            window.addEventListener('resize', () => {
-                const wasMobile = isMobile;
-                isMobile = window.innerWidth <= 768;
-                if (isMobile && !wasMobile) sidebarEl.classList.add('hidden');
             });
             // Sidebar resize
             const sidebarResizeHandle = document.getElementById('sidebar-resize');
@@ -2308,90 +2285,8 @@ const MarkdownMini = (() => {
                 }
                 if (!e.target.closest('.context-menu')) UI.closeContextMenu();
             });
-            window.addEventListener('message', e => {
-                if (!e.data || typeof e.data !== 'object') return;
-                const tab = State.tabs.find(t => t.type === 'extension' && t.extFrame && t.extFrame.contentWindow === e.source);
-                if (!tab) return;
-                if (e.data.type === 'extension:save') {
-                    tab.content = e.data.content;
-                    tab.dirty = true;
-                    if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
-                    FSA.scheduleSave();
-                } else if (e.data.type === 'extension:dirty') {
-                    tab.dirty = true;
-                    if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
-                }
-            });
-            document.addEventListener('keydown', e => {
-                if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
-                    e.preventDefault();
-                    if (State.currentTabId) TabManager.closeTab(State.currentTabId);
-                }
-                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                    e.preventDefault();
-                    FSA.saveCurrentFile();
-                }
-                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
-                    e.preventDefault();
-                    FSA.newFile();
-                }
-                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
-                    e.preventDefault();
-                    FSA.openFolder();
-                }
-            });
-            treeContainer.addEventListener('contextmenu', e => {
-                const folder = e.target.closest('.folder-header');
-                const file = e.target.closest('.file-item');
-                if (folder) {
-                    const node = TreeManager.getNode(folder.dataset.path);
-                    if (node) UI.showContextMenu(e, node);
-                } else if (file) {
-                    const node = TreeManager.getNode(file.dataset.path);
-                    if (node) UI.showContextMenu(e, node);
-                } else {
-                    UI.showContextMenu(e, null);
-                }
-            });
-            let longPressTimer = null;
-            let touchMoved = false;
-            treeContainer.addEventListener('touchstart', e => {
-                longPressTriggered = false;
-                touchMoved = false;
-                const touch = e.touches[0];
-                const target = e.target;
-                longPressTimer = setTimeout(() => {
-                    longPressTriggered = true;
-                    const folder = target.closest('.folder-header');
-                    const file = target.closest('.file-item');
-                    const fakeEvent = { preventDefault() {}, clientX: touch.clientX, clientY: touch.clientY };
-                    if (folder) {
-                        const node = TreeManager.getNode(folder.dataset.path);
-                        if (node) UI.showContextMenu(fakeEvent, node);
-                    } else if (file) {
-                        const node = TreeManager.getNode(file.dataset.path);
-                        if (node) UI.showContextMenu(fakeEvent, node);
-                    } else {
-                        UI.showContextMenu(fakeEvent, null);
-                    }
-                }, 600);
-            }, { passive: true });
-            treeContainer.addEventListener('touchend', e => {
-                clearTimeout(longPressTimer);
-                if (longPressTriggered) {
-                    e.preventDefault();
-                    return;
-                }
-                if (!touchMoved) {
-                    const target = e.target;
-                    const el = target.closest('.folder-header') || target.closest('.file-item');
-                    if (el) {
-                        e.preventDefault();
-                        el.click();
-                    }
-                }
-            });
-            treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); touchMoved = true; }, { passive: true });
+        },
+        bindTabDragAndDrop() {
             // Allow dropping a tab past the last tab (append to end)
             tabsContainer.addEventListener('dragover', e => {
                 if (!e.dataTransfer.types.includes('text/plain')) return;
@@ -2410,6 +2305,9 @@ const MarkdownMini = (() => {
                 tabsContainer.appendChild(movedTab.element);
                 FSA.saveOpenTabs(State.currentTabId);
             });
+        },
+        bindTextareaEvents() {
+            const MD_PREVIEW_DEBOUNCE_DELAY = 3000; // ms of inactivity before showing Markdown preview
             textarea.addEventListener('mousedown', () => {
                 if (State.currentTabId) {
                     const tab = State.tabs.find(t => t.id === State.currentTabId);
@@ -2472,7 +2370,6 @@ const MarkdownMini = (() => {
                     textarea.dispatchEvent(new Event('input'));
                 }
             });
-            
             const slider = document.getElementById('width-slider');
             const valueEl = document.getElementById('width-value');
             const MAX_CHARS = 200;
@@ -2493,7 +2390,132 @@ const MarkdownMini = (() => {
                 }
             });
             slider.dispatchEvent(new Event('input'));
-           
+        },
+        bindSettingsPanel() {
+            // Settings toggle
+            document.getElementById('settings-toggle').addEventListener('click', () => {
+                const panel = document.getElementById('settings-panel');
+                const btn = document.getElementById('settings-toggle');
+                const isNowHidden = panel.classList.toggle('hidden');
+                btn.textContent = isNowHidden ? 'EDITOR ›' : 'EDITOR ‹';
+            });
+            // Toggle width slider
+            document.getElementById('settings-toggle-slider').addEventListener('click', function() {
+                const sliderEl = document.getElementById('line-width-slider');
+                const nowHidden = sliderEl.classList.toggle('hidden');
+                this.classList.toggle('active', !nowHidden);
+                localStorage.setItem('sliderVisible', !nowHidden);
+            });
+            // Toggle gutter
+            document.getElementById('settings-toggle-gutter').addEventListener('click', function() {
+                const nowHidden = gutter.classList.toggle('hidden');
+                this.classList.toggle('active', !nowHidden);
+                const previewEl = document.getElementById('md-preview');
+                previewEl.style.left = nowHidden ? '0' : '60px';
+                localStorage.setItem('gutterVisible', !nowHidden);
+            });
+            // Font size
+            const MIN_FONT = 10, MAX_FONT = 24, DEFAULT_FONT_SIZE = 14;
+            const applyFontSize = sz => {
+                textarea.style.fontSize = sz + 'px';
+                gutter.style.fontSize = sz + 'px';
+                document.getElementById('md-preview').style.fontSize = sz + 'px';
+            };
+            document.getElementById('settings-font-decrease').addEventListener('click', () => {
+                const cur = parseInt(textarea.style.fontSize) || DEFAULT_FONT_SIZE;
+                if (cur > MIN_FONT) {
+                    const next = cur - 1;
+                    applyFontSize(next);
+                    localStorage.setItem('editorFontSize', next);
+                }
+            });
+            document.getElementById('settings-font-increase').addEventListener('click', () => {
+                const cur = parseInt(textarea.style.fontSize) || DEFAULT_FONT_SIZE;
+                if (cur < MAX_FONT) {
+                    const next = cur + 1;
+                    applyFontSize(next);
+                    localStorage.setItem('editorFontSize', next);
+                }
+            });
+            document.getElementById('settings-font-reset').addEventListener('click', () => {
+                applyFontSize(DEFAULT_FONT_SIZE);
+                localStorage.setItem('editorFontSize', DEFAULT_FONT_SIZE);
+            });
+        },
+        bindContextMenuAndLongPress() {
+            treeContainer.addEventListener('contextmenu', e => {
+                const folder = e.target.closest('.folder-header');
+                const file = e.target.closest('.file-item');
+                if (folder) {
+                    const node = TreeManager.getNode(folder.dataset.path);
+                    if (node) UI.showContextMenu(e, node);
+                } else if (file) {
+                    const node = TreeManager.getNode(file.dataset.path);
+                    if (node) UI.showContextMenu(e, node);
+                } else {
+                    UI.showContextMenu(e, null);
+                }
+            });
+            let longPressTimer = null;
+            let touchMoved = false;
+            treeContainer.addEventListener('touchstart', e => {
+                longPressTriggered = false;
+                touchMoved = false;
+                const touch = e.touches[0];
+                const target = e.target;
+                longPressTimer = setTimeout(() => {
+                    longPressTriggered = true;
+                    const folder = target.closest('.folder-header');
+                    const file = target.closest('.file-item');
+                    const fakeEvent = { preventDefault() {}, clientX: touch.clientX, clientY: touch.clientY };
+                    if (folder) {
+                        const node = TreeManager.getNode(folder.dataset.path);
+                        if (node) UI.showContextMenu(fakeEvent, node);
+                    } else if (file) {
+                        const node = TreeManager.getNode(file.dataset.path);
+                        if (node) UI.showContextMenu(fakeEvent, node);
+                    } else {
+                        UI.showContextMenu(fakeEvent, null);
+                    }
+                }, 600);
+            }, { passive: true });
+            treeContainer.addEventListener('touchend', e => {
+                clearTimeout(longPressTimer);
+                if (longPressTriggered) {
+                    e.preventDefault();
+                    return;
+                }
+                if (!touchMoved) {
+                    const target = e.target;
+                    const el = target.closest('.folder-header') || target.closest('.file-item');
+                    if (el) {
+                        e.preventDefault();
+                        el.click();
+                    }
+                }
+            });
+            treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); touchMoved = true; }, { passive: true });
+        },
+        bindWindowLifecycle() {
+            window.addEventListener('resize', () => {
+                const wasMobile = isMobile;
+                isMobile = window.innerWidth <= 768;
+                if (isMobile && !wasMobile) sidebarEl.classList.add('hidden');
+            });
+            window.addEventListener('message', e => {
+                if (!e.data || typeof e.data !== 'object') return;
+                const tab = State.tabs.find(t => t.type === 'extension' && t.extFrame && t.extFrame.contentWindow === e.source);
+                if (!tab) return;
+                if (e.data.type === 'extension:save') {
+                    tab.content = e.data.content;
+                    tab.dirty = true;
+                    if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
+                    FSA.scheduleSave();
+                } else if (e.data.type === 'extension:dirty') {
+                    tab.dirty = true;
+                    if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
+                }
+            });
             window.addEventListener('beforeunload', e => {
                 if (State.currentDirHandle) FSA.saveOpenTabs(State.currentTabId);
                 if (State.tabs.some(t => t.dirty)) {
@@ -2502,6 +2524,15 @@ const MarkdownMini = (() => {
                     return e.returnValue = 'Unsaved changes will be lost';
                 }
             });
+        },
+        bindEvents() {
+            this.bindKeyboardShortcuts();
+            this.bindSidebarAndTreeEvents();
+            this.bindTabDragAndDrop();
+            this.bindTextareaEvents();
+            this.bindSettingsPanel();
+            this.bindContextMenuAndLongPress();
+            this.bindWindowLifecycle();
         },
         init: async () => {
             textarea = document.getElementById('textarea');
