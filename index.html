@@ -1640,6 +1640,7 @@ class TabManager {
     #createTab(handle, name, content = '', path = null, type = 'text') {
         const ext = this.extensions.getForFile(name);
         if (ext) type = 'extension';
+        else if (type === 'extension') type = 'text';
         return {
             id: this.#nextTabId++,
             name, handle, content, path, type,
@@ -1702,6 +1703,8 @@ class TabManager {
                     if (currentTabWasExtension) {
                         this.state.currentTabId = null;
                         this.switchToTab(currentTabId);
+                    } else {
+                        this.fs.saveOpenTabs(this.state.currentTabId);
                     }
                 }, 600);
             });
