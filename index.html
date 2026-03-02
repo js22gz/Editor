@@ -93,7 +93,8 @@ window.LEGEND = `<!--
                   │     • Lazy tree (loadChildren + mutateAndRebuild)
                   │     • Full CRUD + drag & drop (move/copy/rename)
                   │     • Auto-save (debounce 750 ms) + flush
-                  │     • Session restore (pageshow / visibilitychange)
+                  │     • #newItem() shared helper (newFile / newFolder)
+                  │     • Session restore (pageshow / visibilitychange in bindLifecycle)
                   │     • #guard() permission helper
                   │
                   ├── TreeManager
@@ -123,6 +124,7 @@ window.LEGEND = `<!--
                   │     • showToast / showDialog / updateLineNumbers
                   │     • bindKeyboard() · bindTreeEvents() · bindTabEvents()
                   │       bindSettings() · bindLifecycle()
+                  │     • #revalidatePermission() shared helper
                   │
                   └── EditorApp (orchestrator)
                         • wires all classes together
@@ -1023,46 +1025,38 @@ class FileSystemManager {
     }
 
     // ── New file/folder ────────────────────────────────────
-    async newFile() {
+    async #newItem(kind) {
         if (!this.state.currentDirHandle) return this.ui.showToast('Open a folder first');
-        const name = await this.ui.showDialog({ promptTitle: 'New file name:' });
+        const isFile = kind === 'file';
+        const name = await this.ui.showDialog({ promptTitle: isFile ? 'New file name:' : 'New folder name:' });
         if (!name?.trim()) return;
-
         const trimmed = name.trim();
-        if (this.#INVALID_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return this.ui.showToast('Invalid filename');
-
+        if (this.#INVALID_CHARS.test(trimmed) || /[\/\\]/.test(trimmed))
+            return this.ui.showToast(isFile ? 'Invalid filename' : 'Invalid folder name');
         const { dir, targetPath } = await this.#getTargetDir();
-        const handle = await dir.getFileHandle(trimmed, { create: true });
-        await this.#write(handle, '');
-
-        if (targetPath) {
-            this.state.expandedFolders.add(targetPath);
-            this.saveExpandedState();
+        if (isFile) {
+            const handle = await dir.getFileHandle(trimmed, { create: true });
+            await this.#write(handle, '');
+            if (targetPath) {
+                this.state.expandedFolders.add(targetPath);
+                this.saveExpandedState();
+            }
+            await this.mutateAndRebuild();
+            await this.tabs.createNewTab(handle, trimmed, '', targetPath ? `${targetPath}/${trimmed}` : trimmed);
+        } else {
+            await dir.getDirectoryHandle(trimmed, { create: true });
+            if (targetPath) {
+                this.state.expandedFolders.add(targetPath);
+                this.saveExpandedState();
+            }
+            await this.mutateAndRebuild();
+            this.ui.showToast('Folder created');
         }
-        await this.mutateAndRebuild();
-        await this.tabs.createNewTab(handle, trimmed, '', targetPath ? `${targetPath}/${trimmed}` : trimmed);
         this.ui.closeContextMenu();
     }
 
-    async newFolder() {
-        if (!this.state.currentDirHandle) return this.ui.showToast('Open a folder first');
-        const name = await this.ui.showDialog({ promptTitle: 'New folder name:' });
-        if (!name?.trim()) return;
-
-        const trimmed = name.trim();
-        if (this.#INVALID_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return this.ui.showToast('Invalid folder name');
-
-        const { dir, targetPath } = await this.#getTargetDir();
-        await dir.getDirectoryHandle(trimmed, { create: true });
-
-        if (targetPath) {
-            this.state.expandedFolders.add(targetPath);
-            this.saveExpandedState();
-        }
-        await this.mutateAndRebuild();
-        this.ui.showToast('Folder created');
-        this.ui.closeContextMenu();
-    }
+    async newFile() { return this.#newItem('file'); }
+    async newFolder() { return this.#newItem('folder'); }
 
     // ── Save ───────────────────────────────────────────────
     async saveTab(tab) {
@@ -1447,16 +1441,9 @@ class TreeManager {
         const safeName = this.state.currentDirHandle.name;
         this.rootDirNameEl.textContent = safeName;
         this.activeDirNameEl.textContent = this.state.activeDirectoryPath ? safeName + '/' + this.state.activeDirectoryPath : safeName;
-        const refreshSpan = document.createElement('span');
-        refreshSpan.className = 'directory-clear';
-        refreshSpan.id = 'refresh-folder';
-        refreshSpan.title = 'Refresh tree';
-        refreshSpan.textContent = '⟳';
-        const clearSpan = document.createElement('span');
-        clearSpan.className = 'directory-clear';
-        clearSpan.id = 'clear-folder';
-        clearSpan.textContent = '⌫';
-        this.sidebarHeaderActionsEl.replaceChildren(refreshSpan, clearSpan);
+        this.sidebarHeaderActionsEl.innerHTML =
+            '<span class="directory-clear" id="refresh-folder" title="Refresh tree">⟳</span>' +
+            '<span class="directory-clear" id="clear-folder">⌫</span>';
     }
 
     highlightActive() {
@@ -2046,36 +2033,6 @@ class UIManager {
         await this.extensions.loadAll();
         await this.fs.restoreSession();
         if (this.#isMobile) this.#sidebarEl.classList.add('hidden');
-
-        // Re-run restore when page returns from bfcache (back/forward nav or wake from sleep)
-        window.addEventListener('pageshow', async (e) => {
-            if (!e.persisted) return;
-            if (!this.state.currentDirHandle) { await this.fs.restoreSession(); return; }
-            // Re-validate permission in case it lapsed while the page was cached
-            const perm = await this.fs.queryPermission(this.state.currentDirHandle);
-            if (perm !== 'granted') {
-                this.showActionToast('Tap to restore folder access', async () => {
-                    try { await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch { }
-                });
-            }
-        });
-
-        // Re-run restore when page becomes visible after being hidden (lock-screen / tab switch)
-        document.addEventListener('visibilitychange', async () => {
-            if (document.visibilityState !== 'visible') {
-                // Save tab state before page may be frozen/killed
-                if (this.state.currentDirHandle) this.fs.saveOpenTabs(this.state.currentTabId);
-                return;
-            }
-            if (!this.state.currentDirHandle) { await this.fs.restoreSession(); return; }
-            // Re-validate permission in case it lapsed during sleep
-            const perm = await this.fs.queryPermission(this.state.currentDirHandle);
-            if (perm !== 'granted') {
-                this.showActionToast('Tap to restore folder access', async () => {
-                    try { await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch { }
-                });
-            }
-        });
     }
 
     showToast(message, duration = 2800) {
@@ -2100,43 +2057,25 @@ class UIManager {
         return new Promise(resolve => {
             const modal = document.createElement('div');
             modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10001;';
-            const box = document.createElement('div');
-            box.style.cssText = 'background:#18181b;padding:24px;border-radius:8px;min-width:320px;border:1px solid #27272a;';
-            const titleDiv = document.createElement('div');
-            titleDiv.style.cssText = 'margin-bottom:12px;font-size:14px;';
-            titleDiv.textContent = isConfirm ? confirmMessage : promptTitle;
-            let input;
-            if (!isConfirm) {
-                input = document.createElement('input');
-                input.type = 'text';
-                input.value = defaultValue;
-                input.style.cssText = 'width:100%;padding:10px;background:#27272a;border:1px solid #3f3f46;color:#e4e4e7;border-radius:4px;font-size:16px;';
-            }
-            const btnRow = document.createElement('div');
-            btnRow.style.cssText = 'display:flex;gap:8px;margin-top:16px;';
-            const okBtn = document.createElement('button');
-            okBtn.style.cssText = `flex:1;min-height:44px;background:${danger ? '#ef4444' : '#a1a1aa'};color:${danger ? '#fff' : '#09090b'};border:none;border-radius:4px;`;
-            okBtn.textContent = isConfirm ? 'Confirm' : 'OK';
-            const cancelBtn = document.createElement('button');
-            cancelBtn.style.cssText = 'flex:1;min-height:44px;background:#27272a;color:#e4e4e7;border:none;border-radius:4px;';
-            cancelBtn.textContent = 'Cancel';
-            btnRow.append(okBtn, cancelBtn);
-            box.append(titleDiv, btnRow);
-            if (!isConfirm) box.insertBefore(input, btnRow);
-            modal.appendChild(box);
+            const okBg = danger ? '#ef4444' : '#a1a1aa', okFg = danger ? '#fff' : '#09090b';
+            modal.innerHTML = `<div style="background:#18181b;padding:24px;border-radius:8px;min-width:320px;border:1px solid #27272a;">` +
+                `<div style="margin-bottom:12px;font-size:14px;"></div>` +
+                (!isConfirm ? `<input type="text" style="width:100%;padding:10px;background:#27272a;border:1px solid #3f3f46;color:#e4e4e7;border-radius:4px;font-size:16px;">` : '') +
+                `<div style="display:flex;gap:8px;margin-top:16px;">` +
+                `<button style="flex:1;min-height:44px;background:${okBg};color:${okFg};border:none;border-radius:4px;">${isConfirm ? 'Confirm' : 'OK'}</button>` +
+                `<button style="flex:1;min-height:44px;background:#27272a;color:#e4e4e7;border:none;border-radius:4px;">Cancel</button></div></div>`;
+            // textContent assignment keeps user-supplied strings free of HTML injection
+            modal.querySelector('div > div').textContent = isConfirm ? confirmMessage : promptTitle;
+            const input = modal.querySelector('input');
+            const [okBtn, cancelBtn] = modal.querySelectorAll('button');
+            if (input) input.value = defaultValue;
             document.body.appendChild(modal);
             const confirm = () => { resolve(isConfirm ? true : input.value); modal.remove(); };
             const cancel = () => { resolve(isConfirm ? false : null); modal.remove(); };
-            if (!isConfirm) {
-                input.focus();
-                input.select();
-                input.onkeydown = e => {
-                    if (e.key === 'Enter') confirm();
-                    if (e.key === 'Escape') cancel();
-                };
-            } else {
-                okBtn.focus();
-            }
+            if (input) {
+                input.focus(); input.select();
+                input.onkeydown = e => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') cancel(); };
+            } else { okBtn.focus(); }
             okBtn.onclick = confirm;
             cancelBtn.onclick = cancel;
             modal.onclick = e => { if (e.target === modal) cancel(); };
@@ -2511,7 +2450,32 @@ class UIManager {
         });
     }
 
+    async #revalidatePermission() {
+        if (!this.state.currentDirHandle) {
+            await this.fs.restoreSession();
+            return;
+        }
+        const perm = await this.fs.queryPermission(this.state.currentDirHandle);
+        if (perm !== 'granted') {
+            this.showActionToast('Tap to restore folder access', async () => {
+                try { await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch { }
+            });
+        }
+    }
+
     bindLifecycle() {
+        // Restore session when page returns from bfcache (back/forward nav or wake from sleep)
+        window.addEventListener('pageshow', async (e) => {
+            if (e.persisted) await this.#revalidatePermission();
+        });
+        // Save + re-validate when page visibility changes (lock-screen / tab switch)
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState !== 'visible') {
+                if (this.state.currentDirHandle) this.fs.saveOpenTabs(this.state.currentTabId);
+                return;
+            }
+            await this.#revalidatePermission();
+        });
         window.addEventListener('resize', () => {
             const wasMobile = this.#isMobile;
             this.#isMobile = window.innerWidth <= 768;
