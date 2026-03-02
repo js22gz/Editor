@@ -684,11 +684,11 @@ window.LEGEND = `<!--
     
 <script>
 'use strict';
-// ──────────────────────────────────────────────
-// MarkdownMini – tiny Markdown → HTML (zero dep)
-// ──────────────────────────────────────────────
-const MarkdownMini = (() => {
-    function escapeHtml(text) {
+// ────────────────────────────────────────────────────────
+// MarkdownRenderer – tiny Markdown → HTML (zero dep)
+// ────────────────────────────────────────────────────────
+class MarkdownRenderer {
+    static #escapeHtml(text) {
         return text
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
@@ -697,34 +697,35 @@ const MarkdownMini = (() => {
             .replace(/'/g, '&#39;');
     }
 
-    function parseInline(text) {
+    static parseInline(text) {
         if (!text) return '';
         return text
-            .replace(/`([^`]+)`/g, (_, code) => `<code>${escapeHtml(code)}</code>`)
+            .replace(/`([^`]+)`/g, (_, code) => `<code>${MarkdownRenderer.#escapeHtml(code)}</code>`)
             .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) =>
-                `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}">`)
+                `<img src="${MarkdownRenderer.#escapeHtml(url)}" alt="${MarkdownRenderer.#escapeHtml(alt)}">`)
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) =>
-                `<a href="${escapeHtml(url)}">${parseInline(txt)}</a>`)
+                `<a href="${MarkdownRenderer.#escapeHtml(url)}">${MarkdownRenderer.parseInline(txt)}</a>`)
             .replace(/(?<!["'=>])(https?:\/\/[^\s<>"']+)(?!["'])/g, url =>
-                `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`)
-            .replace(/~~(.+?)~~/g, (_, s) => `<del>${escapeHtml(s)}</del>`)
-            .replace(/\*\*([^*]+?)\*\*/g, (_, s) => `<strong>${escapeHtml(s)}</strong>`)
-            .replace(/__([^_]+?)__/g, (_, s) => `<strong>${escapeHtml(s)}</strong>`)
-            .replace(/\*([^*]+?)\*/g, (_, s) => `<em>${escapeHtml(s)}</em>`)
-            .replace(/_([^_]+?)_/g, (_, s) => `<em>${escapeHtml(s)}</em>`);
+                `<a href="${MarkdownRenderer.#escapeHtml(url)}">${MarkdownRenderer.#escapeHtml(url)}</a>`)
+            .replace(/~~(.+?)~~/g, (_, s) => `<del>${MarkdownRenderer.#escapeHtml(s)}</del>`)
+            .replace(/\*\*([^*]+?)\*\*/g, (_, s) => `<strong>${MarkdownRenderer.#escapeHtml(s)}</strong>`)
+            .replace(/__([^_]+?)__/g, (_, s) => `<strong>${MarkdownRenderer.#escapeHtml(s)}</strong>`)
+            .replace(/\*([^*]+?)\*/g, (_, s) => `<em>${MarkdownRenderer.#escapeHtml(s)}</em>`)
+            .replace(/_([^_]+?)_/g, (_, s) => `<em>${MarkdownRenderer.#escapeHtml(s)}</em>`);
     }
 
-    function parseBlockquote(lines, idx, html) {
+    static #parseBlockquote(lines, idx, html) {
         const content = [];
         while (idx < lines.length && lines[idx].trim().startsWith('>')) {
             content.push(lines[idx].replace(/^>\s?/, ''));
             idx++;
         }
-        html.push(`<blockquote>${parse(content.join('\n'))}</blockquote>`);
+        html.push(`<blockquote>${MarkdownRenderer.parse(content.join('\n'))}</blockquote>`);
         return idx;
     }
 
-    function parse(text) {
+    /** @param {string} text */
+    static parse(text) {
         if (!text?.trim()) return '';
         const lines = text.split(/\r?\n/);
         const html = [];
@@ -743,11 +744,11 @@ const MarkdownMini = (() => {
             }
 
             if (trimmed.startsWith('```')) {
-                const lang = escapeHtml(trimmed.slice(3).trim());
+                const lang = MarkdownRenderer.#escapeHtml(trimmed.slice(3).trim());
                 const codeLines = [];
                 i++;
                 while (i < lines.length && !lines[i].trim().startsWith('```')) {
-                    codeLines.push(escapeHtml(lines[i]));
+                    codeLines.push(MarkdownRenderer.#escapeHtml(lines[i]));
                     i++;
                 }
                 html.push(`<pre><code${lang ? ` class="${lang}"` : ''}>${codeLines.join('\n')}</code></pre>`);
@@ -758,7 +759,7 @@ const MarkdownMini = (() => {
             const headerMatch = trimmed.match(/^(#{1,6})[ \t]*(.+?)\s*$/);
             if (headerMatch) {
                 const level = headerMatch[1].length;
-                html.push(`<h${level}>${parseInline(headerMatch[2])}</h${level}>`);
+                html.push(`<h${level}>${MarkdownRenderer.parseInline(headerMatch[2])}</h${level}>`);
                 i++;
                 continue;
             }
@@ -771,7 +772,7 @@ const MarkdownMini = (() => {
 
             if (trimmed.startsWith('>')) {
                 if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
-                i = parseBlockquote(lines, i, html);
+                i = MarkdownRenderer.#parseBlockquote(lines, i, html);
                 continue;
             }
 
@@ -785,8 +786,8 @@ const MarkdownMini = (() => {
                     listType = newType;
                     inList = true;
                 }
-                const liText = listMatch[3].replace(/^\[x\]\s*/i, '☑ ').replace(/^\[ \]\s*/, '☐ ');
-                html.push(`<li>${parseInline(liText)}</li>`);
+                const liText = listMatch[3].replace(/^\[x\]\s*/i, '\u2611 ').replace(/^\[ \]\s*/, '\u2610 ');
+                html.push(`<li>${MarkdownRenderer.parseInline(liText)}</li>`);
                 i++;
                 continue;
             }
@@ -801,990 +802,1023 @@ const MarkdownMini = (() => {
                 para.push(lines[i].trim());
                 i++;
             }
-            if (para.length) { html.push(`<p>${para.map(parseInline).join('<br>')}</p>`); continue; }
+            if (para.length) { html.push(`<p>${para.map(MarkdownRenderer.parseInline).join('<br>')}</p>`); continue; }
             i++;
         }
 
         if (inList) html.push(listType === 'ol' ? '</ol>' : '</ul>');
         return html.join('\n');
     }
+}
 
-    return { parse, parseInline };
-})();  
-  
-  const App = (() => {
-    // ──────────────────────────────────────────────
-    // STATE
-    // ──────────────────────────────────────────────
-    const _storeBase = Object.assign(new EventTarget(), {
-        currentDirHandle: null,
-        tabs: [],
-        currentTabId: null,
-        expandedFolders: new Set(),
-        activeFilePath: null,
-        activeDirectoryPath: null,
-        copiedNode: null,
-        getTab(id) { return this.tabs.find(t => t.id === id); },
-        getActiveTab() { return this.currentTabId !== null ? this.getTab(this.currentTabId) : null; },
-    });
-    const _boundCache = new Map();
-    const State = new Proxy(_storeBase, {
-        get(target, prop) {
-            const value = Reflect.get(target, prop);
-            if (typeof value !== 'function') return value;
-            if (!_boundCache.has(prop)) _boundCache.set(prop, value.bind(target));
-            return _boundCache.get(prop);
-        },
-        set(target, prop, value) {
-            if (target[prop] === value) return true;
-            target[prop] = value;
-            target.dispatchEvent(new CustomEvent(prop + 'Changed'));
-            return true;
+// ────────────────────────────────────────────────────────
+// ReactiveState – observable state container
+// ────────────────────────────────────────────────────────
+class ReactiveState extends EventTarget {
+    constructor() {
+        super();
+        this.currentDirHandle = null;
+        this.tabs = [];
+        this.currentTabId = null;
+        this.expandedFolders = new Set();
+        this.activeFilePath = null;
+        this.activeDirectoryPath = null;
+        this.copiedNode = null;
+        const _boundCache = new Map();
+        return new Proxy(this, {
+            get(target, prop) {
+                const value = Reflect.get(target, prop);
+                if (typeof value !== 'function') return value;
+                if (!_boundCache.has(prop)) _boundCache.set(prop, value.bind(target));
+                return _boundCache.get(prop);
+            },
+            set(target, prop, value) {
+                if (target[prop] === value) return true;
+                target[prop] = value;
+                target.dispatchEvent(new CustomEvent(prop + 'Changed'));
+                return true;
+            }
+        });
+    }
+
+    /** @param {number} id */
+    getTab(id) { return this.tabs.find(t => t.id === id); }
+
+    /** @returns {object|null} */
+    getActiveTab() { return this.currentTabId !== null ? this.getTab(this.currentTabId) : null; }
+}
+
+// ────────────────────────────────────────────────────────
+// PathUtils – file-path helpers
+// ────────────────────────────────────────────────────────
+class PathUtils {
+    /**
+     * Resolves a path relative to a base directory handle.
+     * @param {FileSystemDirectoryHandle} base
+     * @param {string} pathStr
+     */
+    async resolve(base, pathStr = '') {
+        if (!base) throw new Error('No base handle');
+        if (!pathStr || pathStr === '/') {
+            return { parent: base, name: base.name, path: '/' };
         }
-    });
-    let nextTabId = 1;
-    let contextMenu = null;
-    let contextMenuTarget = null;
-    let saveTimer = null;
-    let mdPreviewTimer = null;
-    let saveInProgress = false;
-    let isMobile = window.innerWidth <= 768;
-    let lastLineCount = 1;
-    let longPressTriggered = false;
-    // DOM references
-    let textarea, gutter, tabsContainer, treeContainer, sidebarHeader, sidebarEl, statusEl, editorStatusEl, activeDirNameEl, rootDirNameEl, sidebarHeaderActionsEl;
-    const Utils = {
-        debounce(fn, delay) {
+        const parts = pathStr.split('/').filter(Boolean);
+        let parent = base;
+        const name = parts[parts.length - 1];
+        for (let i = 0; i < parts.length - 1; i++) {
+            parent = await parent.getDirectoryHandle(parts[i]);
+        }
+        return { parent, name, path: pathStr };
+    }
+}
+
+// ────────────────────────────────────────────────────────
+// FileSystemManager – IndexedDB, file ops, tree rebuild
+// ────────────────────────────────────────────────────────
+class FileSystemManager {
+    #TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
+    #INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/;
+    #saveInProgress = false;
+
+    /** @param {ReactiveState} state @param {PathUtils} pathUtils */
+    constructor(state, pathUtils) {
+        this.state = state;
+        this.pathUtils = pathUtils;
+        this.db = null;
+        /** @type {TreeManager} */ this.tree = null;
+        /** @type {TabManager} */ this.tabs = null;
+        /** @type {UIManager} */ this.ui = null;
+        this.scheduleSave = (() => {
             let timer;
-            return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };
-        },
-        moveArrayItem(arr, fromIdx, toIdx) {
-            arr.splice(toIdx, 0, arr.splice(fromIdx, 1)[0]);
-        }
-    };
-    const Permission = {
-        async guard(handle, action = 'operation') {
-            if (!handle) throw new Error('No handle');
-            let state = await FSA.queryPermission(handle);
-            if (state === 'granted') return handle;
-            state = await handle.requestPermission({ mode: 'readwrite' });
-            if (state !== 'granted') throw new Error(`${action} permission denied`);
-            return handle;
-        }
-    };
+            return () => {
+                clearTimeout(timer);
+                timer = setTimeout(() => {
+                    if (this.#saveInProgress || !this.state.currentTabId) return;
+                    const tab = this.state.tabs.find(t => t.id === this.state.currentTabId);
+                    if (tab?.dirty) this.saveTab(tab);
+                }, 750);
+            };
+        })();
+    }
 
-    const PathUtils = {
-        async resolve(base, pathStr = '') {
-            if (!base) throw new Error('No base handle');
-            if (!pathStr || pathStr === '/') {
-                return { parent: base, name: base.name, path: '/' };
-            }
-            const parts = pathStr.split('/').filter(Boolean);
-            let parent = base;
-            const name = parts[parts.length - 1];
-            for (let i = 0; i < parts.length - 1; i++) {
-                parent = await parent.getDirectoryHandle(parts[i]);
-            }
-            return { parent, name, path: pathStr };
-        },
-        updateTabPaths(oldPath, newPath, updatedHandle, newName = null) {
-            for (const tab of State.tabs) {
-                if (tab.path === oldPath) {
-                    tab.path = newPath;
-                    tab.handle = updatedHandle;
-                    if (newName != null) {
-                        tab.name = newName;
-                        if (tab.element) tab.element.querySelector('.tab-name').textContent = newName;
-                        if (tab.type === 'text' || tab.type === 'markdown') {
-                            const ext = ExtensionManager.getForFile(newName);
-                            const newType = ext ? 'extension' : /\.(md|markdown)$/i.test(newName) ? 'markdown' : 'text';
-                            if (newType !== tab.type) {
-                                tab.type = newType;
-                                tab.mdPreview = newType === 'markdown';
-                                tab.extension = ext || null;
-                                if (tab.element) {
-                                    const existingToggle = tab.element.querySelector('.md-toggle');
-                                    if (existingToggle) existingToggle.remove();
-                                    if (newType === 'markdown') {
-                                        const mdToggle = document.createElement('span');
-                                        mdToggle.className = 'md-toggle active';
-                                        mdToggle.title = 'Toggle Markdown preview';
-                                        mdToggle.textContent = 'MD';
-                                        mdToggle.onclick = e => {
-                                            e.stopPropagation();
-                                            tab.mdPreview = !tab.mdPreview;
-                                            mdToggle.className = 'md-toggle' + (tab.mdPreview ? ' active' : ' inactive');
-                                            if (State.currentTabId === tab.id) UI.updateMdPreview();
-                                        };
-                                        tab.element.insertBefore(mdToggle, tab.element.querySelector('.tab-name'));
-                                    } else if (newType === 'extension') {
-                                        const extToggle = TabManager._createExtToggle(tab, ext);
-                                        tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
-                                    } else if (newType === 'text') {
-                                        const extToggle = TabManager._createExtToggle(tab, null);
-                                        tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
-                                    }
-                                }
-                                if (State.currentTabId === tab.id) UI.updateMdPreview();
-                            }
-                        }
-                    }
-                } else if (tab.path && tab.path.startsWith(oldPath + '/')) {
-                    tab.path = newPath + tab.path.substring(oldPath.length);
-                }
-            }
-            if (State.activeFilePath === oldPath) State.activeFilePath = newPath;
-            else if (State.activeFilePath && State.activeFilePath.startsWith(oldPath + '/')) {
-                State.activeFilePath = newPath + State.activeFilePath.substring(oldPath.length);
-            }
-        }
-    };
+    async #guard(handle, action = 'operation') {
+        if (!handle) throw new Error('No handle');
+        let state = await this.queryPermission(handle);
+        if (state === 'granted') return handle;
+        state = await handle.requestPermission({ mode: 'readwrite' });
+        if (state !== 'granted') throw new Error(`${action} permission denied`);
+        return handle;
+    }
 
-    const TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
-    const INVALID_FILENAME_CHARS = /[<>:"|?*\x00-\x1F]/;
-    // ──────────────────────────────────────────────
-    // FSA – file system, IndexedDB & all file operations
-    // ──────────────────────────────────────────────
-    const FSA = {
-        db: null,
-        async initDB() {
-            if (this.db) return;
-            return new Promise(resolve => {
-                const req = indexedDB.open('FileEditor', 2);
-                req.onupgradeneeded = e => {
-                    const db = e.target.result;
-                    if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles');
-                    if (!db.objectStoreNames.contains('extensions')) db.createObjectStore('extensions');
-                };
-                req.onsuccess = e => { this.db = e.target.result; resolve(); };
-                req.onerror = () => resolve();
-            });
-        },
-        async queryPermission(handle) {
-            if (!handle) return 'denied';
-            try { return await handle.queryPermission({ mode: 'readwrite' }); } catch { return 'denied'; }
-        },
-        async saveFolderHandle(handle) {
-            await this.initDB();
+    async initDB() {
+        if (this.db) return;
+        return new Promise(resolve => {
+            const req = indexedDB.open('FileEditor', 2);
+            req.onupgradeneeded = e => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles');
+                if (!db.objectStoreNames.contains('extensions')) db.createObjectStore('extensions');
+            };
+            req.onsuccess = e => { this.db = e.target.result; resolve(); };
+            req.onerror = () => resolve();
+        });
+    }
+
+    async queryPermission(handle) {
+        if (!handle) return 'denied';
+        try { return await handle.queryPermission({ mode: 'readwrite' }); } catch { return 'denied'; }
+    }
+
+    async saveFolderHandle(handle) {
+        await this.initDB();
+        const tx = this.db.transaction('handles', 'readwrite');
+        tx.objectStore('handles').put(handle, 'main');
+    }
+
+    async loadSavedFolder() {
+        await this.initDB();
+        return new Promise(resolve => {
+            const tx = this.db.transaction('handles');
+            const req = tx.objectStore('handles').get('main');
+            req.onsuccess = async () => {
+                const handle = req.result;
+                if (!handle) return resolve({ status: 'none' });
+                const perm = await this.queryPermission(handle);
+                if (perm === 'granted') return resolve({ status: 'granted', handle });
+                // Try to re-request permission – silently succeeds on PWA launch (treated as user gesture)
+                try {
+                    const requested = await handle.requestPermission({ mode: 'readwrite' });
+                    if (requested === 'granted') return resolve({ status: 'granted', handle });
+                } catch (err) { console.warn('requestPermission failed:', err); }
+                resolve({ status: 'needs-auth', handle });
+            };
+            req.onerror = () => resolve({ status: 'none' });
+        });
+    }
+
+    async clearSavedFolder() {
+        if (this.db) {
             const tx = this.db.transaction('handles', 'readwrite');
-            tx.objectStore('handles').put(handle, 'main');
-        },
-        async loadSavedFolder() {
-            await this.initDB();
-            return new Promise(resolve => {
-                const tx = this.db.transaction('handles');
-                const req = tx.objectStore('handles').get('main');
-                req.onsuccess = async () => {
-                    const handle = req.result;
-                    if (!handle) return resolve({ status: 'none' });
-                    const perm = await this.queryPermission(handle);
-                    if (perm === 'granted') return resolve({ status: 'granted', handle });
-                    // Try to re-request permission – silently succeeds on PWA launch (treated as user gesture)
-                    try {
-                        const requested = await handle.requestPermission({ mode: 'readwrite' });
-                        if (requested === 'granted') return resolve({ status: 'granted', handle });
-                    } catch (err) { console.warn('requestPermission failed:', err); }
-                    resolve({ status: 'needs-auth', handle });
-                };
-                req.onerror = () => resolve({ status: 'none' });
+            tx.objectStore('handles').delete('main');
+        }
+        this.state.currentDirHandle = null;
+        this.state.activeDirectoryPath = null;
+        this.state.expandedFolders.clear();
+        localStorage.removeItem('expandedFolders');
+        localStorage.removeItem('openTabs');
+        this.tree.clear();
+        this.tree.updateHeader();
+    }
+
+    async isSameEntry(h1, h2) {
+        if (!h1 || !h2) return false;
+        return h1.isSameEntry(h2);
+    }
+
+    async writeFile(handle, content) {
+        const writable = await handle.createWritable();
+        await writable.write(content);
+        await writable.close();
+    }
+
+    // ── LAZY TREE LOADING ──
+    async loadChildren(dirNode) {
+        if (dirNode.kind !== 'directory' || dirNode.childrenLoaded) return;
+        dirNode.children = [];
+        try {
+            const entries = [];
+            for await (const [name, handle] of dirNode.handle.entries()) {
+                if (name.startsWith('.') || name === 'node_modules' || name === '__pycache__') continue;
+                entries.push([name, handle]);
+            }
+            entries.sort(([aName, aHandle], [bName, bHandle]) => {
+                if (aHandle.kind !== bHandle.kind) return aHandle.kind === 'directory' ? -1 : 1;
+                return aName.localeCompare(bName, undefined, { numeric: true });
             });
-        },
-        async clearSavedFolder() {
-            if (this.db) {
-                const tx = this.db.transaction('handles', 'readwrite');
-                tx.objectStore('handles').delete('main');
+            for (const [name, handle] of entries) {
+                const childPath = dirNode.path === '/' ? name : `${dirNode.path}/${name}`;
+                const childNode = handle.kind === 'directory' ?
+                    { name, kind: 'directory', handle, path: childPath, children: [], childrenLoaded: false } :
+                    { name, kind: 'file', handle, path: childPath };
+                this.tree.registerNode(childPath, childNode);
+                dirNode.children.push(childNode);
             }
-            State.currentDirHandle = null;
-            State.activeDirectoryPath = null;
-            State.expandedFolders.clear();
-            localStorage.removeItem('expandedFolders');
-            localStorage.removeItem('openTabs');
-            TreeManager.clear();
-            TreeManager.updateHeader();
-        },
-        async isSameEntry(h1, h2) {
-            if (!h1 || !h2) return false;
-            return h1.isSameEntry(h2);
-        },
-        async writeFile(handle, content) {
-            const writable = await handle.createWritable();
-            await writable.write(content);
-            await writable.close();
-        },
-        // ── LAZY TREE LOADING (new core) ──
-        async loadChildren(dirNode) {
-            if (dirNode.kind !== 'directory' || dirNode.childrenLoaded) return;
-            dirNode.children = [];
-            try {
-                const entries = [];
-                for await (const [name, handle] of dirNode.handle.entries()) {
-                    if (name.startsWith('.') || name === 'node_modules' || name === '__pycache__') continue;
-                    entries.push([name, handle]);
-                }
-                entries.sort(([aName, aHandle], [bName, bHandle]) => {
-                    if (aHandle.kind !== bHandle.kind) return aHandle.kind === 'directory' ? -1 : 1;
-                    return aName.localeCompare(bName, undefined, { numeric: true });
-                });
-                for (const [name, handle] of entries) {
-                    const childPath = dirNode.path === '/' ? name : `${dirNode.path}/${name}`;
-                    const childNode = handle.kind === 'directory' ?
-                        { name, kind: 'directory', handle, path: childPath, children: [], childrenLoaded: false } :
-                        { name, kind: 'file', handle, path: childPath };
-                    TreeManager.registerNode(childPath, childNode);
-                    dirNode.children.push(childNode);
-                }
-            } catch (e) {
-                console.error(`loadChildren failed for ${dirNode.path}:`, e);
-            }
-            dirNode.childrenLoaded = true;
-        },
+        } catch (e) {
+            console.error(`loadChildren failed for ${dirNode.path}:`, e);
+        }
+        dirNode.childrenLoaded = true;
+    }
 
-        async build(rootHandle) {
-            TreeManager.clear();
-            const rootNode = {
-                name: rootHandle.name,
-                kind: 'directory',
-                handle: rootHandle,
-                path: '/',
-                children: [],
-                childrenLoaded: false
-            };
-            TreeManager.registerNode('/', rootNode);
-            TreeManager.fileTree = rootNode;
-            await this.loadChildren(rootNode);
-            return rootNode;
-        },
-
-        async mutateAndRebuild() {
-            if (!State.currentDirHandle) return;
-            const previouslyExpanded = new Set(State.expandedFolders);
-            await this.build(State.currentDirHandle);
-            for (const path of previouslyExpanded) {
-                const node = TreeManager.getNode(path);
-                if (node && node.kind === 'directory') {
-                    await this.loadChildren(node);
-                    State.expandedFolders.add(path);
-                }
-            }
-            TreeManager.render();
-            TreeManager.updateHeader();
-        },
-        loadExpandedState() {
-            try {
-                const saved = localStorage.getItem('expandedFolders');
-                if (saved) State.expandedFolders = new Set(JSON.parse(saved));
-            } catch {}
-        },
-        saveExpandedState() {
-            try { localStorage.setItem('expandedFolders', JSON.stringify([...State.expandedFolders])); } catch {}
-        },
-        saveOpenTabs(currentId) {
-            try {
-                const data = State.tabs.filter(t => t.path).map(t => ({
-                    path: t.path,
-                    name: t.name,
-                    type: t.type,
-                    active: t.id === currentId
-                }));
-                if (data.length === 0 && !State.currentDirHandle) return;
-                localStorage.setItem('openTabs', JSON.stringify(data));
-            } catch {}
-        },
-        loadOpenTabs() {
-            try {
-                const saved = localStorage.getItem('openTabs');
-                return saved ? JSON.parse(saved) : [];
-            } catch { return []; }
-        },
-        async restoreSession() {
-            FSA.loadExpandedState();
-            const saved = await FSA.loadSavedFolder();
-            let hadSavedTabs = false;
-
-            if (saved.status === 'granted') {
-                State.currentDirHandle = saved.handle;
-                await FSA.build(State.currentDirHandle);
-
-                for (const path of [...State.expandedFolders]
-                        .sort((a, b) => a.split('/').length - b.split('/').length)) {
-                    const node = TreeManager.getNode(path);
-                    if (node && node.kind === 'directory') await FSA.loadChildren(node);
-                }
-                TreeManager.render();
-                TreeManager.updateHeader();
-
-                const restored = await TabManager.restoreOpenTabs(State.currentDirHandle);
-                hadSavedTabs = restored > 0;
-                if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-            } else if (saved.status === 'needs-auth') {
-                const pendingTabs = FSA.loadOpenTabs();
-                UI.showActionToast(
-                    'Tap to restore folder access',
-                    async () => {
-                        try {
-                            const state = await saved.handle.requestPermission({ mode: 'readwrite' });
-                            if (state !== 'granted') {
-                                UI.showToast('Access was not granted');
-                                return;
-                            }
-
-                            State.currentDirHandle = saved.handle;
-                            await FSA.build(State.currentDirHandle);
-
-                            FSA.loadExpandedState();
-                            for (const path of [...State.expandedFolders]
-                                    .sort((a, b) => a.split('/').length - b.split('/').length)) {
-                                const node = TreeManager.getNode(path);
-                                if (node && node.kind === 'directory') await FSA.loadChildren(node);
-                            }
-                            TreeManager.render();
-                            TreeManager.updateHeader();
-
-                            // Remove welcome tab before restoring saved State.tabs
-                            const welcomeIdx = State.tabs.findIndex(t => t.type === 'welcome');
-                            if (welcomeIdx !== -1) {
-                                State.tabs[welcomeIdx].element.remove();
-                                State.tabs.splice(welcomeIdx, 1);
-                            }
-
-                            const restored = await TabManager.restoreOpenTabs(State.currentDirHandle, pendingTabs);
-                            if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-                            else if (State.tabs.length === 0) {
-                                await TabManager.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
-                            }
-
-                            UI.showToast('Folder access restored ✓', 1800);
-                        } catch (err) {
-                            console.warn('Re-grant failed:', err);
-                            UI.showToast('Failed to restore access');
-                        }
-                    },
-                    15000
-                );
-            }
-
-            if (!hadSavedTabs && State.tabs.length === 0) {
-                await TabManager.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
-            }
-        },
-        async openFolder() {
-            try {
-                State.currentDirHandle = await window.showDirectoryPicker();
-                await this.saveFolderHandle(State.currentDirHandle);
-                State.expandedFolders.clear();
-                State.activeDirectoryPath = null;
-                await FSA.build(State.currentDirHandle);
-                TreeManager.render();
-                TreeManager.updateHeader();
-                UI.showToast('Folder opened successfully');
-            } catch (e) { if (e.name !== 'AbortError') UI.showToast('Open folder cancelled or failed'); }
-        },
-        async openFile() {
-            try {
-                const [fileHandle] = await window.showOpenFilePicker();
-                const file = await fileHandle.getFile();
-                if (!file.type.startsWith('text/') && !TEXT_FILE_EXTENSIONS.test(file.name)) {
-                    if (!await UI.showDialog({isConfirm: true, confirmMessage: 'Binary file detected. Open anyway?'})) return;
-                }
-                const content = await file.text();
-                await TabManager.createNewTab(fileHandle, file.name, content);
-            } catch (e) { if (e.name !== 'AbortError') UI.showToast('Open file cancelled or failed'); }
-        },
-        async openFileFromNode(node) {
-            try {
-                const file = await node.handle.getFile();
-                if (!file.type.startsWith('text/') && !TEXT_FILE_EXTENSIONS.test(file.name)) {
-                    if (!await UI.showDialog({isConfirm: true, confirmMessage: 'Binary file detected. Open anyway?'})) return;
-                }
-                const content = await file.text();
-                await TabManager.createNewTab(node.handle, node.name, content, node.path);
-                if (isMobile) {
-                    sidebarEl.classList.add('hidden');
-                    document.getElementById('sidebar-toggle').textContent = '›';
-                }
-            } catch (e) {
-                UI.showToast(e.message.includes('permission') ? 'Re-open folder to grant write access' : 'Failed to open file');
-            }
-        },
-        async getTargetDir() {
-            const targetPath = contextMenuTarget?.kind === 'directory' ? contextMenuTarget.path : (State.activeDirectoryPath || '');
-            const { parent: dirParent, name: dirName } = await PathUtils.resolve(State.currentDirHandle, targetPath);
-            const dir = targetPath ? await dirParent.getDirectoryHandle(dirName) : dirParent;
-            await Permission.guard(dir);
-            return { dir, targetPath };
-        },
-        async newFile() {
-            if (!State.currentDirHandle) return UI.showToast('Open a folder first');
-            const name = await UI.showDialog({promptTitle: 'New file name:'});
-            if (!name?.trim()) return;
-            const trimmed = name.trim();
-            if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return UI.showToast('Invalid filename');
-            const { dir: parent, targetPath } = await this.getTargetDir();
-            const fileHandle = await parent.getFileHandle(trimmed, { create: true });
-            await this.writeFile(fileHandle, '');
-            if (targetPath) { State.expandedFolders.add(targetPath); this.saveExpandedState(); }
-            await FSA.mutateAndRebuild();
-            await TabManager.createNewTab(fileHandle, trimmed, '', targetPath ? `${targetPath}/${trimmed}` : trimmed);
-            UI.closeContextMenu();
-        },
-        async newFolder() {
-            if (!State.currentDirHandle) return UI.showToast('Open a folder first');
-            const name = await UI.showDialog({promptTitle: 'New folder name:'});
-            if (!name?.trim()) return;
-            const trimmed = name.trim();
-            if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return UI.showToast('Invalid folder name');
-            const { dir: parent, targetPath } = await this.getTargetDir();
-            await parent.getDirectoryHandle(trimmed, { create: true });
-            if (targetPath) { State.expandedFolders.add(targetPath); this.saveExpandedState(); }
-            await FSA.mutateAndRebuild();
-            UI.showToast('Folder created');
-            UI.closeContextMenu();
-        },
-        async saveTab(tab) {
-            if (!tab || !tab.handle || !tab.dirty) return;
-            try {
-                const content = (State.currentTabId === tab.id && tab.type !== 'extension') ? textarea.value : tab.content;
-                await this.writeFile(tab.handle, content);
-                tab.content = content;
-                tab.dirty = false;
-                if (tab.element) {
-                    const ind = tab.element.querySelector('.dirty-indicator');
-                    if (ind) ind.style.display = 'none';
-                }
-                UI.updateEditorStatus(tab);
-                UI.showToast('Saved', 1200);
-            } catch (err) {
-                UI.showToast(err.message.includes('permission') ? 'Re-authorize folder' : 'Save failed');
-            }
-        },
-        saveCurrentFile() {
-            if (State.currentTabId === null) return;
-            const tab = State.tabs.find(t => t.id === State.currentTabId);
-            if (tab) this.saveTab(tab);
-        },
-        scheduleSave: Utils.debounce(function() {
-            if (saveInProgress || !State.currentTabId) return;
-            const tab = State.tabs.find(t => t.id === State.currentTabId);
-            if (tab?.dirty) FSA.saveTab(tab);
-        }, 750),
-        async flushSave() {
-            if (saveInProgress) return;
-            saveInProgress = true;
-            try {
-                await Promise.allSettled(State.tabs.filter(t => t.dirty).map(t => this.saveTab(t)));
-            } finally { saveInProgress = false; }
-        },
-        async deleteFile() {
-            const target = contextMenuTarget;
-            if (!target || target.kind !== 'file') return;
-            if (!await UI.showDialog({isConfirm: true, confirmMessage: `Delete "${target.name}"?`, danger: true})) { UI.closeContextMenu(); return; }
-            try {
-                for (let i = 0; i < State.tabs.length; i++) {
-                    if (State.tabs[i].handle && await this.isSameEntry(State.tabs[i].handle, target.handle)) {
-                        await TabManager.closeTab(State.tabs[i].id);
-                        break;
-                    }
-                }
-                const { parent, name } = await PathUtils.resolve(State.currentDirHandle, target.path);
-                await Permission.guard(parent);
-                await parent.removeEntry(name);
-                await FSA.mutateAndRebuild();
-                UI.showToast('File deleted');
-            } catch (e) { UI.showToast('Delete failed'); }
-            UI.closeContextMenu();
-        },
-        async deleteFolder() {
-            const target = contextMenuTarget;
-            if (!target || target.kind !== 'directory') return;
-            const isNonEmpty = target.children && target.children.length;
-            if (isNonEmpty) {
-                const answer = await UI.showDialog({promptTitle: `Type "remove" to delete non-empty folder "${target.name}" and all its contents:`});
-                if (answer === null || answer.trim().toLowerCase() !== 'remove') { UI.closeContextMenu(); return; }
-            } else {
-                if (!await UI.showDialog({isConfirm: true, confirmMessage: `Delete folder "${target.name}"?`, danger: true})) { UI.closeContextMenu(); return; }
-            }
-            try {
-                const { parent, name } = await PathUtils.resolve(State.currentDirHandle, target.path);
-                await Permission.guard(parent);
-                await parent.removeEntry(name, { recursive: true });
-                State.expandedFolders.delete(target.path);
-                this.saveExpandedState();
-                await FSA.mutateAndRebuild();
-                UI.showToast('Folder deleted');
-            } catch (e) { UI.showToast('Delete failed'); }
-            UI.closeContextMenu();
-        },
-        async renameItem() {
-            const target = contextMenuTarget;
-            if (!target) return;
-            const oldName = target.name;
-            const isFolder = target.kind === 'directory';
-            const newName = await UI.showDialog({promptTitle: `Rename ${isFolder ? 'folder' : 'file'}:`, defaultValue: oldName});
-            if (!newName || !newName.trim() || newName === oldName) {
-                UI.closeContextMenu(); return;
-            }
-            const trimmed = newName.trim();
-            if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) {
-                UI.showToast('Invalid name'); UI.closeContextMenu(); return;
-            }
-            try {
-                const oldPath = target.path;
-                const { parent } = await PathUtils.resolve(State.currentDirHandle, oldPath);
-                await Permission.guard(parent);
-                const oldHandle = target.handle;
-                let updatedHandle = oldHandle;
-
-                if (isFolder) {
-                    if (oldHandle.move) {
-                        await oldHandle.move(parent, trimmed);
-                    } else {
-                        UI.showToast('Folder rename needs latest Chrome/Edge'); UI.closeContextMenu(); return;
-                    }
-                } else {
-                    const file = await oldHandle.getFile();
-                    const content = await file.text();
-                    updatedHandle = await parent.getFileHandle(trimmed, { create: true });
-                    await this.writeFile(updatedHandle, content);
-                    await parent.removeEntry(oldName);
-                }
-
-                const newPath = oldPath.substring(0, oldPath.lastIndexOf('/') + 1) + trimmed || trimmed;
-                PathUtils.updateTabPaths(oldPath, newPath, updatedHandle, trimmed);
-                await FSA.mutateAndRebuild();
-                UI.showToast(`Renamed to ${trimmed}`);
-            } catch (e) {
-                console.error(e);
-                UI.showToast('Rename failed');
-            }
-            UI.closeContextMenu();
-        },
-      
-        async moveEntry(srcPath, destFolderPath) {
-            const srcNode = TreeManager.getNode(srcPath);
-            if (!srcNode) return;
-            if (srcNode.kind === 'directory' && destFolderPath.startsWith(srcPath + '/')) return UI.showToast('Cannot move folder into itself');
-            const { parent: srcParent } = await PathUtils.resolve(State.currentDirHandle, srcPath);
-            const destNode = TreeManager.getNode(destFolderPath || '/');
-            if (!destNode) return UI.showToast('Destination folder not found');
-            const destHandle = destNode.handle;
-            if (await this.isSameEntry(srcParent, destHandle)) return;
-            try {
-                await Permission.guard(srcParent);
-                await Permission.guard(destHandle);
-                if (srcNode.kind === 'directory') await Permission.guard(srcNode.handle);
-                let nameExists = false;
-                try { await destHandle.getFileHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; }
-                if (!nameExists) { try { await destHandle.getDirectoryHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; } }
-                if (nameExists) { UI.showToast(`"${srcNode.name}" already exists in destination`); return; }
-
-                let updatedHandle = srcNode.handle;
-                if (srcNode.handle.move && srcNode.kind === 'file') {
-                    await srcNode.handle.move(destHandle, srcNode.name);
-                } else if (srcNode.kind === 'file') {
-                    const file = await srcNode.handle.getFile();
-                    const newHandle = await destHandle.getFileHandle(srcNode.name, { create: true });
-                    const writable = await newHandle.createWritable();
-                    await writable.write(file);
-                    await writable.close();
-                    await srcParent.removeEntry(srcNode.name);
-                    updatedHandle = newHandle;
-                } else {
-                    // For directories, prefer handle.move if available, but fall back to
-                    // copy-then-delete if it throws (e.g. cross-device or unsupported).
-                    let atomicMoved = false;
-                    if (srcNode.handle.move) {
-                        try {
-                            await srcNode.handle.move(destHandle, srcNode.name);
-                            atomicMoved = true;
-                        } catch (moveErr) {
-                            console.warn('handle.move failed, falling back to copy+delete:', moveErr);
-                        }
-                    }
-                    if (!atomicMoved) {
-                        await this._copyDirectory(srcNode.handle, destHandle, srcNode.name);
-                        await srcParent.removeEntry(srcNode.name, { recursive: true });
-                    }
-                    updatedHandle = await destHandle.getDirectoryHandle(srcNode.name);
-                }
-
-                const newPath = destFolderPath ? `${destFolderPath}/${srcNode.name}` : srcNode.name;
-                PathUtils.updateTabPaths(srcPath, newPath, updatedHandle);
-                if (destFolderPath) { State.expandedFolders.add(destFolderPath); this.saveExpandedState(); }
-                await FSA.mutateAndRebuild();
-                UI.showToast(`Moved "${srcNode.name}"`);
-            } catch (e) {
-                console.error('Move failed:', e);
-                const msg = e.name === 'NotAllowedError' ? 'Move failed: permission denied – re-open the folder'
-                    : e.name === 'QuotaExceededError' ? 'Move failed: not enough disk space'
-                    : e.name === 'NotFoundError' ? `Move failed: file not found (${e.message})`
-                    : `Move failed: ${e.message || e}`;
-                UI.showToast(msg, 4000);
-            }
-            UI.closeContextMenu();
-        },
-        async _copyDirectory(srcDirHandle, destParentHandle, name) {
-            const newDirHandle = await destParentHandle.getDirectoryHandle(name, { create: true });
-            try {
-                for await (const [entryName, entryHandle] of srcDirHandle) {
-                    if (entryHandle.kind === 'file') {
-                        const file = await entryHandle.getFile();
-                        const newHandle = await newDirHandle.getFileHandle(entryName, { create: true });
-                        const writable = await newHandle.createWritable();
-                        try {
-                            await writable.write(file);
-                            await writable.close();
-                        } catch (writeErr) {
-                            try { await writable.abort(); } catch (_) {}
-                            throw new Error(`Failed to copy "${entryName}": ${writeErr.message}`);
-                        }
-                    } else {
-                        await this._copyDirectory(entryHandle, newDirHandle, entryName);
-                    }
-                }
-            } catch (e) {
-                try { await destParentHandle.removeEntry(name, { recursive: true }); } catch (_) {}
-                throw e;
-            }
-        },
-        async copyEntry(srcNode, destFolderPath) {
-            const destNode = TreeManager.getNode(destFolderPath || '/');
-            if (!destNode) return UI.showToast('Destination folder not found');
-            const destHandle = destNode.handle;
-            try {
-                await Permission.guard(destHandle);
-                let nameExists = false;
-                try { await destHandle.getFileHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; }
-                if (!nameExists) { try { await destHandle.getDirectoryHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; } }
-                if (nameExists) { UI.showToast(`"${srcNode.name}" already exists in destination`); return; }
-                if (srcNode.kind === 'file') {
-                    const file = await srcNode.handle.getFile();
-                    const newHandle = await destHandle.getFileHandle(srcNode.name, { create: true });
-                    const writable = await newHandle.createWritable();
-                    await writable.write(file);
-                    await writable.close();
-                } else {
-                    await this._copyDirectory(srcNode.handle, destHandle, srcNode.name);
-                }
-                if (destFolderPath) { State.expandedFolders.add(destFolderPath); this.saveExpandedState(); }
-                await FSA.mutateAndRebuild();
-                UI.showToast(`Copied "${srcNode.name}"`);
-            } catch (e) {
-                console.error('Copy failed:', e);
-                const msg = e.name === 'NotAllowedError' ? 'Copy failed: permission denied – re-open the folder'
-                    : e.name === 'QuotaExceededError' ? 'Copy failed: not enough disk space'
-                    : e.name === 'NotFoundError' ? `Copy failed: file not found (${e.message})`
-                    : `Copy failed: ${e.message || e}`;
-                UI.showToast(msg, 4000);
-            }
-            UI.closeContextMenu();
-        },
-    };
-    // ──────────────────────────────────────────────
-    // TREE MANAGER – owns data + DOM + updates
-    // ──────────────────────────────────────────────
-    const TreeManager = (() => {
-        let fileTree = null;
-        const nodeByPath = new Map();
-
-        const _renderTreeItem = (node, parentEl, level = 0) => {
-            if (node.kind === 'directory') {
-                const folderDiv = document.createElement('div');
-                const header = document.createElement('div');
-                header.className = 'folder-header' + (level === 0 ? ' top-level' : '');
-                header.dataset.path = node.path;
-                header.style.paddingLeft = (level * 14) + 'px';
-                header.tabIndex = 0;
-                const toggle = document.createElement('span');
-                toggle.className = 'toggle';
-                toggle.textContent = State.expandedFolders.has(node.path) ? '▼' : '▶';
-                header.append(toggle, document.createTextNode(' ' + node.name + '/'));
-                const childrenDiv = document.createElement('div');
-                childrenDiv.className = 'tree-children';
-                childrenDiv.style.display = State.expandedFolders.has(node.path) ? 'block' : 'none';
-                folderDiv.append(header, childrenDiv);
-                parentEl.appendChild(folderDiv);
-
-                header.onclick = async (e) => {
-                    if (longPressTriggered) return;
-                    const isExpanded = State.expandedFolders.has(node.path);
-                    if (!isExpanded) {
-                        await FSA.loadChildren(node);
-                        childrenDiv.replaceChildren();
-                        node.children.forEach(c => _renderTreeItem(c, childrenDiv, level + 1));
-                    }
-                    if (isExpanded) {
-                        State.expandedFolders.delete(node.path);
-                        childrenDiv.style.display = 'none';
-                        toggle.textContent = '▶';
-                    } else {
-                        State.expandedFolders.add(node.path);
-                        childrenDiv.style.display = 'block';
-                        toggle.textContent = '▼';
-                    }
-                    FSA.saveExpandedState();
-                    State.activeDirectoryPath = node.path;
-                    TreeManager.updateHeader();
-                };
-                header.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); header.click(); } };
-
-                header.draggable = true;
-                header.addEventListener('dragstart', e => {
-                    e.dataTransfer.setData('application/x-tree-path', node.path);
-                    e.dataTransfer.effectAllowed = 'move';
-                    header.classList.add('dragging');
-                });
-                header.addEventListener('dragend', () => header.classList.remove('dragging'));
-                header.addEventListener('dragover', e => {
-                    if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                    header.classList.add('drop-target');
-                });
-                header.addEventListener('dragleave', () => header.classList.remove('drop-target'));
-                header.addEventListener('drop', e => {
-                    e.preventDefault();
-                    header.classList.remove('drop-target');
-                    const srcPath = e.dataTransfer.getData('application/x-tree-path');
-                    if (srcPath && srcPath !== node.path && !node.path.startsWith(srcPath + '/')) {
-                        FSA.moveEntry(srcPath, node.path);
-                    }
-                });
-
-                if (State.expandedFolders.has(node.path) && node.children.length) {
-                    node.children.forEach(c => _renderTreeItem(c, childrenDiv, level + 1));
-                }
-            } else {
-                const fileDiv = document.createElement('div');
-                fileDiv.className = 'file-item';
-                fileDiv.dataset.path = node.path;
-                fileDiv.style.paddingLeft = (level * 14 + 26) + 'px';
-                fileDiv.textContent = node.name;
-                fileDiv.tabIndex = 0;
-                fileDiv.onclick = () => { if (!longPressTriggered) FSA.openFileFromNode(node); };
-                fileDiv.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); fileDiv.click(); } };
-
-                fileDiv.draggable = true;
-                fileDiv.addEventListener('dragstart', e => {
-                    e.dataTransfer.setData('application/x-tree-path', node.path);
-                    e.dataTransfer.effectAllowed = 'move';
-                    fileDiv.classList.add('dragging');
-                });
-                fileDiv.addEventListener('dragend', () => fileDiv.classList.remove('dragging'));
-
-                parentEl.appendChild(fileDiv);
-            }
+    async build(rootHandle) {
+        this.tree.clear();
+        const rootNode = {
+            name: rootHandle.name,
+            kind: 'directory',
+            handle: rootHandle,
+            path: '/',
+            children: [],
+            childrenLoaded: false
         };
+        this.tree.registerNode('/', rootNode);
+        this.tree.fileTree = rootNode;
+        await this.loadChildren(rootNode);
+        return rootNode;
+    }
 
-        return {
-            get fileTree() { return fileTree; },
-            set fileTree(v) { fileTree = v; },
-            getNode(path) { return nodeByPath.get(path); },
-            registerNode(path, node) { nodeByPath.set(path, node); },
-            render() {
-                treeContainer.replaceChildren();
-                if (!fileTree) {
-                    const msg = document.createElement('div');
-                    msg.style.cssText = 'padding:20px;color:#52525b;text-align:center;font-size:12px';
-                    msg.textContent = 'No folder open';
-                    treeContainer.appendChild(msg);
-                    return;
-                }
-                fileTree.children.forEach(child => _renderTreeItem(child, treeContainer, 0));
-                this.highlightActive();
-            },
-            updateHeader() {
-                if (!fileTree || !State.currentDirHandle) {
-                    activeDirNameEl.textContent = '/';
-                    rootDirNameEl.textContent = 'Click to open folder';
-                    sidebarHeaderActionsEl.replaceChildren();
-                    return;
-                }
-                const safeName = State.currentDirHandle.name;
-                rootDirNameEl.textContent = safeName;
-                activeDirNameEl.textContent = State.activeDirectoryPath ? safeName + '/' + State.activeDirectoryPath : safeName;
-                const refreshSpan = document.createElement('span');
-                refreshSpan.className = 'directory-clear';
-                refreshSpan.id = 'refresh-folder';
-                refreshSpan.title = 'Refresh tree';
-                refreshSpan.textContent = '\u27F3';
-                const clearSpan = document.createElement('span');
-                clearSpan.className = 'directory-clear';
-                clearSpan.id = 'clear-folder';
-                clearSpan.textContent = '\u232B';
-                sidebarHeaderActionsEl.replaceChildren(refreshSpan, clearSpan);
-            },
-            highlightActive() {
-                treeContainer.querySelectorAll('.file-item.active,.folder-header.active,.folder-header.active-dir,.folder-header.active-ancestor').forEach(el => el.classList.remove('active','active-dir','active-ancestor'));
-                if (State.activeFilePath) {
-                    const el = treeContainer.querySelector(`.file-item[data-path="${State.activeFilePath.replace(/"/g, '\\"')}"]`);
-                    if (el) el.classList.add('active');
-                    const parts = State.activeFilePath.split('/');
-                    for (let i = 1; i < parts.length; i++) {
-                        const p = parts.slice(0, i).join('/');
-                        const folderEl = treeContainer.querySelector(`.folder-header[data-path="${p.replace(/"/g, '\\"')}"]`);
-                        if (folderEl) folderEl.classList.add('active');
-                    }
-                }
-                if (State.activeDirectoryPath) {
-                    const dirEl = treeContainer.querySelector(`.folder-header[data-path="${State.activeDirectoryPath.replace(/"/g, '\\"')}"]`);
-                    if (dirEl) dirEl.classList.add('active-dir');
-                    const parts = State.activeDirectoryPath.split('/');
-                    for (let i = 1; i < parts.length; i++) {
-                        const p = parts.slice(0, i).join('/');
-                        const folderEl = treeContainer.querySelector(`.folder-header[data-path="${p.replace(/"/g, '\\"')}"]`);
-                        if (folderEl) folderEl.classList.add('active-ancestor');
-                    }
-                }
-            },
-            clear() {
-                fileTree = null;
-                nodeByPath.clear();
-                treeContainer.replaceChildren();
-            }
-        };
-    })();
-    State.addEventListener('activeFilePathChanged', () => TreeManager.highlightActive());
-    State.addEventListener('activeDirectoryPathChanged', () => TreeManager.highlightActive());
-    // ──────────────────────────────────────────────
-    // Tab type registry – add entries to extend
-    // ──────────────────────────────────────────────
-    const TAB_TYPES = {
-        welcome:  { canSave: false, canDirty: false },
-        legend:   { canSave: false, canDirty: false },
-        text:     { canSave: true,  canDirty: true  },
-        markdown: { canSave: true,  canDirty: true  },
-        extension:{ canSave: true,  canDirty: true  }
-    };
-    // ──────────────────────────────────────────────
-    // ExtensionManager – discover, install & render
-    // ──────────────────────────────────────────────
-    const ExtensionManager = {
-        extensions: [],
-        async loadAll() {
-            await FSA.initDB();
-            return new Promise(resolve => {
-                const tx = FSA.db.transaction('extensions');
-                const store = tx.objectStore('extensions');
-                const req = store.getAll();
-                const keyReq = store.getAllKeys();
-                tx.oncomplete = async () => {
-                    const handles = req.result;
-                    const keys = keyReq.result;
-                    this.extensions = [];
-                    for (let i = 0; i < handles.length; i++) {
-                        try {
-                            const handle = handles[i];
-                            const perm = await FSA.queryPermission(handle);
-                            if (perm !== 'granted') {
-                                try { await handle.requestPermission({ mode: 'read' }); } catch { continue; }
-                            }
-                            const file = await handle.getFile();
-                            const html = await file.text();
-                            const meta = this._parseMeta(html);
-                            if (meta) {
-                                this.extensions.push({ key: keys[i], name: meta.name, types: meta.types, handle, html });
-                            }
-                        } catch (e) {
-                            console.warn('Failed to load extension:', keys[i], e);
-                        }
-                    }
-                    resolve();
-                };
-                tx.onerror = () => resolve();
-            });
-        },
-        async install() {
-            try {
-                const [fileHandle] = await window.showOpenFilePicker({
-                    types: [{ description: 'Extension HTML', accept: { 'text/html': ['.html'] } }]
-                });
-                const file = await fileHandle.getFile();
-                if (!file.name.endsWith('-extension.html')) {
-                    UI.showToast('Extension files must be named *-extension.html');
-                    return;
-                }
-                const html = await file.text();
-                const meta = this._parseMeta(html);
-                if (!meta) {
-                    UI.showToast('Missing extension-name or extension-types meta tags');
-                    return;
-                }
-                const existing = this.extensions.find(e => e.name === meta.name);
-                if (existing) {
-                    existing.handle = fileHandle;
-                    existing.html = html;
-                    existing.types = meta.types;
-                } else {
-                    this.extensions.push({ key: meta.name, name: meta.name, types: meta.types, handle: fileHandle, html });
-                }
-                await FSA.initDB();
-                const tx = FSA.db.transaction('extensions', 'readwrite');
-                tx.objectStore('extensions').put(fileHandle, meta.name);
-                UI.showToast(`Extension "${meta.name}" installed (${meta.types.join(', ')})`);
-            } catch (e) {
-                if (e.name !== 'AbortError') UI.showToast('Extension install cancelled or failed');
-            }
-        },
-        async uninstall(name) {
-            this.extensions = this.extensions.filter(e => e.name !== name);
-            await FSA.initDB();
-            const tx = FSA.db.transaction('extensions', 'readwrite');
-            tx.objectStore('extensions').delete(name);
-            UI.showToast(`Extension "${name}" removed`);
-        },
-        _parseMeta(html) {
-            const nameMatch = html.match(/<meta\s+name=["']extension-name["']\s+content=["']([^"']+)["']/i);
-            const typesMatch = html.match(/<meta\s+name=["']extension-types["']\s+content=["']([^"']+)["']/i);
-            if (!nameMatch || !typesMatch) return null;
-            return {
-                name: nameMatch[1],
-                types: typesMatch[1].split(',').map(t => t.trim().toLowerCase())
-            };
-        },
-        getForFile(filename) {
-            const lower = filename.toLowerCase();
-            for (const ext of this.extensions) {
-                for (const type of ext.types) {
-                    if (lower.endsWith(type)) return ext;
-                }
-            }
-            return null;
-        },
-        renderTab(tab) {
-            if (!tab.extFrame) {
-                const iframe = document.createElement('iframe');
-                iframe.className = 'ext-frame hidden';
-                iframe.sandbox = 'allow-scripts';
-                document.querySelector('.editor-wrapper').appendChild(iframe);
-                tab.extFrame = iframe;
-            }
-            tab.extFrame.classList.remove('hidden');
-            if (!tab.blobUrl) {
-                const blob = new Blob([tab.extension.html], { type: 'text/html' });
-                tab.blobUrl = URL.createObjectURL(blob);
-            }
-            if (tab.extFrame.src !== tab.blobUrl) {
-                tab.extFrame.src = tab.blobUrl;
-                tab.extFrame.onload = () => {
-                    tab.extFrame.contentWindow.postMessage({
-                        type: 'editor:load',
-                        content: tab.content,
-                        filename: tab.name
-                    }, '*');
-                };
+    async mutateAndRebuild() {
+        if (!this.state.currentDirHandle) return;
+        const previouslyExpanded = new Set(this.state.expandedFolders);
+        await this.build(this.state.currentDirHandle);
+        for (const path of previouslyExpanded) {
+            const node = this.tree.getNode(path);
+            if (node && node.kind === 'directory') {
+                await this.loadChildren(node);
+                this.state.expandedFolders.add(path);
             }
         }
+        this.tree.render();
+        this.tree.updateHeader();
+    }
+
+    loadExpandedState() {
+        try {
+            const saved = localStorage.getItem('expandedFolders');
+            if (saved) this.state.expandedFolders = new Set(JSON.parse(saved));
+        } catch {}
+    }
+
+    saveExpandedState() {
+        try { localStorage.setItem('expandedFolders', JSON.stringify([...this.state.expandedFolders])); } catch {}
+    }
+
+    saveOpenTabs(currentId) {
+        try {
+            const data = this.state.tabs.filter(t => t.path).map(t => ({
+                path: t.path,
+                name: t.name,
+                type: t.type,
+                active: t.id === currentId
+            }));
+            if (data.length === 0 && !this.state.currentDirHandle) return;
+            localStorage.setItem('openTabs', JSON.stringify(data));
+        } catch {}
+    }
+
+    loadOpenTabs() {
+        try {
+            const saved = localStorage.getItem('openTabs');
+            return saved ? JSON.parse(saved) : [];
+        } catch { return []; }
+    }
+
+    async restoreSession() {
+        this.loadExpandedState();
+        const saved = await this.loadSavedFolder();
+        let hadSavedTabs = false;
+
+        if (saved.status === 'granted') {
+            this.state.currentDirHandle = saved.handle;
+            await this.build(this.state.currentDirHandle);
+
+            for (const path of [...this.state.expandedFolders]
+                    .sort((a, b) => a.split('/').length - b.split('/').length)) {
+                const node = this.tree.getNode(path);
+                if (node && node.kind === 'directory') await this.loadChildren(node);
+            }
+            this.tree.render();
+            this.tree.updateHeader();
+
+            const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
+            hadSavedTabs = restored > 0;
+            if (restored > 0) this.ui.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+        } else if (saved.status === 'needs-auth') {
+            const pendingTabs = this.loadOpenTabs();
+            this.ui.showActionToast(
+                'Tap to restore folder access',
+                async () => {
+                    try {
+                        const state = await saved.handle.requestPermission({ mode: 'readwrite' });
+                        if (state !== 'granted') {
+                            this.ui.showToast('Access was not granted');
+                            return;
+                        }
+
+                        this.state.currentDirHandle = saved.handle;
+                        await this.build(this.state.currentDirHandle);
+
+                        this.loadExpandedState();
+                        for (const path of [...this.state.expandedFolders]
+                                .sort((a, b) => a.split('/').length - b.split('/').length)) {
+                            const node = this.tree.getNode(path);
+                            if (node && node.kind === 'directory') await this.loadChildren(node);
+                        }
+                        this.tree.render();
+                        this.tree.updateHeader();
+
+                        // Remove welcome tab before restoring saved state.tabs
+                        const welcomeIdx = this.state.tabs.findIndex(t => t.type === 'welcome');
+                        if (welcomeIdx !== -1) {
+                            this.state.tabs[welcomeIdx].element.remove();
+                            this.state.tabs.splice(welcomeIdx, 1);
+                        }
+
+                        const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle, pendingTabs);
+                        if (restored > 0) this.ui.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+                        else if (this.state.tabs.length === 0) {
+                            await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
+                        }
+
+                        this.ui.showToast('Folder access restored ✓', 1800);
+                    } catch (err) {
+                        console.warn('Re-grant failed:', err);
+                        this.ui.showToast('Failed to restore access');
+                    }
+                },
+                15000
+            );
+        }
+
+        if (!hadSavedTabs && this.state.tabs.length === 0) {
+            await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
+        }
+    }
+
+    async openFolder() {
+        try {
+            this.state.currentDirHandle = await window.showDirectoryPicker();
+            await this.saveFolderHandle(this.state.currentDirHandle);
+            this.state.expandedFolders.clear();
+            this.state.activeDirectoryPath = null;
+            await this.build(this.state.currentDirHandle);
+            this.tree.render();
+            this.tree.updateHeader();
+            this.ui.showToast('Folder opened successfully');
+        } catch (e) { if (e.name !== 'AbortError') this.ui.showToast('Open folder cancelled or failed'); }
+    }
+
+    async openFile() {
+        try {
+            const [fileHandle] = await window.showOpenFilePicker();
+            const file = await fileHandle.getFile();
+            if (!file.type.startsWith('text/') && !this.#TEXT_FILE_EXTENSIONS.test(file.name)) {
+                if (!await this.ui.showDialog({isConfirm: true, confirmMessage: 'Binary file detected. Open anyway?'})) return;
+            }
+            const content = await file.text();
+            await this.tabs.createNewTab(fileHandle, file.name, content);
+        } catch (e) { if (e.name !== 'AbortError') this.ui.showToast('Open file cancelled or failed'); }
+    }
+
+    async openFileFromNode(node) {
+        try {
+            const file = await node.handle.getFile();
+            if (!file.type.startsWith('text/') && !this.#TEXT_FILE_EXTENSIONS.test(file.name)) {
+                if (!await this.ui.showDialog({isConfirm: true, confirmMessage: 'Binary file detected. Open anyway?'})) return;
+            }
+            const content = await file.text();
+            await this.tabs.createNewTab(node.handle, node.name, content, node.path);
+            if (this.ui.isMobile) {
+                this.ui.sidebarEl.classList.add('hidden');
+                document.getElementById('sidebar-toggle').textContent = '›';
+            }
+        } catch (e) {
+            this.ui.showToast(e.message.includes('permission') ? 'Re-open folder to grant write access' : 'Failed to open file');
+        }
+    }
+
+    async getTargetDir() {
+        const targetPath = this.ui.contextMenuTarget?.kind === 'directory' ? this.ui.contextMenuTarget.path : (this.state.activeDirectoryPath || '');
+        const { parent: dirParent, name: dirName } = await this.pathUtils.resolve(this.state.currentDirHandle, targetPath);
+        const dir = targetPath ? await dirParent.getDirectoryHandle(dirName) : dirParent;
+        await this.#guard(dir);
+        return { dir, targetPath };
+    }
+
+    async newFile() {
+        if (!this.state.currentDirHandle) return this.ui.showToast('Open a folder first');
+        const name = await this.ui.showDialog({promptTitle: 'New file name:'});
+        if (!name?.trim()) return;
+        const trimmed = name.trim();
+        if (this.#INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return this.ui.showToast('Invalid filename');
+        const { dir: parent, targetPath } = await this.getTargetDir();
+        const fileHandle = await parent.getFileHandle(trimmed, { create: true });
+        await this.writeFile(fileHandle, '');
+        if (targetPath) { this.state.expandedFolders.add(targetPath); this.saveExpandedState(); }
+        await this.mutateAndRebuild();
+        await this.tabs.createNewTab(fileHandle, trimmed, '', targetPath ? `${targetPath}/${trimmed}` : trimmed);
+        this.ui.closeContextMenu();
+    }
+
+    async newFolder() {
+        if (!this.state.currentDirHandle) return this.ui.showToast('Open a folder first');
+        const name = await this.ui.showDialog({promptTitle: 'New folder name:'});
+        if (!name?.trim()) return;
+        const trimmed = name.trim();
+        if (this.#INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return this.ui.showToast('Invalid folder name');
+        const { dir: parent, targetPath } = await this.getTargetDir();
+        await parent.getDirectoryHandle(trimmed, { create: true });
+        if (targetPath) { this.state.expandedFolders.add(targetPath); this.saveExpandedState(); }
+        await this.mutateAndRebuild();
+        this.ui.showToast('Folder created');
+        this.ui.closeContextMenu();
+    }
+
+    async saveTab(tab) {
+        if (!tab || !tab.handle || !tab.dirty) return;
+        try {
+            const content = (this.state.currentTabId === tab.id && tab.type !== 'extension') ? this.ui.textarea.value : tab.content;
+            await this.writeFile(tab.handle, content);
+            tab.content = content;
+            tab.dirty = false;
+            if (tab.element) {
+                const ind = tab.element.querySelector('.dirty-indicator');
+                if (ind) ind.style.display = 'none';
+            }
+            this.ui.updateEditorStatus(tab);
+            this.ui.showToast('Saved', 1200);
+        } catch (err) {
+            this.ui.showToast(err.message.includes('permission') ? 'Re-authorize folder' : 'Save failed');
+        }
+    }
+
+    saveCurrentFile() {
+        if (this.state.currentTabId === null) return;
+        const tab = this.state.tabs.find(t => t.id === this.state.currentTabId);
+        if (tab) this.saveTab(tab);
+    }
+
+    async flushSave() {
+        if (this.#saveInProgress) return;
+        this.#saveInProgress = true;
+        try {
+            await Promise.allSettled(this.state.tabs.filter(t => t.dirty).map(t => this.saveTab(t)));
+        } finally { this.#saveInProgress = false; }
+    }
+
+    async deleteFile() {
+        const target = this.ui.contextMenuTarget;
+        if (!target || target.kind !== 'file') return;
+        if (!await this.ui.showDialog({isConfirm: true, confirmMessage: `Delete "${target.name}"?`, danger: true})) { this.ui.closeContextMenu(); return; }
+        try {
+            for (let i = 0; i < this.state.tabs.length; i++) {
+                if (this.state.tabs[i].handle && await this.isSameEntry(this.state.tabs[i].handle, target.handle)) {
+                    await this.tabs.closeTab(this.state.tabs[i].id);
+                    break;
+                }
+            }
+            const { parent, name } = await this.pathUtils.resolve(this.state.currentDirHandle, target.path);
+            await this.#guard(parent);
+            await parent.removeEntry(name);
+            await this.mutateAndRebuild();
+            this.ui.showToast('File deleted');
+        } catch (e) { this.ui.showToast('Delete failed'); }
+        this.ui.closeContextMenu();
+    }
+
+    async deleteFolder() {
+        const target = this.ui.contextMenuTarget;
+        if (!target || target.kind !== 'directory') return;
+        const isNonEmpty = target.children && target.children.length;
+        if (isNonEmpty) {
+            const answer = await this.ui.showDialog({promptTitle: `Type "remove" to delete non-empty folder "${target.name}" and all its contents:`});
+            if (answer === null || answer.trim().toLowerCase() !== 'remove') { this.ui.closeContextMenu(); return; }
+        } else {
+            if (!await this.ui.showDialog({isConfirm: true, confirmMessage: `Delete folder "${target.name}"?`, danger: true})) { this.ui.closeContextMenu(); return; }
+        }
+        try {
+            const { parent, name } = await this.pathUtils.resolve(this.state.currentDirHandle, target.path);
+            await this.#guard(parent);
+            await parent.removeEntry(name, { recursive: true });
+            this.state.expandedFolders.delete(target.path);
+            this.saveExpandedState();
+            await this.mutateAndRebuild();
+            this.ui.showToast('Folder deleted');
+        } catch (e) { this.ui.showToast('Delete failed'); }
+        this.ui.closeContextMenu();
+    }
+
+    async renameItem() {
+        const target = this.ui.contextMenuTarget;
+        if (!target) return;
+        const oldName = target.name;
+        const isFolder = target.kind === 'directory';
+        const newName = await this.ui.showDialog({promptTitle: `Rename ${isFolder ? 'folder' : 'file'}:`, defaultValue: oldName});
+        if (!newName || !newName.trim() || newName === oldName) {
+            this.ui.closeContextMenu(); return;
+        }
+        const trimmed = newName.trim();
+        if (this.#INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) {
+            this.ui.showToast('Invalid name'); this.ui.closeContextMenu(); return;
+        }
+        try {
+            const oldPath = target.path;
+            const { parent } = await this.pathUtils.resolve(this.state.currentDirHandle, oldPath);
+            await this.#guard(parent);
+            const oldHandle = target.handle;
+            let updatedHandle = oldHandle;
+
+            if (isFolder) {
+                if (oldHandle.move) {
+                    await oldHandle.move(parent, trimmed);
+                } else {
+                    this.ui.showToast('Folder rename needs latest Chrome/Edge'); this.ui.closeContextMenu(); return;
+                }
+            } else {
+                const file = await oldHandle.getFile();
+                const content = await file.text();
+                updatedHandle = await parent.getFileHandle(trimmed, { create: true });
+                await this.writeFile(updatedHandle, content);
+                await parent.removeEntry(oldName);
+            }
+
+            const newPath = oldPath.substring(0, oldPath.lastIndexOf('/') + 1) + trimmed || trimmed;
+            this.tabs.updateTabPaths(oldPath, newPath, updatedHandle, trimmed);
+            await this.mutateAndRebuild();
+            this.ui.showToast(`Renamed to ${trimmed}`);
+        } catch (e) {
+            console.error(e);
+            this.ui.showToast('Rename failed');
+        }
+        this.ui.closeContextMenu();
+    }
+  
+    async moveEntry(srcPath, destFolderPath) {
+        const srcNode = this.tree.getNode(srcPath);
+        if (!srcNode) return;
+        if (srcNode.kind === 'directory' && destFolderPath.startsWith(srcPath + '/')) return this.ui.showToast('Cannot move folder into itself');
+        const { parent: srcParent } = await this.pathUtils.resolve(this.state.currentDirHandle, srcPath);
+        const destNode = this.tree.getNode(destFolderPath || '/');
+        if (!destNode) return this.ui.showToast('Destination folder not found');
+        const destHandle = destNode.handle;
+        if (await this.isSameEntry(srcParent, destHandle)) return;
+        try {
+            await this.#guard(srcParent);
+            await this.#guard(destHandle);
+            if (srcNode.kind === 'directory') await this.#guard(srcNode.handle);
+            let nameExists = false;
+            try { await destHandle.getFileHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; }
+            if (!nameExists) { try { await destHandle.getDirectoryHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; } }
+            if (nameExists) { this.ui.showToast(`"${srcNode.name}" already exists in destination`); return; }
+
+            let updatedHandle = srcNode.handle;
+            if (srcNode.handle.move && srcNode.kind === 'file') {
+                await srcNode.handle.move(destHandle, srcNode.name);
+            } else if (srcNode.kind === 'file') {
+                const file = await srcNode.handle.getFile();
+                const newHandle = await destHandle.getFileHandle(srcNode.name, { create: true });
+                const writable = await newHandle.createWritable();
+                await writable.write(file);
+                await writable.close();
+                await srcParent.removeEntry(srcNode.name);
+                updatedHandle = newHandle;
+            } else {
+                // For directories, prefer handle.move if available, but fall back to
+                // copy-then-delete if it throws (e.g. cross-device or unsupported).
+                let atomicMoved = false;
+                if (srcNode.handle.move) {
+                    try {
+                        await srcNode.handle.move(destHandle, srcNode.name);
+                        atomicMoved = true;
+                    } catch (moveErr) {
+                        console.warn('handle.move failed, falling back to copy+delete:', moveErr);
+                    }
+                }
+                if (!atomicMoved) {
+                    await this.#copyDirectory(srcNode.handle, destHandle, srcNode.name);
+                    await srcParent.removeEntry(srcNode.name, { recursive: true });
+                }
+                updatedHandle = await destHandle.getDirectoryHandle(srcNode.name);
+            }
+
+            const newPath = destFolderPath ? `${destFolderPath}/${srcNode.name}` : srcNode.name;
+            this.tabs.updateTabPaths(srcPath, newPath, updatedHandle);
+            if (destFolderPath) { this.state.expandedFolders.add(destFolderPath); this.saveExpandedState(); }
+            await this.mutateAndRebuild();
+            this.ui.showToast(`Moved "${srcNode.name}"`);
+        } catch (e) {
+            console.error('Move failed:', e);
+            const msg = e.name === 'NotAllowedError' ? 'Move failed: permission denied – re-open the folder'
+                : e.name === 'QuotaExceededError' ? 'Move failed: not enough disk space'
+                : e.name === 'NotFoundError' ? `Move failed: file not found (${e.message})`
+                : `Move failed: ${e.message || e}`;
+            this.ui.showToast(msg, 4000);
+        }
+        this.ui.closeContextMenu();
+    }
+
+    async #copyDirectory(srcDirHandle, destParentHandle, name) {
+        const newDirHandle = await destParentHandle.getDirectoryHandle(name, { create: true });
+        try {
+            for await (const [entryName, entryHandle] of srcDirHandle) {
+                if (entryHandle.kind === 'file') {
+                    const file = await entryHandle.getFile();
+                    const newHandle = await newDirHandle.getFileHandle(entryName, { create: true });
+                    const writable = await newHandle.createWritable();
+                    try {
+                        await writable.write(file);
+                        await writable.close();
+                    } catch (writeErr) {
+                        try { await writable.abort(); } catch (_) {}
+                        throw new Error(`Failed to copy "${entryName}": ${writeErr.message}`);
+                    }
+                } else {
+                    await this.#copyDirectory(entryHandle, newDirHandle, entryName);
+                }
+            }
+        } catch (e) {
+            try { await destParentHandle.removeEntry(name, { recursive: true }); } catch (_) {}
+            throw e;
+        }
+    }
+
+    async copyEntry(srcNode, destFolderPath) {
+        const destNode = this.tree.getNode(destFolderPath || '/');
+        if (!destNode) return this.ui.showToast('Destination folder not found');
+        const destHandle = destNode.handle;
+        try {
+            await this.#guard(destHandle);
+            let nameExists = false;
+            try { await destHandle.getFileHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; }
+            if (!nameExists) { try { await destHandle.getDirectoryHandle(srcNode.name); nameExists = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; } }
+            if (nameExists) { this.ui.showToast(`"${srcNode.name}" already exists in destination`); return; }
+            if (srcNode.kind === 'file') {
+                const file = await srcNode.handle.getFile();
+                const newHandle = await destHandle.getFileHandle(srcNode.name, { create: true });
+                const writable = await newHandle.createWritable();
+                await writable.write(file);
+                await writable.close();
+            } else {
+                await this.#copyDirectory(srcNode.handle, destHandle, srcNode.name);
+            }
+            if (destFolderPath) { this.state.expandedFolders.add(destFolderPath); this.saveExpandedState(); }
+            await this.mutateAndRebuild();
+            this.ui.showToast(`Copied "${srcNode.name}"`);
+        } catch (e) {
+            console.error('Copy failed:', e);
+            const msg = e.name === 'NotAllowedError' ? 'Copy failed: permission denied – re-open the folder'
+                : e.name === 'QuotaExceededError' ? 'Copy failed: not enough disk space'
+                : e.name === 'NotFoundError' ? `Copy failed: file not found (${e.message})`
+                : `Copy failed: ${e.message || e}`;
+            this.ui.showToast(msg, 4000);
+        }
+        this.ui.closeContextMenu();
+    }
+}
+
+// ────────────────────────────────────────────────────────
+// TreeManager – file tree data + DOM rendering
+// ────────────────────────────────────────────────────────
+class TreeManager {
+    #fileTree = null;
+    #nodeByPath = new Map();
+
+    /** @param {ReactiveState} state @param {FileSystemManager} fs */
+    constructor(state, fs) {
+        this.state = state;
+        this.fs = fs;
+        this.longPressTriggered = false;
+        this.treeContainer = null;
+        this.activeDirNameEl = null;
+        this.rootDirNameEl = null;
+        this.sidebarHeaderActionsEl = null;
+        this.state.addEventListener('activeFilePathChanged', () => this.highlightActive());
+        this.state.addEventListener('activeDirectoryPathChanged', () => this.highlightActive());
+    }
+
+    get fileTree() { return this.#fileTree; }
+    set fileTree(v) { this.#fileTree = v; }
+
+    getNode(path) { return this.#nodeByPath.get(path); }
+    registerNode(path, node) { this.#nodeByPath.set(path, node); }
+
+    #renderTreeItem(node, parentEl, level = 0) {
+        if (node.kind === 'directory') {
+            const folderDiv = document.createElement('div');
+            const header = document.createElement('div');
+            header.className = 'folder-header' + (level === 0 ? ' top-level' : '');
+            header.dataset.path = node.path;
+            header.style.paddingLeft = (level * 14) + 'px';
+            header.tabIndex = 0;
+            const toggle = document.createElement('span');
+            toggle.className = 'toggle';
+            toggle.textContent = this.state.expandedFolders.has(node.path) ? '▼' : '▶';
+            header.append(toggle, document.createTextNode(' ' + node.name + '/'));
+            const childrenDiv = document.createElement('div');
+            childrenDiv.className = 'tree-children';
+            childrenDiv.style.display = this.state.expandedFolders.has(node.path) ? 'block' : 'none';
+            folderDiv.append(header, childrenDiv);
+            parentEl.appendChild(folderDiv);
+
+            header.onclick = async (e) => {
+                if (this.longPressTriggered) return;
+                const isExpanded = this.state.expandedFolders.has(node.path);
+                if (!isExpanded) {
+                    await this.fs.loadChildren(node);
+                    childrenDiv.replaceChildren();
+                    node.children.forEach(c => this.#renderTreeItem(c, childrenDiv, level + 1));
+                }
+                if (isExpanded) {
+                    this.state.expandedFolders.delete(node.path);
+                    childrenDiv.style.display = 'none';
+                    toggle.textContent = '▶';
+                } else {
+                    this.state.expandedFolders.add(node.path);
+                    childrenDiv.style.display = 'block';
+                    toggle.textContent = '▼';
+                }
+                this.fs.saveExpandedState();
+                this.state.activeDirectoryPath = node.path;
+                this.updateHeader();
+            };
+            header.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); header.click(); } };
+
+            header.draggable = true;
+            header.addEventListener('dragstart', e => {
+                e.dataTransfer.setData('application/x-tree-path', node.path);
+                e.dataTransfer.effectAllowed = 'move';
+                header.classList.add('dragging');
+            });
+            header.addEventListener('dragend', () => header.classList.remove('dragging'));
+            header.addEventListener('dragover', e => {
+                if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                header.classList.add('drop-target');
+            });
+            header.addEventListener('dragleave', () => header.classList.remove('drop-target'));
+            header.addEventListener('drop', e => {
+                e.preventDefault();
+                header.classList.remove('drop-target');
+                const srcPath = e.dataTransfer.getData('application/x-tree-path');
+                if (srcPath && srcPath !== node.path && !node.path.startsWith(srcPath + '/')) {
+                    this.fs.moveEntry(srcPath, node.path);
+                }
+            });
+
+            if (this.state.expandedFolders.has(node.path) && node.children.length) {
+                node.children.forEach(c => this.#renderTreeItem(c, childrenDiv, level + 1));
+            }
+        } else {
+            const fileDiv = document.createElement('div');
+            fileDiv.className = 'file-item';
+            fileDiv.dataset.path = node.path;
+            fileDiv.style.paddingLeft = (level * 14 + 26) + 'px';
+            fileDiv.textContent = node.name;
+            fileDiv.tabIndex = 0;
+            fileDiv.onclick = () => { if (!this.longPressTriggered) this.fs.openFileFromNode(node); };
+            fileDiv.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); fileDiv.click(); } };
+
+            fileDiv.draggable = true;
+            fileDiv.addEventListener('dragstart', e => {
+                e.dataTransfer.setData('application/x-tree-path', node.path);
+                e.dataTransfer.effectAllowed = 'move';
+                fileDiv.classList.add('dragging');
+            });
+            fileDiv.addEventListener('dragend', () => fileDiv.classList.remove('dragging'));
+
+            parentEl.appendChild(fileDiv);
+        }
+    }
+
+    render() {
+        this.treeContainer.replaceChildren();
+        if (!this.#fileTree) {
+            const msg = document.createElement('div');
+            msg.style.cssText = 'padding:20px;color:#52525b;text-align:center;font-size:12px';
+            msg.textContent = 'No folder open';
+            this.treeContainer.appendChild(msg);
+            return;
+        }
+        this.#fileTree.children.forEach(child => this.#renderTreeItem(child, this.treeContainer, 0));
+        this.highlightActive();
+    }
+
+    updateHeader() {
+        if (!this.#fileTree || !this.state.currentDirHandle) {
+            this.activeDirNameEl.textContent = '/';
+            this.rootDirNameEl.textContent = 'Click to open folder';
+            this.sidebarHeaderActionsEl.replaceChildren();
+            return;
+        }
+        const safeName = this.state.currentDirHandle.name;
+        this.rootDirNameEl.textContent = safeName;
+        this.activeDirNameEl.textContent = this.state.activeDirectoryPath ? safeName + '/' + this.state.activeDirectoryPath : safeName;
+        const refreshSpan = document.createElement('span');
+        refreshSpan.className = 'directory-clear';
+        refreshSpan.id = 'refresh-folder';
+        refreshSpan.title = 'Refresh tree';
+        refreshSpan.textContent = '⟳';
+        const clearSpan = document.createElement('span');
+        clearSpan.className = 'directory-clear';
+        clearSpan.id = 'clear-folder';
+        clearSpan.textContent = '⌫';
+        this.sidebarHeaderActionsEl.replaceChildren(refreshSpan, clearSpan);
+    }
+
+    highlightActive() {
+        this.treeContainer.querySelectorAll('.file-item.active,.folder-header.active,.folder-header.active-dir,.folder-header.active-ancestor').forEach(el => el.classList.remove('active','active-dir','active-ancestor'));
+        if (this.state.activeFilePath) {
+            const el = this.treeContainer.querySelector(`.file-item[data-path="${this.state.activeFilePath.replace(/"/g, '\\"')}"]`);
+            if (el) el.classList.add('active');
+            const parts = this.state.activeFilePath.split('/');
+            for (let i = 1; i < parts.length; i++) {
+                const p = parts.slice(0, i).join('/');
+                const folderEl = this.treeContainer.querySelector(`.folder-header[data-path="${p.replace(/"/g, '\\"')}"]`);
+                if (folderEl) folderEl.classList.add('active');
+            }
+        }
+        if (this.state.activeDirectoryPath) {
+            const dirEl = this.treeContainer.querySelector(`.folder-header[data-path="${this.state.activeDirectoryPath.replace(/"/g, '\\"')}"]`);
+            if (dirEl) dirEl.classList.add('active-dir');
+            const parts = this.state.activeDirectoryPath.split('/');
+            for (let i = 1; i < parts.length; i++) {
+                const p = parts.slice(0, i).join('/');
+                const folderEl = this.treeContainer.querySelector(`.folder-header[data-path="${p.replace(/"/g, '\\"')}"]`);
+                if (folderEl) folderEl.classList.add('active-ancestor');
+            }
+        }
+    }
+
+    clear() {
+        this.#fileTree = null;
+        this.#nodeByPath.clear();
+        this.treeContainer.replaceChildren();
+    }
+}
+
+// ────────────────────────────────────────────────────────
+// ExtensionManager – discover, install & render
+// ────────────────────────────────────────────────────────
+class ExtensionManager {
+    extensions = [];
+
+    /** @param {ReactiveState} state @param {FileSystemManager} fs */
+    constructor(state, fs) {
+        this.state = state;
+        this.fs = fs;
+        /** @type {UIManager} */ this.ui = null;
+    }
+
+    async loadAll() {
+        await this.fs.initDB();
+        return new Promise(resolve => {
+            const tx = this.fs.db.transaction('extensions');
+            const store = tx.objectStore('extensions');
+            const req = store.getAll();
+            const keyReq = store.getAllKeys();
+            tx.oncomplete = async () => {
+                const handles = req.result;
+                const keys = keyReq.result;
+                this.extensions = [];
+                for (let i = 0; i < handles.length; i++) {
+                    try {
+                        const handle = handles[i];
+                        const perm = await this.fs.queryPermission(handle);
+                        if (perm !== 'granted') {
+                            try { await handle.requestPermission({ mode: 'read' }); } catch { continue; }
+                        }
+                        const file = await handle.getFile();
+                        const html = await file.text();
+                        const meta = this.#parseMeta(html);
+                        if (meta) {
+                            this.extensions.push({ key: keys[i], name: meta.name, types: meta.types, handle, html });
+                        }
+                    } catch (e) {
+                        console.warn('Failed to load extension:', keys[i], e);
+                    }
+                }
+                resolve();
+            };
+            tx.onerror = () => resolve();
+        });
+    }
+
+    async install() {
+        try {
+            const [fileHandle] = await window.showOpenFilePicker({
+                types: [{ description: 'Extension HTML', accept: { 'text/html': ['.html'] } }]
+            });
+            const file = await fileHandle.getFile();
+            if (!file.name.endsWith('-extension.html')) {
+                this.ui.showToast('Extension files must be named *-extension.html');
+                return;
+            }
+            const html = await file.text();
+            const meta = this.#parseMeta(html);
+            if (!meta) {
+                this.ui.showToast('Missing extension-name or extension-types meta tags');
+                return;
+            }
+            const existing = this.extensions.find(e => e.name === meta.name);
+            if (existing) {
+                existing.handle = fileHandle;
+                existing.html = html;
+                existing.types = meta.types;
+            } else {
+                this.extensions.push({ key: meta.name, name: meta.name, types: meta.types, handle: fileHandle, html });
+            }
+            await this.fs.initDB();
+            const tx = this.fs.db.transaction('extensions', 'readwrite');
+            tx.objectStore('extensions').put(fileHandle, meta.name);
+            this.ui.showToast(`Extension "${meta.name}" installed (${meta.types.join(', ')})`);
+        } catch (e) {
+            if (e.name !== 'AbortError') this.ui.showToast('Extension install cancelled or failed');
+        }
+    }
+
+    async uninstall(name) {
+        this.extensions = this.extensions.filter(e => e.name !== name);
+        await this.fs.initDB();
+        const tx = this.fs.db.transaction('extensions', 'readwrite');
+        tx.objectStore('extensions').delete(name);
+        this.ui.showToast(`Extension "${name}" removed`);
+    }
+
+    #parseMeta(html) {
+        const nameMatch = html.match(/<meta\s+name=["']extension-name["']\s+content=["']([^"']+)["']/i);
+        const typesMatch = html.match(/<meta\s+name=["']extension-types["']\s+content=["']([^"']+)["']/i);
+        if (!nameMatch || !typesMatch) return null;
+        return {
+            name: nameMatch[1],
+            types: typesMatch[1].split(',').map(t => t.trim().toLowerCase())
+        };
+    }
+
+    getForFile(filename) {
+        const lower = filename.toLowerCase();
+        for (const ext of this.extensions) {
+            for (const type of ext.types) {
+                if (lower.endsWith(type)) return ext;
+            }
+        }
+        return null;
+    }
+
+    renderTab(tab) {
+        if (!tab.extFrame) {
+            const iframe = document.createElement('iframe');
+            iframe.className = 'ext-frame hidden';
+            iframe.sandbox = 'allow-scripts';
+            document.querySelector('.editor-wrapper').appendChild(iframe);
+            tab.extFrame = iframe;
+        }
+        tab.extFrame.classList.remove('hidden');
+        if (!tab.blobUrl) {
+            const blob = new Blob([tab.extension.html], { type: 'text/html' });
+            tab.blobUrl = URL.createObjectURL(blob);
+        }
+        if (tab.extFrame.src !== tab.blobUrl) {
+            tab.extFrame.src = tab.blobUrl;
+            tab.extFrame.onload = () => {
+                tab.extFrame.contentWindow.postMessage({
+                    type: 'editor:load',
+                    content: tab.content,
+                    filename: tab.name
+                }, '*');
+            };
+        }
+    }
+}
+
+// ────────────────────────────────────────────────────────
+// TabManager – tab creation, switching & closing
+// ────────────────────────────────────────────────────────
+class TabManager {
+    static #TAB_TYPES = {
+        welcome:   { canSave: false, canDirty: false },
+        legend:    { canSave: false, canDirty: false },
+        text:      { canSave: true,  canDirty: true  },
+        markdown:  { canSave: true,  canDirty: true  },
+        extension: { canSave: true,  canDirty: true  }
     };
 
-    // ──────────────────────────────────────────────
-    // createTab – tab data-object factory
-    // ──────────────────────────────────────────────
-    const createTab = (handle, name, content = '', path = null, type = 'text') => {
-        const ext = ExtensionManager.getForFile(name);
+    /** Returns true when a tab of the given type can be marked dirty/modified */
+    static canTabBeDirty(type) { return TabManager.#TAB_TYPES[type]?.canDirty ?? false; }
+
+    #nextTabId = 1;
+
+    /** @param {ReactiveState} state @param {FileSystemManager} fs @param {ExtensionManager} extensions @param {MarkdownRenderer} markdown */
+    constructor(state, fs, extensions, markdown) {
+        this.state = state;
+        this.fs = fs;
+        this.extensions = extensions;
+        this.markdown = markdown;
+        /** @type {UIManager} */ this.ui = null;
+        this.textarea = null;
+        this.gutter = null;
+        this.tabsContainer = null;
+        this.mdPreviewTimer = null;
+    }
+
+    static #moveArrayItem(arr, fromIdx, toIdx) {
+        arr.splice(toIdx, 0, arr.splice(fromIdx, 1)[0]);
+    }
+
+    #createTab(handle, name, content = '', path = null, type = 'text') {
+        const ext = this.extensions.getForFile(name);
         if (ext) type = 'extension';
         else if (type === 'text' && /\.(md|markdown)$/i.test(name)) type = 'markdown';
         return {
-            id: nextTabId++,
+            id: this.#nextTabId++,
             name, handle, content, path, type,
             extension: ext || null,
             dirty: false,
@@ -1794,825 +1828,962 @@ const MarkdownMini = (() => {
             blobUrl: null,
             scrollTop: 0,
         };
-    };
-    // ──────────────────────────────────────────────
-    // TabManager – tab creation, switching & closing
-    // ──────────────────────────────────────────────
-    const TabManager = {
-        handleTabDrop(e, targetTabId) {
-            e.preventDefault();
+    }
+
+    #makeExtToggleHandler(tab, extToggle) {
+        return e => {
             e.stopPropagation();
-            const targetEl = e.currentTarget;
-            targetEl.classList.remove('drag-over');
-            const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
-            if (draggedId === targetTabId || isNaN(draggedId)) return;
-            const fromIdx = State.tabs.findIndex(t => t.id === draggedId);
-            const toIdx = State.tabs.findIndex(t => t.id === targetTabId);
-            if (fromIdx === -1 || toIdx === -1) return;
-            const rect = targetEl.getBoundingClientRect();
-            const insertBefore = e.clientX < rect.left + rect.width / 2;
-            const adjustedToIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
-            Utils.moveArrayItem(State.tabs, fromIdx, insertBefore ? adjustedToIdx : adjustedToIdx + 1);
-            State.tabs.forEach(tab => tabsContainer.appendChild(tab.element));
-            FSA.saveOpenTabs(State.currentTabId);
-        },
-
-        _makeExtToggleHandler(tab, extToggle) {
-            return e => {
-                e.stopPropagation();
-                if (tab.type === 'extension') {
-                    tab.type = 'text';
-                    extToggle.className = 'md-toggle inactive';
-                    if (tab.extFrame) tab.extFrame.classList.add('hidden');
-                    // Clear State.currentTabId so switchToTab won't save stale textarea content
-                    State.currentTabId = null;
-                    TabManager.switchToTab(tab.id);
-                } else {
-                    if (State.currentTabId === tab.id) tab.content = textarea.value;
-                    tab.type = 'extension';
-                    extToggle.className = 'md-toggle active';
-                    State.currentTabId = null;
-                    TabManager.switchToTab(tab.id);
-                }
-            };
-        },
-
-        _createExtToggle(tab, ext) {
-            const extToggle = document.createElement('span');
-            if (ext) {
-                extToggle.className = 'md-toggle active';
-                extToggle.title = 'Toggle extension: ' + ext.name;
-                extToggle.textContent = ext.name;
-                extToggle.onclick = this._makeExtToggleHandler(tab, extToggle);
-            } else {
+            if (tab.type === 'extension') {
+                tab.type = 'text';
                 extToggle.className = 'md-toggle inactive';
-                extToggle.title = 'No extension installed – click to install';
-                extToggle.textContent = 'ext';
-                extToggle.onclick = async e => {
-                    e.stopPropagation();
-                    await ExtensionManager.install();
-                    const newExt = ExtensionManager.getForFile(tab.name);
-                    if (newExt) {
-                        tab.extension = newExt;
-                        if (State.currentTabId === tab.id) tab.content = textarea.value;
-                        tab.type = 'extension';
-                        extToggle.textContent = newExt.name;
-                        extToggle.title = 'Toggle extension: ' + newExt.name;
-                        extToggle.className = 'md-toggle active';
-                        extToggle.onclick = TabManager._makeExtToggleHandler(tab, extToggle);
-                        State.currentTabId = null;
-                        TabManager.switchToTab(tab.id);
-                    }
-                };
+                if (tab.extFrame) tab.extFrame.classList.add('hidden');
+                // Clear state.currentTabId so switchToTab won't save stale textarea content
+                this.state.currentTabId = null;
+                this.switchToTab(tab.id);
+            } else {
+                if (this.state.currentTabId === tab.id) tab.content = this.textarea.value;
+                tab.type = 'extension';
+                extToggle.className = 'md-toggle active';
+                this.state.currentTabId = null;
+                this.switchToTab(tab.id);
             }
-            return extToggle;
-        },
-      
-        async createNewTab(handle, name, content = '', path = null, type = 'text') {
-            if (handle) {
-                for (const t of State.tabs) {
-                    if (t.handle && await FSA.isSameEntry(t.handle, handle)) {
-                        this.switchToTab(t.id);
-                        return;
+        };
+    }
+
+    #createExtToggle(tab, ext) {
+        const extToggle = document.createElement('span');
+        if (ext) {
+            extToggle.className = 'md-toggle active';
+            extToggle.title = 'Toggle extension: ' + ext.name;
+            extToggle.textContent = ext.name;
+            extToggle.onclick = this.#makeExtToggleHandler(tab, extToggle);
+        } else {
+            extToggle.className = 'md-toggle inactive';
+            extToggle.title = 'No extension installed – click to install';
+            extToggle.textContent = 'ext';
+            extToggle.onclick = async e => {
+                e.stopPropagation();
+                await this.extensions.install();
+                const newExt = this.extensions.getForFile(tab.name);
+                if (newExt) {
+                    tab.extension = newExt;
+                    if (this.state.currentTabId === tab.id) tab.content = this.textarea.value;
+                    tab.type = 'extension';
+                    extToggle.textContent = newExt.name;
+                    extToggle.title = 'Toggle extension: ' + newExt.name;
+                    extToggle.className = 'md-toggle active';
+                    extToggle.onclick = this.#makeExtToggleHandler(tab, extToggle);
+                    this.state.currentTabId = null;
+                    this.switchToTab(tab.id);
+                }
+            };
+        }
+        return extToggle;
+    }
+
+    /** Updates tab paths after a file/folder rename or move. */
+    updateTabPaths(oldPath, newPath, updatedHandle, newName = null) {
+        for (const tab of this.state.tabs) {
+            if (tab.path === oldPath) {
+                tab.path = newPath;
+                tab.handle = updatedHandle;
+                if (newName != null) {
+                    tab.name = newName;
+                    if (tab.element) tab.element.querySelector('.tab-name').textContent = newName;
+                    if (tab.type === 'text' || tab.type === 'markdown') {
+                        const ext = this.extensions.getForFile(newName);
+                        const newType = ext ? 'extension' : /\.(md|markdown)$/i.test(newName) ? 'markdown' : 'text';
+                        if (newType !== tab.type) {
+                            tab.type = newType;
+                            tab.mdPreview = newType === 'markdown';
+                            tab.extension = ext || null;
+                            if (tab.element) {
+                                const existingToggle = tab.element.querySelector('.md-toggle');
+                                if (existingToggle) existingToggle.remove();
+                                if (newType === 'markdown') {
+                                    const mdToggle = document.createElement('span');
+                                    mdToggle.className = 'md-toggle active';
+                                    mdToggle.title = 'Toggle Markdown preview';
+                                    mdToggle.textContent = 'MD';
+                                    mdToggle.onclick = e => {
+                                        e.stopPropagation();
+                                        tab.mdPreview = !tab.mdPreview;
+                                        mdToggle.className = 'md-toggle' + (tab.mdPreview ? ' active' : ' inactive');
+                                        if (this.state.currentTabId === tab.id) this.ui.updateMdPreview();
+                                    };
+                                    tab.element.insertBefore(mdToggle, tab.element.querySelector('.tab-name'));
+                                } else if (newType === 'extension') {
+                                    const extToggle = this.#createExtToggle(tab, ext);
+                                    tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
+                                } else if (newType === 'text') {
+                                    const extToggle = this.#createExtToggle(tab, null);
+                                    tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
+                                }
+                            }
+                            if (this.state.currentTabId === tab.id) this.ui.updateMdPreview();
+                        }
                     }
                 }
+            } else if (tab.path && tab.path.startsWith(oldPath + '/')) {
+                tab.path = newPath + tab.path.substring(oldPath.length);
             }
-            const tab = createTab(handle, name, content, path, type);
-            State.tabs.push(tab);
-            const tabEl = document.createElement('div');
-            tabEl.className = 'tab';
-            tabEl.dataset.id = tab.id;
-            tabEl.draggable = true;
-            const tabName = document.createElement('span');
-            tabName.className = 'tab-name';
-            tabName.textContent = name;
-            const dirtyInd = document.createElement('span');
-            dirtyInd.className = 'dirty-indicator';
-            dirtyInd.style.display = 'none';
-            dirtyInd.textContent = ' *';
-            const closeBtn = document.createElement('span');
-            closeBtn.className = 'close';
-            closeBtn.textContent = '×';
-            if (tab.type === 'markdown') {
-                const mdToggle = document.createElement('span');
-                mdToggle.className = 'md-toggle active';
-                mdToggle.title = 'Toggle Markdown preview';
-                mdToggle.textContent = 'MD';
-                mdToggle.onclick = e => {
-                    e.stopPropagation();
-                    tab.mdPreview = !tab.mdPreview;
-                    mdToggle.className = 'md-toggle' + (tab.mdPreview ? ' active' : ' inactive');
-                    if (State.currentTabId === tab.id) UI.updateMdPreview();
-                };
-                tabEl.append(mdToggle, tabName, dirtyInd, closeBtn);
-            } else if (tab.type === 'extension') {
-                const extToggle = this._createExtToggle(tab, tab.extension);
-                tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
-            } else if (tab.type === 'text') {
-                const extToggle = this._createExtToggle(tab, null);
-                tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
-            } else {
-                tabEl.append(tabName, dirtyInd, closeBtn);
-            }
-            tabEl.onclick = () => this.switchToTab(tab.id);
-            closeBtn.onclick = e => { e.stopPropagation(); this.closeTab(tab.id); };
-            tabEl.addEventListener('dragstart', e => {
-                e.dataTransfer.setData('text/plain', String(tab.id));
-                e.dataTransfer.effectAllowed = 'move';
-            });
-            tabEl.addEventListener('dragover', e => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-                tabEl.classList.add('drag-over');
-            });
-            tabEl.addEventListener('dragleave', () => tabEl.classList.remove('drag-over'));
-            tabEl.addEventListener('mouseenter', () => {
-                if (!tab.path) {
-                    tabEl.title = tab.name;
+        }
+        if (this.state.activeFilePath === oldPath) this.state.activeFilePath = newPath;
+        else if (this.state.activeFilePath && this.state.activeFilePath.startsWith(oldPath + '/')) {
+            this.state.activeFilePath = newPath + this.state.activeFilePath.substring(oldPath.length);
+        }
+    }
+
+    handleTabDrop(e, targetTabId) {
+        e.preventDefault();
+        e.stopPropagation();
+        const targetEl = e.currentTarget;
+        targetEl.classList.remove('drag-over');
+        const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+        if (draggedId === targetTabId || isNaN(draggedId)) return;
+        const fromIdx = this.state.tabs.findIndex(t => t.id === draggedId);
+        const toIdx = this.state.tabs.findIndex(t => t.id === targetTabId);
+        if (fromIdx === -1 || toIdx === -1) return;
+        const rect = targetEl.getBoundingClientRect();
+        const insertBefore = e.clientX < rect.left + rect.width / 2;
+        const adjustedToIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
+        TabManager.#moveArrayItem(this.state.tabs, fromIdx, insertBefore ? adjustedToIdx : adjustedToIdx + 1);
+        this.state.tabs.forEach(tab => this.tabsContainer.appendChild(tab.element));
+        this.fs.saveOpenTabs(this.state.currentTabId);
+    }
+
+    async createNewTab(handle, name, content = '', path = null, type = 'text') {
+        if (handle) {
+            for (const t of this.state.tabs) {
+                if (t.handle && await this.fs.isSameEntry(t.handle, handle)) {
+                    this.switchToTab(t.id);
                     return;
                 }
-                const prefix = State.activeDirectoryPath ? State.activeDirectoryPath + '/' : null;
-                if (prefix && tab.path.startsWith(prefix)) {
-                    tabEl.title = tab.path.slice(prefix.length);
-                } else {
-                    tabEl.title = tab.path;
-                }
-            });
-            tabEl.addEventListener('drop', e => TabManager.handleTabDrop(e, tab.id));
-            tabsContainer.appendChild(tabEl);
-            tab.element = tabEl;
-            this.switchToTab(tab.id);
-            return tab;
-        },
-        switchToTab(id) {
-            if (mdPreviewTimer) clearTimeout(mdPreviewTimer);
-            if (State.currentTabId !== null) {
-                const cur = State.tabs.find(t => t.id === State.currentTabId);
-                if (cur) {
-                    if (cur.type !== 'extension') {
-                        cur.content = textarea.value;
-                        cur.scrollTop = textarea.scrollTop;
-                    }
-                    if (cur.dirty) FSA.saveTab(cur);
-                }
             }
-            // Hide all per-tab extension iframes
-            State.tabs.forEach(t => { if (t.extFrame) t.extFrame.classList.add('hidden'); });
-            State.currentTabId = id;
-            const tab = State.tabs.find(t => t.id === id);
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            tab.element.classList.add('active');
-            const gutterUserHidden = localStorage.getItem('gutterVisible') === 'false';
-            if (tab.type === 'extension') {
-                textarea.style.display = 'none';
-                if (!gutterUserHidden) gutter.style.display = 'none';
-                ExtensionManager.renderTab(tab);
-            } else {
-                textarea.style.display = '';
-                if (!gutterUserHidden) gutter.style.display = '';
-                textarea.value = tab.content || '';
-                textarea.readOnly = !TAB_TYPES[tab.type]?.canDirty;
-            }
-            lastLineCount = 0;
-            UI.updateLineNumbers();
-            if (tab.scrollTop !== undefined) {
-                textarea.scrollTop = tab.scrollTop;
-                gutter.scrollTop = tab.scrollTop;
-            }
-            UI.updateEditorStatus(tab);
-            UI.updateMdPreview();
-            if (tab.path) {
-                State.activeFilePath = tab.path;
-            }
-            FSA.saveOpenTabs(id);
-        },
-        async closeTab(id) {
-            if (mdPreviewTimer) clearTimeout(mdPreviewTimer);
-            const idx = State.tabs.findIndex(t => t.id === id);
-            if (idx === -1) return;
-            const tab = State.tabs[idx];
-            if (tab.dirty && !await UI.showDialog({isConfirm: true, confirmMessage: `"${tab.name}" has unsaved changes. Close anyway?`})) return;
-            if (tab.extFrame) {
-                if (tab.blobUrl) URL.revokeObjectURL(tab.blobUrl);
-                tab.extFrame.remove();
-            }
-            State.tabs.splice(idx, 1);
-            tab.element.remove();
-            if (State.tabs.length === 0) {
-                State.currentTabId = null;
-                textarea.value = '';
-                gutter.replaceChildren();
-                editorStatusEl.textContent = 'No file open';
-                FSA.saveOpenTabs(null);
-                localStorage.removeItem('openTabs');
-                return;
-            }
-            this.switchToTab(State.tabs[Math.min(idx, State.tabs.length - 1)].id);
-        },
-        async restoreOpenTabs(dirHandle, savedTabs) {
-            if (!savedTabs) savedTabs = FSA.loadOpenTabs();
-            let restored = 0;
-            let activeTabPath = null;
-
-            for (const st of savedTabs) {
-                try {
-                    const parts = st.path.split('/').filter(Boolean);
-                    let handle = dirHandle;
-                    for (let i = 0; i < parts.length - 1; i++) {
-                        handle = await handle.getDirectoryHandle(parts[i]);
-                    }
-                    const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
-                    const file = await fileHandle.getFile();
-                    const content = await file.text();
-
-                    await this.createNewTab(fileHandle, st.name, content, st.path, st.type || 'text');
-                    if (st.active) activeTabPath = st.path;
-                    restored++;
-                } catch (e) {
-                    console.warn('Failed to restore tab', st.path, e);
-                }
-            }
-
-            if (activeTabPath) {
-                const activeTab = State.tabs.find(t => t.path === activeTabPath);
-                if (activeTab) this.switchToTab(activeTab.id);
-            } else if (State.tabs.length > 0) {
-                this.switchToTab(State.tabs[0].id);
-            }
-
-            return restored;
         }
-    };
-    // ──────────────────────────────────────────────
-    // UI
-    // ──────────────────────────────────────────────
-    const UI = {
-        showToast(message, duration = 2800) {
-            const t = document.createElement('div');
-            t.className = 'toast';
-            t.textContent = message;
-            document.body.appendChild(t);
-            setTimeout(() => t.remove(), duration);
-        },
-        showActionToast(message, callback, duration = 8000) {
-            const t = document.createElement('div');
-            t.className = 'toast';
-            t.textContent = message;
-            t.style.cssText += 'cursor:pointer;text-decoration:underline;';
-            const timer = setTimeout(() => t.remove(), duration);
-            t.addEventListener('click', () => { clearTimeout(timer); t.remove(); callback(); });
-            document.body.appendChild(t);
-        },
-        showDialog({promptTitle, defaultValue = '', isConfirm = false, confirmMessage = '', danger = false} = {}) {
-            return new Promise(resolve => {
-                const modal = document.createElement('div');
-                modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10001;';
-                const box = document.createElement('div');
-                box.style.cssText = 'background:#18181b;padding:24px;border-radius:8px;min-width:320px;border:1px solid #27272a;';
-                const titleDiv = document.createElement('div');
-                titleDiv.style.cssText = 'margin-bottom:12px;font-size:14px;';
-                titleDiv.textContent = isConfirm ? confirmMessage : promptTitle;
-                let input;
-                if (!isConfirm) {
-                    input = document.createElement('input');
-                    input.type = 'text';
-                    input.value = defaultValue;
-                    input.style.cssText = 'width:100%;padding:10px;background:#27272a;border:1px solid #3f3f46;color:#e4e4e7;border-radius:4px;font-size:16px;';
-                }
-                const btnRow = document.createElement('div');
-                btnRow.style.cssText = 'display:flex;gap:8px;margin-top:16px;';
-                const okBtn = document.createElement('button');
-                okBtn.style.cssText = `flex:1;min-height:44px;background:${danger ? '#ef4444' : '#a1a1aa'};color:${danger ? '#fff' : '#09090b'};border:none;border-radius:4px;`;
-                okBtn.textContent = isConfirm ? 'Confirm' : 'OK';
-                const cancelBtn = document.createElement('button');
-                cancelBtn.style.cssText = 'flex:1;min-height:44px;background:#27272a;color:#e4e4e7;border:none;border-radius:4px;';
-                cancelBtn.textContent = 'Cancel';
-                btnRow.append(okBtn, cancelBtn);
-                box.append(titleDiv, btnRow);
-                if (!isConfirm) box.insertBefore(input, btnRow);
-                modal.appendChild(box);
-                document.body.appendChild(modal);
-                const confirm = () => { resolve(isConfirm ? true : input.value); modal.remove(); };
-                const cancel = () => { resolve(isConfirm ? false : null); modal.remove(); };
-                if (!isConfirm) {
-                    input.focus();
-                    input.select();
-                    input.onkeydown = e => {
-                        if (e.key === 'Enter') confirm();
-                        if (e.key === 'Escape') cancel();
-                    };
-                } else {
-                    okBtn.focus();
-                }
-                okBtn.onclick = confirm;
-                cancelBtn.onclick = cancel;
-                modal.onclick = e => { if (e.target === modal) cancel(); };
-            });
-        },
-        toggleSidebar() {
-            const isCurrentlyHidden = sidebarEl.classList.contains('hidden');
-            if (isCurrentlyHidden) {
-                const savedWidth = localStorage.getItem('sidebarWidth');
-                if (savedWidth) sidebarEl.style.width = savedWidth;
-                sidebarEl.classList.remove('hidden');
-            } else {
-                sidebarEl.style.width = '';
-                sidebarEl.classList.add('hidden');
-            }
-            const btn = document.getElementById('sidebar-toggle');
-            btn.textContent = sidebarEl.classList.contains('hidden') ? '›' : '‹';
-        },
-        showContextMenu(e, node) {
+        const tab = this.#createTab(handle, name, content, path, type);
+        this.state.tabs.push(tab);
+        const tabEl = document.createElement('div');
+        tabEl.className = 'tab';
+        tabEl.dataset.id = tab.id;
+        tabEl.draggable = true;
+        const tabName = document.createElement('span');
+        tabName.className = 'tab-name';
+        tabName.textContent = name;
+        const dirtyInd = document.createElement('span');
+        dirtyInd.className = 'dirty-indicator';
+        dirtyInd.style.display = 'none';
+        dirtyInd.textContent = ' *';
+        const closeBtn = document.createElement('span');
+        closeBtn.className = 'close';
+        closeBtn.textContent = '×';
+        if (tab.type === 'markdown') {
+            const mdToggle = document.createElement('span');
+            mdToggle.className = 'md-toggle active';
+            mdToggle.title = 'Toggle Markdown preview';
+            mdToggle.textContent = 'MD';
+            mdToggle.onclick = e => {
+                e.stopPropagation();
+                tab.mdPreview = !tab.mdPreview;
+                mdToggle.className = 'md-toggle' + (tab.mdPreview ? ' active' : ' inactive');
+                if (this.state.currentTabId === tab.id) this.ui.updateMdPreview();
+            };
+            tabEl.append(mdToggle, tabName, dirtyInd, closeBtn);
+        } else if (tab.type === 'extension') {
+            const extToggle = this.#createExtToggle(tab, tab.extension);
+            tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
+        } else if (tab.type === 'text') {
+            const extToggle = this.#createExtToggle(tab, null);
+            tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
+        } else {
+            tabEl.append(tabName, dirtyInd, closeBtn);
+        }
+        tabEl.onclick = () => this.switchToTab(tab.id);
+        closeBtn.onclick = e => { e.stopPropagation(); this.closeTab(tab.id); };
+        tabEl.addEventListener('dragstart', e => {
+            e.dataTransfer.setData('text/plain', String(tab.id));
+            e.dataTransfer.effectAllowed = 'move';
+        });
+        tabEl.addEventListener('dragover', e => {
             e.preventDefault();
-            UI.closeContextMenu();
-            contextMenuTarget = node;
-            contextMenu = document.createElement('div');
-            contextMenu.className = 'context-menu';
-            const addItem = (label, handler, cls = '') => {
-                const item = document.createElement('div');
-                item.className = 'context-menu-item' + (cls ? ' ' + cls : '');
-                item.textContent = label;
-                item.addEventListener('click', () => { handler(); UI.closeContextMenu(); });
-                contextMenu.appendChild(item);
-            };
-            const addSeparator = () => {
-                const sep = document.createElement('div');
-                sep.className = 'context-menu-separator';
-                contextMenu.appendChild(sep);
-            };
-            if (!node) {
-                addItem('New File', () => FSA.newFile());
-                addItem('New Folder', () => FSA.newFolder());
-                addSeparator();
-                addItem('Open File', () => FSA.openFile());
-                addItem('Open Folder', () => FSA.openFolder());
-                addSeparator();
-                addItem('Open legend.txt', () => {
-                    const existing = State.tabs.find(t => t.type === 'legend');
-                    if (existing) {
-                        TabManager.switchToTab(existing.id);
-                    } else {
-                        TabManager.createNewTab(null, 'legend.txt', window.LEGEND, null, 'legend');
-                    }
-                });
-                if (State.copiedNode) { addSeparator(); addItem('Paste', () => FSA.copyEntry(State.copiedNode, State.activeDirectoryPath || '')); }
-            } else if (node.kind === 'directory') {
-                addItem('New File', () => FSA.newFile());
-                addItem('New Folder', () => FSA.newFolder());
-                addSeparator();
-                addItem('Rename', () => FSA.renameItem());
-                addItem('Copy', () => { State.copiedNode = node; UI.showToast(`"${node.name}" ready to paste`); });
-                if (State.copiedNode) addItem('Paste', () => FSA.copyEntry(State.copiedNode, node.path));
-                addSeparator();
-                addItem('Delete Folder', () => FSA.deleteFolder(), 'danger');
-            } else {
-                addItem('Open', () => FSA.openFileFromNode(contextMenuTarget));
-                addItem('Rename', () => FSA.renameItem());
-                addItem('Copy', () => { State.copiedNode = contextMenuTarget; UI.showToast(`"${contextMenuTarget.name}" ready to paste`); });
-                addSeparator();
-                addItem('Delete File', () => FSA.deleteFile(), 'danger');
-            }
-            contextMenu.style.left = e.clientX + 'px';
-            contextMenu.style.top = e.clientY + 'px';
-            document.body.appendChild(contextMenu);
-            const rect = contextMenu.getBoundingClientRect();
-            if (rect.right > window.innerWidth) contextMenu.style.left = (window.innerWidth - rect.width - 8) + 'px';
-            if (rect.bottom > window.innerHeight) contextMenu.style.top = (window.innerHeight - rect.height - 8) + 'px';
-        },
-        closeContextMenu() {
-            if (contextMenu) {
-                contextMenu.remove();
-                contextMenu = null;
-                contextMenuTarget = null;
-            }
-        },
-        updateLineNumbers() {
-            const lineCount = (textarea.value.match(/\n/g) || []).length + 1;
-            if (lineCount === lastLineCount) return;
-            lastLineCount = lineCount;
-            gutter.textContent = Array.from({length: lineCount}, (_, i) => i + 1).join('\n');
-        },
-        updateEditorStatus(tab) {
-            const modified = tab.dirty ? ' • Modified' : '';
-            if (tab.type === 'extension') {
-                statusEl.textContent = `${State.tabs.length} tab${State.tabs.length !== 1 ? 's' : ''}`;
-            } else {
-                const pos = textarea.selectionStart || 0;
-                const before = textarea.value.substring(0, pos);
-                const lines = before.split('\n');
-                const line = lines.length;
-                const col = lines[lines.length - 1].length + 1;
-                statusEl.textContent = `Ln ${line}, Col ${col} | ${State.tabs.length} tab${State.tabs.length !== 1 ? 's' : ''}`;
-            }
-            editorStatusEl.textContent = tab.name + modified;
-        },
-        updateMdPreview() {
-            const previewEl = document.getElementById('md-preview');
-            const tab = State.currentTabId !== null ? State.tabs.find(t => t.id === State.currentTabId) : null;
-            if (!tab || tab.type !== 'markdown' || !tab.mdPreview) {
-                previewEl.classList.add('hidden');
-                textarea.classList.remove('md-active');
+            e.dataTransfer.dropEffect = 'move';
+            tabEl.classList.add('drag-over');
+        });
+        tabEl.addEventListener('dragleave', () => tabEl.classList.remove('drag-over'));
+        tabEl.addEventListener('mouseenter', () => {
+            if (!tab.path) {
+                tabEl.title = tab.name;
                 return;
             }
-            previewEl.classList.remove('hidden');
-            previewEl.innerHTML = MarkdownMini.parse(textarea.value);
-            textarea.classList.add('md-active');
-        },
-        bindKeyboard() {
-            document.addEventListener('keydown', e => {
-                if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
-                    e.preventDefault();
-                    if (State.currentTabId) TabManager.closeTab(State.currentTabId);
-                }
-                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                    e.preventDefault();
-                    FSA.saveCurrentFile();
-                }
-                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
-                    e.preventDefault();
-                    FSA.newFile();
-                }
-                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
-                    e.preventDefault();
-                    FSA.openFolder();
-                }
-            });
-        },
-        bindTreeEvents() {
-            document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
-            document.getElementById('sidebar-root-row').addEventListener('click', e => {
-                if (e.target.id === 'refresh-folder' || e.target.id === 'clear-folder') return;
-                FSA.openFolder();
-            });
-            document.getElementById('topbar-active-row').addEventListener('click', () => {
-                State.activeDirectoryPath = null;
-                TreeManager.updateHeader();
-            });
-            // Sidebar resize
-            const sidebarResizeHandle = document.getElementById('sidebar-resize');
-            let sidebarResizing = false, sidebarResizeStartX = 0, sidebarResizeStartW = 0;
-            sidebarResizeHandle.addEventListener('mousedown', e => {
-                sidebarResizing = true;
-                sidebarResizeStartX = e.clientX;
-                sidebarResizeStartW = sidebarEl.offsetWidth;
-                sidebarEl.style.transition = 'none';
-                document.body.style.cursor = 'col-resize';
-                document.body.style.userSelect = 'none';
-                e.preventDefault();
-            });
-            document.addEventListener('mousemove', e => {
-                if (!sidebarResizing) return;
-                const w = Math.max(150, Math.min(600, sidebarResizeStartW + e.clientX - sidebarResizeStartX));
-                sidebarEl.style.width = w + 'px';
-            });
-            document.addEventListener('mouseup', () => {
-                if (!sidebarResizing) return;
-                sidebarResizing = false;
-                sidebarEl.style.transition = '';
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-                localStorage.setItem('sidebarWidth', sidebarEl.offsetWidth + 'px');
-            });
-            treeContainer.addEventListener('dragover', e => {
-                if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
-                if (e.target.closest('.folder-header')) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-                treeContainer.classList.add('drop-target');
-            });
-            treeContainer.addEventListener('dragleave', () => treeContainer.classList.remove('drop-target'));
-            treeContainer.addEventListener('drop', e => {
-                treeContainer.classList.remove('drop-target');
-                if (e.target.closest('.folder-header')) return;
-                e.preventDefault();
-                const srcPath = e.dataTransfer.getData('application/x-tree-path');
-                if (srcPath) FSA.moveEntry(srcPath, '');
-            });
-            document.addEventListener('click', e => {
-                if (e.target.id === 'clear-folder') { e.stopPropagation(); FSA.clearSavedFolder(); return; }
-                if (e.target.id === 'refresh-folder') {
-                    e.stopPropagation();
-                    if (State.currentDirHandle) FSA.mutateAndRebuild();
-                    return;
-                }
-                if (!e.target.closest('.context-menu')) UI.closeContextMenu();
-            });
-            treeContainer.addEventListener('contextmenu', e => {
-                const folder = e.target.closest('.folder-header');
-                const file = e.target.closest('.file-item');
-                if (folder) {
-                    const node = TreeManager.getNode(folder.dataset.path);
-                    if (node) UI.showContextMenu(e, node);
-                } else if (file) {
-                    const node = TreeManager.getNode(file.dataset.path);
-                    if (node) UI.showContextMenu(e, node);
-                } else {
-                    UI.showContextMenu(e, null);
-                }
-            });
-            let longPressTimer = null;
-            let touchMoved = false;
-            treeContainer.addEventListener('touchstart', e => {
-                longPressTriggered = false;
-                touchMoved = false;
-                const touch = e.touches[0];
-                const target = e.target;
-                longPressTimer = setTimeout(() => {
-                    longPressTriggered = true;
-                    const folder = target.closest('.folder-header');
-                    const file = target.closest('.file-item');
-                    const fakeEvent = { preventDefault() {}, clientX: touch.clientX, clientY: touch.clientY };
-                    if (folder) {
-                        const node = TreeManager.getNode(folder.dataset.path);
-                        if (node) UI.showContextMenu(fakeEvent, node);
-                    } else if (file) {
-                        const node = TreeManager.getNode(file.dataset.path);
-                        if (node) UI.showContextMenu(fakeEvent, node);
-                    } else {
-                        UI.showContextMenu(fakeEvent, null);
-                    }
-                }, 600);
-            }, { passive: true });
-            treeContainer.addEventListener('touchend', e => {
-                clearTimeout(longPressTimer);
-                if (longPressTriggered) {
-                    e.preventDefault();
-                    return;
-                }
-                if (!touchMoved) {
-                    const target = e.target;
-                    const el = target.closest('.folder-header') || target.closest('.file-item');
-                    if (el) {
-                        e.preventDefault();
-                        el.click();
-                    }
-                }
-            });
-            treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); touchMoved = true; }, { passive: true });
-        },
-        bindTabEvents() {
-            // Allow dropping a tab past the last tab (append to end)
-            tabsContainer.addEventListener('dragover', e => {
-                if (!e.dataTransfer.types.includes('text/plain')) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-            });
-            tabsContainer.addEventListener('drop', e => {
-                e.preventDefault();
-                const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
-                if (isNaN(draggedId)) return;
-                const fromIdx = State.tabs.findIndex(t => t.id === draggedId);
-                if (fromIdx === -1) return;
-                const movedTab = State.tabs[fromIdx];
-                State.tabs.splice(fromIdx, 1);
-                State.tabs.push(movedTab);
-                tabsContainer.appendChild(movedTab.element);
-                FSA.saveOpenTabs(State.currentTabId);
-            });
-            const MD_PREVIEW_DEBOUNCE_DELAY = 3000; // ms of inactivity before showing Markdown preview
-            textarea.addEventListener('mousedown', () => {
-                if (State.currentTabId) {
-                    const tab = State.tabs.find(t => t.id === State.currentTabId);
-                    if (tab) {
-                        tabsContainer.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                        tab.element.classList.add('active');
-                        if (tab.type === 'markdown' && tab.mdPreview) {
-                            clearTimeout(mdPreviewTimer);
-                            document.getElementById('md-preview').classList.add('hidden');
-                            textarea.classList.remove('md-active');
-                        }
-                    }
-                }
-            });
-            textarea.addEventListener('input', () => {
-                this.updateLineNumbers();
-                if (State.currentTabId) {
-                    const tab = State.tabs.find(t => t.id === State.currentTabId);
-                    if (tab) {
-                        if (TAB_TYPES[tab.type]?.canDirty) {
-                            tab.dirty = true;
-                            if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
-                            FSA.scheduleSave();
-                        }
-                        this.updateEditorStatus(tab);
-                        if (tab.type === 'markdown' && tab.mdPreview) {
-                            clearTimeout(mdPreviewTimer);
-                            document.getElementById('md-preview').classList.add('hidden');
-                            textarea.classList.remove('md-active');
-                            mdPreviewTimer = setTimeout(() => this.updateMdPreview(), MD_PREVIEW_DEBOUNCE_DELAY);
-                        } else {
-                            this.updateMdPreview();
-                        }
-                    }
-                }
-            });
-            textarea.addEventListener('scroll', () => gutter.scrollTop = textarea.scrollTop);
-            textarea.addEventListener('selectionchange', () => {
-                if (State.currentTabId) {
-                    const tab = State.tabs.find(t => t.id === State.currentTabId);
-                    if (tab) this.updateEditorStatus(tab);
-                }
-            });
-            textarea.addEventListener('keydown', e => {
-                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-                    const tab = State.currentTabId !== null ? State.tabs.find(t => t.id === State.currentTabId) : null;
-                    if (tab && tab.type === 'markdown' && tab.mdPreview) {
-                        clearTimeout(mdPreviewTimer);
-                        document.getElementById('md-preview').classList.add('hidden');
-                        textarea.classList.remove('md-active');
-                        mdPreviewTimer = setTimeout(() => UI.updateMdPreview(), MD_PREVIEW_DEBOUNCE_DELAY);
-                    }
-                }
-                if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const start = textarea.selectionStart;
-                    const end = textarea.selectionEnd;
-                    textarea.value = textarea.value.substring(0, start) + '\t' + textarea.value.substring(end);
-                    textarea.selectionStart = textarea.selectionEnd = start + 1;
-                    textarea.dispatchEvent(new Event('input'));
-                }
-            });
-            const slider = document.getElementById('width-slider');
-            const valueEl = document.getElementById('width-value');
-            const MAX_CHARS = 200;
-            slider.addEventListener('input', e => {
-                const v = +e.target.value;
-                const previewEl = document.getElementById('md-preview');
-                valueEl.textContent = (v === MAX_CHARS) ? '∞' : `${v} char/line`;
-                if (v === MAX_CHARS) {
-                    textarea.style.maxWidth = 'none';
-                    textarea.style.whiteSpace = 'pre';
-                    textarea.style.wordWrap = 'normal';
-                    previewEl.style.maxWidth = 'none';
-                } else {
-                    textarea.style.maxWidth = v + 'ch';
-                    textarea.style.whiteSpace = 'pre-wrap';
-                    textarea.style.wordWrap = 'break-word';
-                    previewEl.style.maxWidth = v + 'ch';
-                }
-            });
-            slider.dispatchEvent(new Event('input'));
-        },
-        bindSettings() {
-            // Settings toggle
-            document.getElementById('settings-toggle').addEventListener('click', () => {
-                const panel = document.getElementById('settings-panel');
-                const btn = document.getElementById('settings-toggle');
-                const isNowHidden = panel.classList.toggle('hidden');
-                btn.textContent = isNowHidden ? 'EDITOR ›' : 'EDITOR ‹';
-            });
-            // Toggle width slider
-            document.getElementById('settings-toggle-slider').addEventListener('click', function() {
-                const sliderEl = document.getElementById('line-width-slider');
-                const nowHidden = sliderEl.classList.toggle('hidden');
-                this.classList.toggle('active', !nowHidden);
-                localStorage.setItem('sliderVisible', !nowHidden);
-            });
-            // Toggle gutter
-            document.getElementById('settings-toggle-gutter').addEventListener('click', function() {
-                const nowHidden = gutter.classList.toggle('hidden');
-                this.classList.toggle('active', !nowHidden);
-                const previewEl = document.getElementById('md-preview');
-                previewEl.style.left = nowHidden ? '0' : '60px';
-                localStorage.setItem('gutterVisible', !nowHidden);
-            });
-            // Font size
-            const MIN_FONT = 10, MAX_FONT = 24, DEFAULT_FONT_SIZE = 14;
-            const applyFontSize = sz => {
-                textarea.style.fontSize = sz + 'px';
-                gutter.style.fontSize = sz + 'px';
-                document.getElementById('md-preview').style.fontSize = sz + 'px';
-            };
-            document.getElementById('settings-font-decrease').addEventListener('click', () => {
-                const cur = parseInt(textarea.style.fontSize) || DEFAULT_FONT_SIZE;
-                if (cur > MIN_FONT) {
-                    const next = cur - 1;
-                    applyFontSize(next);
-                    localStorage.setItem('editorFontSize', next);
-                }
-            });
-            document.getElementById('settings-font-increase').addEventListener('click', () => {
-                const cur = parseInt(textarea.style.fontSize) || DEFAULT_FONT_SIZE;
-                if (cur < MAX_FONT) {
-                    const next = cur + 1;
-                    applyFontSize(next);
-                    localStorage.setItem('editorFontSize', next);
-                }
-            });
-            document.getElementById('settings-font-reset').addEventListener('click', () => {
-                applyFontSize(DEFAULT_FONT_SIZE);
-                localStorage.setItem('editorFontSize', DEFAULT_FONT_SIZE);
-            });
-        },
-        bindLifecycle() {
-            window.addEventListener('resize', () => {
-                const wasMobile = isMobile;
-                isMobile = window.innerWidth <= 768;
-                if (isMobile && !wasMobile) sidebarEl.classList.add('hidden');
-            });
-            window.addEventListener('message', e => {
-                if (!e.data || typeof e.data !== 'object') return;
-                const tab = State.tabs.find(t => t.type === 'extension' && t.extFrame && t.extFrame.contentWindow === e.source);
-                if (!tab) return;
-                if (e.data.type === 'extension:save') {
-                    tab.content = e.data.content;
-                    tab.dirty = true;
-                    if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
-                    FSA.scheduleSave();
-                } else if (e.data.type === 'extension:dirty') {
-                    tab.dirty = true;
-                    if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
-                }
-            });
-            window.addEventListener('beforeunload', e => {
-                if (State.currentDirHandle) FSA.saveOpenTabs(State.currentTabId);
-                if (State.tabs.some(t => t.dirty)) {
-                    FSA.flushSave();
-                    e.preventDefault();
-                    return e.returnValue = 'Unsaved changes will be lost';
-                }
-            });
-        },
-        bindEvents() {
-            this.bindKeyboard();
-            this.bindTreeEvents();
-            this.bindTabEvents();
-            this.bindSettings();
-            this.bindLifecycle();
-        },
-        init: async () => {
-            textarea = document.getElementById('textarea');
-            gutter = document.getElementById('gutter');
-            tabsContainer = document.getElementById('tabs');
-            treeContainer = document.getElementById('tree-container');
-            sidebarHeader = document.getElementById('sidebar-header');
-            sidebarEl = document.getElementById('sidebar');
-            statusEl = document.getElementById('status');
-            editorStatusEl = document.getElementById('editor-status');
-            activeDirNameEl = document.getElementById('active-dir-name');
-            rootDirNameEl = document.getElementById('root-dir-name');
-            sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions');
-            const savedSidebarWidth = localStorage.getItem('sidebarWidth');
-            if (savedSidebarWidth) sidebarEl.style.width = savedSidebarWidth;
-            UI.bindEvents();
-            // Restore settings
-            const savedFontSize = parseInt(localStorage.getItem('editorFontSize'));
-            if (savedFontSize) {
-                textarea.style.fontSize = savedFontSize + 'px';
-                gutter.style.fontSize = savedFontSize + 'px';
-                document.getElementById('md-preview').style.fontSize = savedFontSize + 'px';
+            const prefix = this.state.activeDirectoryPath ? this.state.activeDirectoryPath + '/' : null;
+            if (prefix && tab.path.startsWith(prefix)) {
+                tabEl.title = tab.path.slice(prefix.length);
+            } else {
+                tabEl.title = tab.path;
             }
-            if (localStorage.getItem('sliderVisible') === 'false') {
-                document.getElementById('line-width-slider').classList.add('hidden');
-                document.getElementById('settings-toggle-slider').classList.remove('active');
+        });
+        tabEl.addEventListener('drop', e => this.handleTabDrop(e, tab.id));
+        this.tabsContainer.appendChild(tabEl);
+        tab.element = tabEl;
+        this.switchToTab(tab.id);
+        return tab;
+    }
+
+    switchToTab(id) {
+        if (this.mdPreviewTimer) clearTimeout(this.mdPreviewTimer);
+        if (this.state.currentTabId !== null) {
+            const cur = this.state.tabs.find(t => t.id === this.state.currentTabId);
+            if (cur) {
+                if (cur.type !== 'extension') {
+                    cur.content = this.textarea.value;
+                    cur.scrollTop = this.textarea.scrollTop;
+                }
+                if (cur.dirty) this.fs.saveTab(cur);
             }
-            if (localStorage.getItem('gutterVisible') === 'false') {
-                gutter.classList.add('hidden');
-                document.getElementById('settings-toggle-gutter').classList.remove('active');
-                document.getElementById('md-preview').style.left = '0';
-            }
-            await FSA.initDB();
-            await ExtensionManager.loadAll();
-            await FSA.restoreSession();
-            if (isMobile) sidebarEl.classList.add('hidden');
-            // Re-run restore when page returns from bfcache (back/forward nav or wake from sleep)
-            window.addEventListener('pageshow', async (e) => {
-                if (!e.persisted) return;
-                if (!State.currentDirHandle) { await FSA.restoreSession(); return; }
-                // Re-validate permission in case it lapsed while the page was cached
-                const perm = await FSA.queryPermission(State.currentDirHandle);
-                if (perm !== 'granted') {
-                    UI.showActionToast('Tap to restore folder access', async () => {
-                        try { await State.currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
-                    });
-                }
-            });
-            // Re-run restore when page becomes visible after being hidden (lock-screen / tab switch)
-            document.addEventListener('visibilitychange', async () => {
-                if (document.visibilityState !== 'visible') {
-                    // Save tab state before page may be frozen/killed
-                    if (State.currentDirHandle) FSA.saveOpenTabs(State.currentTabId);
-                    return;
-                }
-                if (!State.currentDirHandle) { await FSA.restoreSession(); return; }
-                // Re-validate permission in case it lapsed during sleep
-                const perm = await FSA.queryPermission(State.currentDirHandle);
-                if (perm !== 'granted') {
-                    UI.showActionToast('Tap to restore folder access', async () => {
-                        try { await State.currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
-                    });
-                }
-            });
         }
-    };
-    return { init: UI.init };
-})();
+        // Hide all per-tab extension iframes
+        this.state.tabs.forEach(t => { if (t.extFrame) t.extFrame.classList.add('hidden'); });
+        this.state.currentTabId = id;
+        const tab = this.state.tabs.find(t => t.id === id);
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.element.classList.add('active');
+        const gutterUserHidden = localStorage.getItem('gutterVisible') === 'false';
+        if (tab.type === 'extension') {
+            this.textarea.style.display = 'none';
+            if (!gutterUserHidden) this.gutter.style.display = 'none';
+            this.extensions.renderTab(tab);
+        } else {
+            this.textarea.style.display = '';
+            if (!gutterUserHidden) this.gutter.style.display = '';
+            this.textarea.value = tab.content || '';
+            this.textarea.readOnly = !TabManager.#TAB_TYPES[tab.type]?.canDirty;
+        }
+        this.ui.updateLineNumbers(true);
+        if (tab.scrollTop !== undefined) {
+            this.textarea.scrollTop = tab.scrollTop;
+            this.gutter.scrollTop = tab.scrollTop;
+        }
+        this.ui.updateEditorStatus(tab);
+        this.ui.updateMdPreview();
+        if (tab.path) {
+            this.state.activeFilePath = tab.path;
+        }
+        this.fs.saveOpenTabs(id);
+    }
+
+    async closeTab(id) {
+        if (this.mdPreviewTimer) clearTimeout(this.mdPreviewTimer);
+        const idx = this.state.tabs.findIndex(t => t.id === id);
+        if (idx === -1) return;
+        const tab = this.state.tabs[idx];
+        if (tab.dirty && !await this.ui.showDialog({isConfirm: true, confirmMessage: `"${tab.name}" has unsaved changes. Close anyway?`})) return;
+        if (tab.extFrame) {
+            if (tab.blobUrl) URL.revokeObjectURL(tab.blobUrl);
+            tab.extFrame.remove();
+        }
+        this.state.tabs.splice(idx, 1);
+        tab.element.remove();
+        if (this.state.tabs.length === 0) {
+            this.state.currentTabId = null;
+            this.textarea.value = '';
+            this.gutter.replaceChildren();
+            this.ui.editorStatusEl.textContent = 'No file open';
+            this.fs.saveOpenTabs(null);
+            localStorage.removeItem('openTabs');
+            return;
+        }
+        this.switchToTab(this.state.tabs[Math.min(idx, this.state.tabs.length - 1)].id);
+    }
+
+    async restoreOpenTabs(dirHandle, savedTabs) {
+        if (!savedTabs) savedTabs = this.fs.loadOpenTabs();
+        let restored = 0;
+        let activeTabPath = null;
+
+        for (const st of savedTabs) {
+            try {
+                const parts = st.path.split('/').filter(Boolean);
+                let handle = dirHandle;
+                for (let i = 0; i < parts.length - 1; i++) {
+                    handle = await handle.getDirectoryHandle(parts[i]);
+                }
+                const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
+                const file = await fileHandle.getFile();
+                const content = await file.text();
+
+                await this.createNewTab(fileHandle, st.name, content, st.path, st.type || 'text');
+                if (st.active) activeTabPath = st.path;
+                restored++;
+            } catch (e) {
+                console.warn('Failed to restore tab', st.path, e);
+            }
+        }
+
+        if (activeTabPath) {
+            const activeTab = this.state.tabs.find(t => t.path === activeTabPath);
+            if (activeTab) this.switchToTab(activeTab.id);
+        } else if (this.state.tabs.length > 0) {
+            this.switchToTab(this.state.tabs[0].id);
+        }
+
+        return restored;
+    }
+}
+
+// ────────────────────────────────────────────────────────
+// UIManager – DOM init, events & rendering
+// ────────────────────────────────────────────────────────
+class UIManager {
+    #textarea = null;
+    #gutter = null;
+    #tabsContainer = null;
+    #treeContainer = null;
+    #activeDirNameEl = null;
+    #rootDirNameEl = null;
+    #sidebarHeaderActionsEl = null;
+    #sidebarEl = null;
+    #statusEl = null;
+    #editorStatusEl = null;
+    #contextMenu = null;
+    #contextMenuTarget = null;
+    #isMobile = false;
+    #lastLineCount = 1;
+
+    /** @param {ReactiveState} state @param {TabManager} tabs @param {TreeManager} tree @param {FileSystemManager} fs @param {ExtensionManager} extensions */
+    constructor(state, tabs, tree, fs, extensions) {
+        this.state = state;
+        this.tabs = tabs;
+        this.tree = tree;
+        this.fs = fs;
+        this.extensions = extensions;
+        this.#isMobile = window.innerWidth <= 768;
+    }
+
+    get contextMenuTarget() { return this.#contextMenuTarget; }
+    get isMobile() { return this.#isMobile; }
+    get sidebarEl() { return this.#sidebarEl; }
+    get textarea() { return this.#textarea; }
+    get editorStatusEl() { return this.#editorStatusEl; }
+
+    async init() {
+        this.#textarea = document.getElementById('textarea');
+        this.#gutter = document.getElementById('gutter');
+        this.#tabsContainer = document.getElementById('tabs');
+        this.#treeContainer = document.getElementById('tree-container');
+        this.#sidebarEl = document.getElementById('sidebar');
+        this.#statusEl = document.getElementById('status');
+        this.#editorStatusEl = document.getElementById('editor-status');
+        this.#activeDirNameEl = document.getElementById('active-dir-name');
+        this.#rootDirNameEl = document.getElementById('root-dir-name');
+        this.#sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions');
+
+        // Wire DOM refs to dependent classes
+        this.tabs.textarea = this.#textarea;
+        this.tabs.gutter = this.#gutter;
+        this.tabs.tabsContainer = this.#tabsContainer;
+        this.tree.treeContainer = this.#treeContainer;
+        this.tree.activeDirNameEl = this.#activeDirNameEl;
+        this.tree.rootDirNameEl = this.#rootDirNameEl;
+        this.tree.sidebarHeaderActionsEl = this.#sidebarHeaderActionsEl;
+
+        const savedSidebarWidth = localStorage.getItem('sidebarWidth');
+        if (savedSidebarWidth) this.#sidebarEl.style.width = savedSidebarWidth;
+
+        this.bindEvents();
+
+        // Restore settings
+        const savedFontSize = parseInt(localStorage.getItem('editorFontSize'));
+        if (savedFontSize) {
+            this.#textarea.style.fontSize = savedFontSize + 'px';
+            this.#gutter.style.fontSize = savedFontSize + 'px';
+            document.getElementById('md-preview').style.fontSize = savedFontSize + 'px';
+        }
+        if (localStorage.getItem('sliderVisible') === 'false') {
+            document.getElementById('line-width-slider').classList.add('hidden');
+            document.getElementById('settings-toggle-slider').classList.remove('active');
+        }
+        if (localStorage.getItem('gutterVisible') === 'false') {
+            this.#gutter.classList.add('hidden');
+            document.getElementById('settings-toggle-gutter').classList.remove('active');
+            document.getElementById('md-preview').style.left = '0';
+        }
+        await this.fs.initDB();
+        await this.extensions.loadAll();
+        await this.fs.restoreSession();
+        if (this.#isMobile) this.#sidebarEl.classList.add('hidden');
+
+        // Re-run restore when page returns from bfcache (back/forward nav or wake from sleep)
+        window.addEventListener('pageshow', async (e) => {
+            if (!e.persisted) return;
+            if (!this.state.currentDirHandle) { await this.fs.restoreSession(); return; }
+            // Re-validate permission in case it lapsed while the page was cached
+            const perm = await this.fs.queryPermission(this.state.currentDirHandle);
+            if (perm !== 'granted') {
+                this.showActionToast('Tap to restore folder access', async () => {
+                    try { await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
+                });
+            }
+        });
+
+        // Re-run restore when page becomes visible after being hidden (lock-screen / tab switch)
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState !== 'visible') {
+                // Save tab state before page may be frozen/killed
+                if (this.state.currentDirHandle) this.fs.saveOpenTabs(this.state.currentTabId);
+                return;
+            }
+            if (!this.state.currentDirHandle) { await this.fs.restoreSession(); return; }
+            // Re-validate permission in case it lapsed during sleep
+            const perm = await this.fs.queryPermission(this.state.currentDirHandle);
+            if (perm !== 'granted') {
+                this.showActionToast('Tap to restore folder access', async () => {
+                    try { await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
+                });
+            }
+        });
+    }
+
+    showToast(message, duration = 2800) {
+        const t = document.createElement('div');
+        t.className = 'toast';
+        t.textContent = message;
+        document.body.appendChild(t);
+        setTimeout(() => t.remove(), duration);
+    }
+
+    showActionToast(message, callback, duration = 8000) {
+        const t = document.createElement('div');
+        t.className = 'toast';
+        t.textContent = message;
+        t.style.cssText += 'cursor:pointer;text-decoration:underline;';
+        const timer = setTimeout(() => t.remove(), duration);
+        t.addEventListener('click', () => { clearTimeout(timer); t.remove(); callback(); });
+        document.body.appendChild(t);
+    }
+
+    showDialog({promptTitle, defaultValue = '', isConfirm = false, confirmMessage = '', danger = false} = {}) {
+        return new Promise(resolve => {
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10001;';
+            const box = document.createElement('div');
+            box.style.cssText = 'background:#18181b;padding:24px;border-radius:8px;min-width:320px;border:1px solid #27272a;';
+            const titleDiv = document.createElement('div');
+            titleDiv.style.cssText = 'margin-bottom:12px;font-size:14px;';
+            titleDiv.textContent = isConfirm ? confirmMessage : promptTitle;
+            let input;
+            if (!isConfirm) {
+                input = document.createElement('input');
+                input.type = 'text';
+                input.value = defaultValue;
+                input.style.cssText = 'width:100%;padding:10px;background:#27272a;border:1px solid #3f3f46;color:#e4e4e7;border-radius:4px;font-size:16px;';
+            }
+            const btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex;gap:8px;margin-top:16px;';
+            const okBtn = document.createElement('button');
+            okBtn.style.cssText = `flex:1;min-height:44px;background:${danger ? '#ef4444' : '#a1a1aa'};color:${danger ? '#fff' : '#09090b'};border:none;border-radius:4px;`;
+            okBtn.textContent = isConfirm ? 'Confirm' : 'OK';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.style.cssText = 'flex:1;min-height:44px;background:#27272a;color:#e4e4e7;border:none;border-radius:4px;';
+            cancelBtn.textContent = 'Cancel';
+            btnRow.append(okBtn, cancelBtn);
+            box.append(titleDiv, btnRow);
+            if (!isConfirm) box.insertBefore(input, btnRow);
+            modal.appendChild(box);
+            document.body.appendChild(modal);
+            const confirm = () => { resolve(isConfirm ? true : input.value); modal.remove(); };
+            const cancel = () => { resolve(isConfirm ? false : null); modal.remove(); };
+            if (!isConfirm) {
+                input.focus();
+                input.select();
+                input.onkeydown = e => {
+                    if (e.key === 'Enter') confirm();
+                    if (e.key === 'Escape') cancel();
+                };
+            } else {
+                okBtn.focus();
+            }
+            okBtn.onclick = confirm;
+            cancelBtn.onclick = cancel;
+            modal.onclick = e => { if (e.target === modal) cancel(); };
+        });
+    }
+
+    toggleSidebar() {
+        const isCurrentlyHidden = this.#sidebarEl.classList.contains('hidden');
+        if (isCurrentlyHidden) {
+            const savedWidth = localStorage.getItem('sidebarWidth');
+            if (savedWidth) this.#sidebarEl.style.width = savedWidth;
+            this.#sidebarEl.classList.remove('hidden');
+        } else {
+            this.#sidebarEl.style.width = '';
+            this.#sidebarEl.classList.add('hidden');
+        }
+        const btn = document.getElementById('sidebar-toggle');
+        btn.textContent = this.#sidebarEl.classList.contains('hidden') ? '›' : '‹';
+    }
+
+    showContextMenu(e, node) {
+        e.preventDefault();
+        this.closeContextMenu();
+        this.#contextMenuTarget = node;
+        this.#contextMenu = document.createElement('div');
+        this.#contextMenu.className = 'context-menu';
+        const addItem = (label, handler, cls = '') => {
+            const item = document.createElement('div');
+            item.className = 'context-menu-item' + (cls ? ' ' + cls : '');
+            item.textContent = label;
+            item.addEventListener('click', () => { handler(); this.closeContextMenu(); });
+            this.#contextMenu.appendChild(item);
+        };
+        const addSeparator = () => {
+            const sep = document.createElement('div');
+            sep.className = 'context-menu-separator';
+            this.#contextMenu.appendChild(sep);
+        };
+        if (!node) {
+            addItem('New File', () => this.fs.newFile());
+            addItem('New Folder', () => this.fs.newFolder());
+            addSeparator();
+            addItem('Open File', () => this.fs.openFile());
+            addItem('Open Folder', () => this.fs.openFolder());
+            addSeparator();
+            addItem('Open legend.txt', () => {
+                const existing = this.state.tabs.find(t => t.type === 'legend');
+                if (existing) {
+                    this.tabs.switchToTab(existing.id);
+                } else {
+                    this.tabs.createNewTab(null, 'legend.txt', window.LEGEND, null, 'legend');
+                }
+            });
+            if (this.state.copiedNode) { addSeparator(); addItem('Paste', () => this.fs.copyEntry(this.state.copiedNode, this.state.activeDirectoryPath || '')); }
+        } else if (node.kind === 'directory') {
+            addItem('New File', () => this.fs.newFile());
+            addItem('New Folder', () => this.fs.newFolder());
+            addSeparator();
+            addItem('Rename', () => this.fs.renameItem());
+            addItem('Copy', () => { this.state.copiedNode = node; this.showToast(`"${node.name}" ready to paste`); });
+            if (this.state.copiedNode) addItem('Paste', () => this.fs.copyEntry(this.state.copiedNode, node.path));
+            addSeparator();
+            addItem('Delete Folder', () => this.fs.deleteFolder(), 'danger');
+        } else {
+            addItem('Open', () => this.fs.openFileFromNode(this.#contextMenuTarget));
+            addItem('Rename', () => this.fs.renameItem());
+            addItem('Copy', () => { this.state.copiedNode = this.#contextMenuTarget; this.showToast(`"${this.#contextMenuTarget.name}" ready to paste`); });
+            addSeparator();
+            addItem('Delete File', () => this.fs.deleteFile(), 'danger');
+        }
+        this.#contextMenu.style.left = e.clientX + 'px';
+        this.#contextMenu.style.top = e.clientY + 'px';
+        document.body.appendChild(this.#contextMenu);
+        const rect = this.#contextMenu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) this.#contextMenu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+        if (rect.bottom > window.innerHeight) this.#contextMenu.style.top = (window.innerHeight - rect.height - 8) + 'px';
+    }
+
+    closeContextMenu() {
+        if (this.#contextMenu) {
+            this.#contextMenu.remove();
+            this.#contextMenu = null;
+            this.#contextMenuTarget = null;
+        }
+    }
+
+    /** @param {boolean} [force] - when true, always rerender even if line count unchanged */
+    updateLineNumbers(force = false) {
+        const lineCount = (this.#textarea.value.match(/\n/g) || []).length + 1;
+        if (!force && lineCount === this.#lastLineCount) return;
+        this.#lastLineCount = lineCount;
+        this.#gutter.textContent = Array.from({length: lineCount}, (_, i) => i + 1).join('\n');
+    }
+
+    updateEditorStatus(tab) {
+        const modified = tab.dirty ? ' • Modified' : '';
+        if (tab.type === 'extension') {
+            this.#statusEl.textContent = `${this.state.tabs.length} tab${this.state.tabs.length !== 1 ? 's' : ''}`;
+        } else {
+            const pos = this.#textarea.selectionStart || 0;
+            const before = this.#textarea.value.substring(0, pos);
+            const lines = before.split('\n');
+            const line = lines.length;
+            const col = lines[lines.length - 1].length + 1;
+            this.#statusEl.textContent = `Ln ${line}, Col ${col} | ${this.state.tabs.length} tab${this.state.tabs.length !== 1 ? 's' : ''}`;
+        }
+        this.#editorStatusEl.textContent = tab.name + modified;
+    }
+
+    updateMdPreview() {
+        const previewEl = document.getElementById('md-preview');
+        const tab = this.state.currentTabId !== null ? this.state.tabs.find(t => t.id === this.state.currentTabId) : null;
+        if (!tab || tab.type !== 'markdown' || !tab.mdPreview) {
+            previewEl.classList.add('hidden');
+            this.#textarea.classList.remove('md-active');
+            return;
+        }
+        previewEl.classList.remove('hidden');
+        previewEl.innerHTML = MarkdownRenderer.parse(this.#textarea.value);
+        this.#textarea.classList.add('md-active');
+    }
+
+    bindKeyboard() {
+        document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
+                e.preventDefault();
+                if (this.state.currentTabId) this.tabs.closeTab(this.state.currentTabId);
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                this.fs.saveCurrentFile();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+                e.preventDefault();
+                this.fs.newFile();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+                e.preventDefault();
+                this.fs.openFolder();
+            }
+        });
+    }
+
+    bindTreeEvents() {
+        document.getElementById('sidebar-toggle').addEventListener('click', () => this.toggleSidebar());
+        document.getElementById('sidebar-root-row').addEventListener('click', e => {
+            if (e.target.id === 'refresh-folder' || e.target.id === 'clear-folder') return;
+            this.fs.openFolder();
+        });
+        document.getElementById('topbar-active-row').addEventListener('click', () => {
+            this.state.activeDirectoryPath = null;
+            this.tree.updateHeader();
+        });
+        // Sidebar resize
+        const sidebarResizeHandle = document.getElementById('sidebar-resize');
+        let sidebarResizing = false, sidebarResizeStartX = 0, sidebarResizeStartW = 0;
+        sidebarResizeHandle.addEventListener('mousedown', e => {
+            sidebarResizing = true;
+            sidebarResizeStartX = e.clientX;
+            sidebarResizeStartW = this.#sidebarEl.offsetWidth;
+            this.#sidebarEl.style.transition = 'none';
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', e => {
+            if (!sidebarResizing) return;
+            const w = Math.max(150, Math.min(600, sidebarResizeStartW + e.clientX - sidebarResizeStartX));
+            this.#sidebarEl.style.width = w + 'px';
+        });
+        document.addEventListener('mouseup', () => {
+            if (!sidebarResizing) return;
+            sidebarResizing = false;
+            this.#sidebarEl.style.transition = '';
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            localStorage.setItem('sidebarWidth', this.#sidebarEl.offsetWidth + 'px');
+        });
+        this.#treeContainer.addEventListener('dragover', e => {
+            if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
+            if (e.target.closest('.folder-header')) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            this.#treeContainer.classList.add('drop-target');
+        });
+        this.#treeContainer.addEventListener('dragleave', () => this.#treeContainer.classList.remove('drop-target'));
+        this.#treeContainer.addEventListener('drop', e => {
+            this.#treeContainer.classList.remove('drop-target');
+            if (e.target.closest('.folder-header')) return;
+            e.preventDefault();
+            const srcPath = e.dataTransfer.getData('application/x-tree-path');
+            if (srcPath) this.fs.moveEntry(srcPath, '');
+        });
+        document.addEventListener('click', e => {
+            if (e.target.id === 'clear-folder') { e.stopPropagation(); this.fs.clearSavedFolder(); return; }
+            if (e.target.id === 'refresh-folder') {
+                e.stopPropagation();
+                if (this.state.currentDirHandle) this.fs.mutateAndRebuild();
+                return;
+            }
+            if (!e.target.closest('.context-menu')) this.closeContextMenu();
+        });
+        this.#treeContainer.addEventListener('contextmenu', e => {
+            const folder = e.target.closest('.folder-header');
+            const file = e.target.closest('.file-item');
+            if (folder) {
+                const node = this.tree.getNode(folder.dataset.path);
+                if (node) this.showContextMenu(e, node);
+            } else if (file) {
+                const node = this.tree.getNode(file.dataset.path);
+                if (node) this.showContextMenu(e, node);
+            } else {
+                this.showContextMenu(e, null);
+            }
+        });
+        let longPressTimer = null;
+        let touchMoved = false;
+        this.#treeContainer.addEventListener('touchstart', e => {
+            this.tree.longPressTriggered = false;
+            touchMoved = false;
+            const touch = e.touches[0];
+            const target = e.target;
+            longPressTimer = setTimeout(() => {
+                this.tree.longPressTriggered = true;
+                const folder = target.closest('.folder-header');
+                const file = target.closest('.file-item');
+                const fakeEvent = { preventDefault() {}, clientX: touch.clientX, clientY: touch.clientY };
+                if (folder) {
+                    const node = this.tree.getNode(folder.dataset.path);
+                    if (node) this.showContextMenu(fakeEvent, node);
+                } else if (file) {
+                    const node = this.tree.getNode(file.dataset.path);
+                    if (node) this.showContextMenu(fakeEvent, node);
+                } else {
+                    this.showContextMenu(fakeEvent, null);
+                }
+            }, 600);
+        }, { passive: true });
+        this.#treeContainer.addEventListener('touchend', e => {
+            clearTimeout(longPressTimer);
+            if (this.tree.longPressTriggered) {
+                e.preventDefault();
+                return;
+            }
+            if (!touchMoved) {
+                const target = e.target;
+                const el = target.closest('.folder-header') || target.closest('.file-item');
+                if (el) {
+                    e.preventDefault();
+                    el.click();
+                }
+            }
+        });
+        this.#treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); touchMoved = true; }, { passive: true });
+    }
+
+    bindTabEvents() {
+        // Allow dropping a tab past the last tab (append to end)
+        this.#tabsContainer.addEventListener('dragover', e => {
+            if (!e.dataTransfer.types.includes('text/plain')) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        });
+        this.#tabsContainer.addEventListener('drop', e => {
+            e.preventDefault();
+            const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+            if (isNaN(draggedId)) return;
+            const fromIdx = this.state.tabs.findIndex(t => t.id === draggedId);
+            if (fromIdx === -1) return;
+            const movedTab = this.state.tabs[fromIdx];
+            this.state.tabs.splice(fromIdx, 1);
+            this.state.tabs.push(movedTab);
+            this.#tabsContainer.appendChild(movedTab.element);
+            this.fs.saveOpenTabs(this.state.currentTabId);
+        });
+        const MD_PREVIEW_DEBOUNCE_DELAY = 3000; // ms of inactivity before showing Markdown preview
+        this.#textarea.addEventListener('mousedown', () => {
+            if (this.state.currentTabId) {
+                const tab = this.state.tabs.find(t => t.id === this.state.currentTabId);
+                if (tab) {
+                    this.#tabsContainer.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    tab.element.classList.add('active');
+                    if (tab.type === 'markdown' && tab.mdPreview) {
+                        clearTimeout(this.tabs.mdPreviewTimer);
+                        document.getElementById('md-preview').classList.add('hidden');
+                        this.#textarea.classList.remove('md-active');
+                    }
+                }
+            }
+        });
+        this.#textarea.addEventListener('input', () => {
+            this.updateLineNumbers();
+            if (this.state.currentTabId) {
+                const tab = this.state.tabs.find(t => t.id === this.state.currentTabId);
+                if (tab) {
+                    if (TabManager.canTabBeDirty(tab.type)) {
+                        tab.dirty = true;
+                        if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
+                        this.fs.scheduleSave();
+                    }
+                    this.updateEditorStatus(tab);
+                    if (tab.type === 'markdown' && tab.mdPreview) {
+                        clearTimeout(this.tabs.mdPreviewTimer);
+                        document.getElementById('md-preview').classList.add('hidden');
+                        this.#textarea.classList.remove('md-active');
+                        this.tabs.mdPreviewTimer = setTimeout(() => this.updateMdPreview(), MD_PREVIEW_DEBOUNCE_DELAY);
+                    } else {
+                        this.updateMdPreview();
+                    }
+                }
+            }
+        });
+        this.#textarea.addEventListener('scroll', () => this.#gutter.scrollTop = this.#textarea.scrollTop);
+        this.#textarea.addEventListener('selectionchange', () => {
+            if (this.state.currentTabId) {
+                const tab = this.state.tabs.find(t => t.id === this.state.currentTabId);
+                if (tab) this.updateEditorStatus(tab);
+            }
+        });
+        this.#textarea.addEventListener('keydown', e => {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                const tab = this.state.currentTabId !== null ? this.state.tabs.find(t => t.id === this.state.currentTabId) : null;
+                if (tab && tab.type === 'markdown' && tab.mdPreview) {
+                    clearTimeout(this.tabs.mdPreviewTimer);
+                    document.getElementById('md-preview').classList.add('hidden');
+                    this.#textarea.classList.remove('md-active');
+                    this.tabs.mdPreviewTimer = setTimeout(() => this.updateMdPreview(), MD_PREVIEW_DEBOUNCE_DELAY);
+                }
+            }
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = this.#textarea.selectionStart;
+                const end = this.#textarea.selectionEnd;
+                this.#textarea.value = this.#textarea.value.substring(0, start) + '\t' + this.#textarea.value.substring(end);
+                this.#textarea.selectionStart = this.#textarea.selectionEnd = start + 1;
+                this.#textarea.dispatchEvent(new Event('input'));
+            }
+        });
+        const slider = document.getElementById('width-slider');
+        const valueEl = document.getElementById('width-value');
+        const MAX_CHARS = 200;
+        slider.addEventListener('input', e => {
+            const v = +e.target.value;
+            const previewEl = document.getElementById('md-preview');
+            valueEl.textContent = (v === MAX_CHARS) ? '∞' : `${v} char/line`;
+            if (v === MAX_CHARS) {
+                this.#textarea.style.maxWidth = 'none';
+                this.#textarea.style.whiteSpace = 'pre';
+                this.#textarea.style.wordWrap = 'normal';
+                previewEl.style.maxWidth = 'none';
+            } else {
+                this.#textarea.style.maxWidth = v + 'ch';
+                this.#textarea.style.whiteSpace = 'pre-wrap';
+                this.#textarea.style.wordWrap = 'break-word';
+                previewEl.style.maxWidth = v + 'ch';
+            }
+        });
+        slider.dispatchEvent(new Event('input'));
+    }
+
+    bindSettings() {
+        // Settings toggle
+        document.getElementById('settings-toggle').addEventListener('click', () => {
+            const panel = document.getElementById('settings-panel');
+            const btn = document.getElementById('settings-toggle');
+            const isNowHidden = panel.classList.toggle('hidden');
+            btn.textContent = isNowHidden ? 'EDITOR ›' : 'EDITOR ‹';
+        });
+        // Toggle width slider
+        document.getElementById('settings-toggle-slider').addEventListener('click', function() {
+            const sliderEl = document.getElementById('line-width-slider');
+            const nowHidden = sliderEl.classList.toggle('hidden');
+            this.classList.toggle('active', !nowHidden);
+            localStorage.setItem('sliderVisible', !nowHidden);
+        });
+        // Toggle gutter
+        document.getElementById('settings-toggle-gutter').addEventListener('click', () => {
+            const nowHidden = this.#gutter.classList.toggle('hidden');
+            document.getElementById('settings-toggle-gutter').classList.toggle('active', !nowHidden);
+            const previewEl = document.getElementById('md-preview');
+            previewEl.style.left = nowHidden ? '0' : '60px';
+            localStorage.setItem('gutterVisible', !nowHidden);
+        });
+        // Font size
+        const MIN_FONT = 10, MAX_FONT = 24, DEFAULT_FONT_SIZE = 14;
+        const applyFontSize = sz => {
+            this.#textarea.style.fontSize = sz + 'px';
+            this.#gutter.style.fontSize = sz + 'px';
+            document.getElementById('md-preview').style.fontSize = sz + 'px';
+        };
+        document.getElementById('settings-font-decrease').addEventListener('click', () => {
+            const cur = parseInt(this.#textarea.style.fontSize) || DEFAULT_FONT_SIZE;
+            if (cur > MIN_FONT) {
+                const next = cur - 1;
+                applyFontSize(next);
+                localStorage.setItem('editorFontSize', next);
+            }
+        });
+        document.getElementById('settings-font-increase').addEventListener('click', () => {
+            const cur = parseInt(this.#textarea.style.fontSize) || DEFAULT_FONT_SIZE;
+            if (cur < MAX_FONT) {
+                const next = cur + 1;
+                applyFontSize(next);
+                localStorage.setItem('editorFontSize', next);
+            }
+        });
+        document.getElementById('settings-font-reset').addEventListener('click', () => {
+            applyFontSize(DEFAULT_FONT_SIZE);
+            localStorage.setItem('editorFontSize', DEFAULT_FONT_SIZE);
+        });
+    }
+
+    bindLifecycle() {
+        window.addEventListener('resize', () => {
+            const wasMobile = this.#isMobile;
+            this.#isMobile = window.innerWidth <= 768;
+            if (this.#isMobile && !wasMobile) this.#sidebarEl.classList.add('hidden');
+        });
+        window.addEventListener('message', e => {
+            if (!e.data || typeof e.data !== 'object') return;
+            const tab = this.state.tabs.find(t => t.type === 'extension' && t.extFrame && t.extFrame.contentWindow === e.source);
+            if (!tab) return;
+            if (e.data.type === 'extension:save') {
+                tab.content = e.data.content;
+                tab.dirty = true;
+                if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
+                this.fs.scheduleSave();
+            } else if (e.data.type === 'extension:dirty') {
+                tab.dirty = true;
+                if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
+            }
+        });
+        window.addEventListener('beforeunload', e => {
+            if (this.state.currentDirHandle) this.fs.saveOpenTabs(this.state.currentTabId);
+            if (this.state.tabs.some(t => t.dirty)) {
+                this.fs.flushSave();
+                e.preventDefault();
+                return e.returnValue = 'Unsaved changes will be lost';
+            }
+        });
+    }
+
+    bindEvents() {
+        this.bindKeyboard();
+        this.bindTreeEvents();
+        this.bindTabEvents();
+        this.bindSettings();
+        this.bindLifecycle();
+    }
+}
+
+// ────────────────────────────────────────────────────────
+// EditorApp – orchestrator
+// ────────────────────────────────────────────────────────
+class EditorApp {
+    constructor() {
+        this.state      = new ReactiveState();
+        this.markdown   = new MarkdownRenderer();
+        this.pathUtils  = new PathUtils();
+        this.fs         = new FileSystemManager(this.state, this.pathUtils);
+        this.tree       = new TreeManager(this.state, this.fs);
+        this.extensions = new ExtensionManager(this.state, this.fs);
+        this.tabs       = new TabManager(this.state, this.fs, this.extensions, this.markdown);
+        this.ui         = new UIManager(this.state, this.tabs, this.tree, this.fs, this.extensions);
+        // Resolve cross-references
+        this.fs.tree = this.tree;
+        this.fs.tabs = this.tabs;
+        this.fs.ui = this.ui;
+        this.extensions.ui = this.ui;
+        this.tabs.ui = this.ui;
+    }
+
+    async init() { await this.ui.init(); }
+}
+
 // Service Worker
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 // Launch
-window.onload = App.init;
+window.onload = async () => { window.editorApp = new EditorApp(); await window.editorApp.init(); };
+
 </script>
 </body>
 </html>
