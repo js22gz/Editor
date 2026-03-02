@@ -96,10 +96,11 @@ window.LEGEND = `<!--
          │
          └── <script> (IIFE: const App = (() => { … })())
                   │
-                   ├── STATE – State { currentDirHandle, tabs[], currentTabId,
+                   ├── STATE – Proxy<EventTarget> { currentDirHandle, tabs[], currentTabId,
                   │           expandedFolders, activeFilePath,
                   │           activeDirectoryPath, copiedNode,
                   │           getTab(), getActiveTab() }
+                  │           (dispatches <prop>Changed CustomEvents on assignment)
                   │
                   ├── Permission – { guard(handle, action) } requestPermission helper
                   │
@@ -117,7 +118,7 @@ window.LEGEND = `<!--
                   │   ├── nodeByPath Map + fileTree root
                   │   ├── _renderTreeItem() recursive + lazy
                   │   ├── Drag & drop (move/ancestor highlight)
-                  │   ├── highlightActive() + updateHeader
+                  │   ├── highlightActive() (auto-triggered via State events) + updateHeader
                   │   └── registerNode / getNode / clear
                   │
                   ├── TAB_TYPES – type registry (welcome · legend · text · markdown · extension)
@@ -815,7 +816,7 @@ const MarkdownMini = (() => {
     // ──────────────────────────────────────────────
     // STATE
     // ──────────────────────────────────────────────
-    const State = {
+    const _storeBase = Object.assign(new EventTarget(), {
         currentDirHandle: null,
         tabs: [],
         currentTabId: null,
@@ -823,10 +824,17 @@ const MarkdownMini = (() => {
         activeFilePath: null,
         activeDirectoryPath: null,
         copiedNode: null,
-
         getTab(id) { return this.tabs.find(t => t.id === id); },
         getActiveTab() { return this.currentTabId !== null ? this.getTab(this.currentTabId) : null; },
-    };
+    });
+    const State = new Proxy(_storeBase, {
+        set(target, prop, value) {
+            if (target[prop] === value) return true;
+            target[prop] = value;
+            target.dispatchEvent(new CustomEvent(prop + 'Changed'));
+            return true;
+        }
+    });
     let nextTabId = 1;
     let contextMenu = null;
     let contextMenuTarget = null;
@@ -1052,7 +1060,6 @@ const MarkdownMini = (() => {
                 }
             }
             TreeManager.render();
-            TreeManager.highlightActive();
             TreeManager.updateHeader();
         },
         loadExpandedState() {
@@ -1509,7 +1516,6 @@ const MarkdownMini = (() => {
                     }
                     FSA.saveExpandedState();
                     State.activeDirectoryPath = node.path;
-                    TreeManager.highlightActive();
                     TreeManager.updateHeader();
                 };
                 header.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); header.click(); } };
@@ -1630,6 +1636,8 @@ const MarkdownMini = (() => {
             }
         };
     })();
+    State.addEventListener('activeFilePathChanged', () => TreeManager.highlightActive());
+    State.addEventListener('activeDirectoryPathChanged', () => TreeManager.highlightActive());
     // ──────────────────────────────────────────────
     // Tab type registry – add entries to extend
     // ──────────────────────────────────────────────
@@ -1968,7 +1976,6 @@ const MarkdownMini = (() => {
             UI.updateMdPreview();
             if (tab.path) {
                 State.activeFilePath = tab.path;
-                TreeManager.highlightActive();
             }
             FSA.saveOpenTabs(id);
         },
@@ -2232,7 +2239,6 @@ const MarkdownMini = (() => {
             });
             document.getElementById('topbar-active-row').addEventListener('click', () => {
                 State.activeDirectoryPath = null;
-                TreeManager.highlightActive();
                 TreeManager.updateHeader();
             });
             // Sidebar resize
