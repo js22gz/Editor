@@ -57,8 +57,7 @@ window.LEGEND = `<!--
     └── <body>
          ├── <header>
          │   └── #title-area (centered)
-         │       ├── #settings-toggle (EDITOR› / EDITOR‹ + panel toggle)
-         │       └── #settings-panel (slider toggle · gutter toggle · font ±)
+         │       └── #title-label (EDITOR)
          │
          ├── <main>
          │   ├── <aside id="sidebar">
@@ -68,6 +67,7 @@ window.LEGEND = `<!--
          │   ├── #sidebar-resize (draggable)
          │   └── .editor-area
          │       ├── #tabs (draggable tab strip)
+         │       │   └── #tab-settings-wrap (⛭ button + popover: slider · gutter · font ±)
          │       ├── #line-width-slider (24–200 ch or ∞)
          │       ├── .editor-wrapper
          │       │   ├── button#sidebar-toggle
@@ -196,33 +196,51 @@ window.LEGEND = `<!--
             align-items: center;
             z-index: 10;
         }
-        #settings-toggle {
-            background: none;
-            border: none;
+        #title-label {
             color: var(--text-strong);
             font-weight: 700;
             font-size: 1.5rem;
             letter-spacing: -0.5px;
-            cursor: pointer;
             padding: 0 4px;
-            border-radius: 4px;
             line-height: 44px;
             white-space: nowrap;
-            transition: color 0.2s;
-        }
-        #settings-toggle:hover { color: var(--text-primary); background: var(--border-color); }
-        #settings-panel {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            white-space: nowrap;
+            user-select: none;
         }
 
-        @media (max-width: 640px) {
-            #settings-panel { gap: 2px; }
-            .settings-btn { width: 32px; height: 32px; font-size: 10px; }
+        #tab-settings-wrap {
+            position: relative;
+            flex-shrink: 0;
         }
-        #settings-panel.hidden { display: none; }
+        #tab-settings-btn {
+            width: 60px;
+            height: 100%;
+            background: none;
+            border: none;
+            border-right: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s, color 0.15s;
+        }
+        #tab-settings-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+        #tab-settings-popover {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 6px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            z-index: 1000;
+        }
+        #tab-settings-popover.hidden { display: none; }
         #gutter.hidden { display: none; }
         #line-width-slider.hidden { display: none; }
         .settings-btn {
@@ -564,14 +582,7 @@ window.LEGEND = `<!--
 <body>
       <header>
           <div id="title-area">
-              <button id="settings-toggle" title="Toggle settings">EDITOR ›</button>
-              <div id="settings-panel" class="hidden">
-                  <button class="settings-btn active" id="settings-toggle-slider" title="Toggle width slider">⇔</button>
-                  <button class="settings-btn active" id="settings-toggle-gutter" title="Toggle gutter">#</button>
-                  <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
-                  <button class="settings-btn" id="settings-font-reset" title="Reset font size" aria-label="Reset font size">ø</button>
-                  <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
-              </div>
+              <span id="title-label">EDITOR</span>
           </div>
       </header>
       <main>
@@ -587,7 +598,18 @@ window.LEGEND = `<!--
         </aside>
         <div id="sidebar-resize"></div>
         <div class="editor-area">
-            <div id="tabs"></div>
+            <div id="tabs">
+                <div id="tab-settings-wrap">
+                    <button id="tab-settings-btn" title="Toggle settings">⛭</button>
+                    <div id="tab-settings-popover" class="hidden">
+                        <button class="settings-btn active" id="settings-toggle-slider" title="Toggle width slider">⇔</button>
+                        <button class="settings-btn active" id="settings-toggle-gutter" title="Toggle gutter">#</button>
+                        <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
+                        <button class="settings-btn" id="settings-font-reset" title="Reset font size" aria-label="Reset font size">ø</button>
+                        <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
+                    </div>
+                </div>
+            </div>
             <div id="line-width-slider">
                 <input type="range" id="width-slider" min="24" max="200" value="200" aria-label="Line width in chars">
                 <span id="width-value">∞</span>
@@ -2349,12 +2371,18 @@ class UIManager {
     }
 
     bindSettings() {
-        // Settings toggle
-        document.getElementById('settings-toggle').addEventListener('click', () => {
-            const panel = document.getElementById('settings-panel');
-            const btn = document.getElementById('settings-toggle');
-            const isNowHidden = panel.classList.toggle('hidden');
-            btn.textContent = isNowHidden ? 'EDITOR ›' : 'EDITOR ‹';
+        // Settings popover toggle
+        const settingsBtn = document.getElementById('tab-settings-btn');
+        const popover = document.getElementById('tab-settings-popover');
+        settingsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            popover.classList.toggle('hidden');
+        });
+        // Close popover when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!popover.contains(e.target) && !settingsBtn.contains(e.target)) {
+                popover.classList.add('hidden');
+            }
         });
         // Toggle width slider
         document.getElementById('settings-toggle-slider').addEventListener('click', e => {
