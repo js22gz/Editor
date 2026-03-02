@@ -1586,7 +1586,7 @@ class ExtensionManager {
         if (!tab.extFrame) {
             const iframe = document.createElement('iframe');
             iframe.className = 'ext-frame hidden';
-            iframe.sandbox = 'allow-scripts';
+            iframe.sandbox = 'allow-scripts allow-same-origin';
             document.querySelector('.editor-wrapper').appendChild(iframe);
             tab.extFrame = iframe;
         }
