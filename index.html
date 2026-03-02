@@ -37,6 +37,7 @@ TIPS
   • Right-click the sidebar for context actions (new, rename, copy, delete).
   • Drag files in the tree to move them between folders.
   • Long-press on mobile to open the context menu.
+  • Long-press the extension toggle on a tab to uninstall the extension.
   • Right-click the sidebar → Open legend.txt to read the source map.
 ───────────────────────────────────────────────────────────────────────────────
 This tab is read-only. Close it with ⌘W / Ctrl+W whenever you're ready.
@@ -1649,7 +1650,37 @@ class TabManager {
             extToggle.className = 'ext-toggle active';
             extToggle.title = 'Toggle extension: ' + ext.name;
             extToggle.textContent = ext.name;
-            extToggle.onclick = this.#makeExtToggleHandler(tab, extToggle);
+            let longPressTimer = null;
+            let longPressTriggered = false;
+            extToggle.addEventListener('pointerdown', () => {
+                longPressTriggered = false;
+                longPressTimer = setTimeout(async () => {
+                    longPressTriggered = true;
+                    if (!await this.ui.showDialog({isConfirm: true, confirmMessage: `Uninstall extension "${ext.name}"?`, danger: true})) return;
+                    await this.extensions.uninstall(ext.name);
+                    const currentTabId = this.state.currentTabId;
+                    let currentTabWasExtension = false;
+                    for (const t of this.state.tabs) {
+                        if (t.extension && t.extension.name === ext.name) {
+                            if (t.type === 'extension' && t.id === currentTabId) currentTabWasExtension = true;
+                            t.extension = null;
+                            if (t.type === 'extension') t.type = 'text';
+                            if (t.element) {
+                                const toggle = t.element.querySelector('.ext-toggle');
+                                if (toggle) toggle.replaceWith(this.#createExtToggle(t, null));
+                            }
+                        }
+                    }
+                    if (currentTabWasExtension) {
+                        this.state.currentTabId = null;
+                        this.switchToTab(currentTabId);
+                    }
+                }, 600);
+            });
+            extToggle.addEventListener('pointerup', () => clearTimeout(longPressTimer));
+            extToggle.addEventListener('pointercancel', () => clearTimeout(longPressTimer));
+            const toggleHandler = this.#makeExtToggleHandler(tab, extToggle);
+            extToggle.onclick = e => { if (longPressTriggered) { longPressTriggered = false; return; } toggleHandler(e); };
         } else {
             extToggle.className = 'ext-toggle inactive';
             extToggle.title = 'No extension installed – click to install';
