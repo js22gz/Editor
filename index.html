@@ -904,7 +904,7 @@ const MarkdownMini = (() => {
             State.currentDirHandle = null;
             State.activeDirectoryPath = null;
             State.expandedFolders.clear();
-            localStorage.removeItem('State.expandedFolders');
+            localStorage.removeItem('expandedFolders');
             localStorage.removeItem('openTabs');
             TreeManager.clear();
             TreeManager.updateHeader();
@@ -992,12 +992,12 @@ const MarkdownMini = (() => {
         },
         loadExpandedState() {
             try {
-                const saved = localStorage.getItem('State.expandedFolders');
+                const saved = localStorage.getItem('expandedFolders');
                 if (saved) State.expandedFolders = new Set(JSON.parse(saved));
             } catch {}
         },
         saveExpandedState() {
-            try { localStorage.setItem('State.expandedFolders', JSON.stringify([...State.expandedFolders])); } catch {}
+            try { localStorage.setItem('expandedFolders', JSON.stringify([...State.expandedFolders])); } catch {}
         },
         saveOpenTabs(currentId) {
             try {
@@ -1854,7 +1854,7 @@ const MarkdownMini = (() => {
             State.tabs.push(tab);
             const tabEl = document.createElement('div');
             tabEl.className = 'tab';
-            tabEl.dataset.id = id;
+            tabEl.dataset.id = tab.id;
             tabEl.draggable = true;
             const tabName = document.createElement('span');
             tabName.className = 'tab-name';
@@ -1887,10 +1887,10 @@ const MarkdownMini = (() => {
             } else {
                 tabEl.append(tabName, dirtyInd, closeBtn);
             }
-            tabEl.onclick = () => this.switchToTab(id);
-            closeBtn.onclick = e => { e.stopPropagation(); this.closeTab(id); };
+            tabEl.onclick = () => this.switchToTab(tab.id);
+            closeBtn.onclick = e => { e.stopPropagation(); this.closeTab(tab.id); };
             tabEl.addEventListener('dragstart', e => {
-                e.dataTransfer.setData('text/plain', String(id));
+                e.dataTransfer.setData('text/plain', String(tab.id));
                 e.dataTransfer.effectAllowed = 'move';
             });
             tabEl.addEventListener('dragover', e => {
@@ -1911,10 +1911,10 @@ const MarkdownMini = (() => {
                     tabEl.title = tab.path;
                 }
             });
-            tabEl.addEventListener('drop', e => TabManager.handleTabDrop(e, id));
+            tabEl.addEventListener('drop', e => TabManager.handleTabDrop(e, tab.id));
             tabsContainer.appendChild(tabEl);
             tab.element = tabEl;
-            this.switchToTab(id);
+            this.switchToTab(tab.id);
             return tab;
         },
         switchToTab(id) {
