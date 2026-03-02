@@ -147,10 +147,9 @@ window.LEGEND = `<!--
                       ├── Line width slider (∞ mode)
                       ├── Sidebar resize
                       ├── updateLineNumbers / updateEditorStatus
-                      └── bindEvents() → bindKeyboardShortcuts() · bindSidebarAndTreeEvents()
-                                        bindTabDragAndDrop() · bindTextareaEvents()
-                                        bindSettingsPanel() · bindContextMenuAndLongPress()
-                                        bindWindowLifecycle()
+                      └── bindEvents() → bindKeyboard() · bindTreeEvents()
+                                        bindTabEvents() · bindSettings()
+                                        bindLifecycle()
                  
   copyright © 2026 Jonatan Skäryd. All rights reserved.
 -->`;
@@ -2205,7 +2204,7 @@ const MarkdownMini = (() => {
             previewEl.innerHTML = MarkdownMini.parse(textarea.value);
             textarea.classList.add('md-active');
         },
-        bindKeyboardShortcuts() {
+        bindKeyboard() {
             document.addEventListener('keydown', e => {
                 if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
                     e.preventDefault();
@@ -2225,7 +2224,7 @@ const MarkdownMini = (() => {
                 }
             });
         },
-        bindSidebarAndTreeEvents() {
+        bindTreeEvents() {
             document.getElementById('sidebar-toggle').addEventListener('click', UI.toggleSidebar);
             document.getElementById('sidebar-root-row').addEventListener('click', e => {
                 if (e.target.id === 'refresh-folder' || e.target.id === 'clear-folder') return;
@@ -2285,8 +2284,60 @@ const MarkdownMini = (() => {
                 }
                 if (!e.target.closest('.context-menu')) UI.closeContextMenu();
             });
+            treeContainer.addEventListener('contextmenu', e => {
+                const folder = e.target.closest('.folder-header');
+                const file = e.target.closest('.file-item');
+                if (folder) {
+                    const node = TreeManager.getNode(folder.dataset.path);
+                    if (node) UI.showContextMenu(e, node);
+                } else if (file) {
+                    const node = TreeManager.getNode(file.dataset.path);
+                    if (node) UI.showContextMenu(e, node);
+                } else {
+                    UI.showContextMenu(e, null);
+                }
+            });
+            let longPressTimer = null;
+            let touchMoved = false;
+            treeContainer.addEventListener('touchstart', e => {
+                longPressTriggered = false;
+                touchMoved = false;
+                const touch = e.touches[0];
+                const target = e.target;
+                longPressTimer = setTimeout(() => {
+                    longPressTriggered = true;
+                    const folder = target.closest('.folder-header');
+                    const file = target.closest('.file-item');
+                    const fakeEvent = { preventDefault() {}, clientX: touch.clientX, clientY: touch.clientY };
+                    if (folder) {
+                        const node = TreeManager.getNode(folder.dataset.path);
+                        if (node) UI.showContextMenu(fakeEvent, node);
+                    } else if (file) {
+                        const node = TreeManager.getNode(file.dataset.path);
+                        if (node) UI.showContextMenu(fakeEvent, node);
+                    } else {
+                        UI.showContextMenu(fakeEvent, null);
+                    }
+                }, 600);
+            }, { passive: true });
+            treeContainer.addEventListener('touchend', e => {
+                clearTimeout(longPressTimer);
+                if (longPressTriggered) {
+                    e.preventDefault();
+                    return;
+                }
+                if (!touchMoved) {
+                    const target = e.target;
+                    const el = target.closest('.folder-header') || target.closest('.file-item');
+                    if (el) {
+                        e.preventDefault();
+                        el.click();
+                    }
+                }
+            });
+            treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); touchMoved = true; }, { passive: true });
         },
-        bindTabDragAndDrop() {
+        bindTabEvents() {
             // Allow dropping a tab past the last tab (append to end)
             tabsContainer.addEventListener('dragover', e => {
                 if (!e.dataTransfer.types.includes('text/plain')) return;
@@ -2305,8 +2356,6 @@ const MarkdownMini = (() => {
                 tabsContainer.appendChild(movedTab.element);
                 FSA.saveOpenTabs(State.currentTabId);
             });
-        },
-        bindTextareaEvents() {
             const MD_PREVIEW_DEBOUNCE_DELAY = 3000; // ms of inactivity before showing Markdown preview
             textarea.addEventListener('mousedown', () => {
                 if (State.currentTabId) {
@@ -2391,7 +2440,7 @@ const MarkdownMini = (() => {
             });
             slider.dispatchEvent(new Event('input'));
         },
-        bindSettingsPanel() {
+        bindSettings() {
             // Settings toggle
             document.getElementById('settings-toggle').addEventListener('click', () => {
                 const panel = document.getElementById('settings-panel');
@@ -2442,61 +2491,7 @@ const MarkdownMini = (() => {
                 localStorage.setItem('editorFontSize', DEFAULT_FONT_SIZE);
             });
         },
-        bindContextMenuAndLongPress() {
-            treeContainer.addEventListener('contextmenu', e => {
-                const folder = e.target.closest('.folder-header');
-                const file = e.target.closest('.file-item');
-                if (folder) {
-                    const node = TreeManager.getNode(folder.dataset.path);
-                    if (node) UI.showContextMenu(e, node);
-                } else if (file) {
-                    const node = TreeManager.getNode(file.dataset.path);
-                    if (node) UI.showContextMenu(e, node);
-                } else {
-                    UI.showContextMenu(e, null);
-                }
-            });
-            let longPressTimer = null;
-            let touchMoved = false;
-            treeContainer.addEventListener('touchstart', e => {
-                longPressTriggered = false;
-                touchMoved = false;
-                const touch = e.touches[0];
-                const target = e.target;
-                longPressTimer = setTimeout(() => {
-                    longPressTriggered = true;
-                    const folder = target.closest('.folder-header');
-                    const file = target.closest('.file-item');
-                    const fakeEvent = { preventDefault() {}, clientX: touch.clientX, clientY: touch.clientY };
-                    if (folder) {
-                        const node = TreeManager.getNode(folder.dataset.path);
-                        if (node) UI.showContextMenu(fakeEvent, node);
-                    } else if (file) {
-                        const node = TreeManager.getNode(file.dataset.path);
-                        if (node) UI.showContextMenu(fakeEvent, node);
-                    } else {
-                        UI.showContextMenu(fakeEvent, null);
-                    }
-                }, 600);
-            }, { passive: true });
-            treeContainer.addEventListener('touchend', e => {
-                clearTimeout(longPressTimer);
-                if (longPressTriggered) {
-                    e.preventDefault();
-                    return;
-                }
-                if (!touchMoved) {
-                    const target = e.target;
-                    const el = target.closest('.folder-header') || target.closest('.file-item');
-                    if (el) {
-                        e.preventDefault();
-                        el.click();
-                    }
-                }
-            });
-            treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); touchMoved = true; }, { passive: true });
-        },
-        bindWindowLifecycle() {
+        bindLifecycle() {
             window.addEventListener('resize', () => {
                 const wasMobile = isMobile;
                 isMobile = window.innerWidth <= 768;
@@ -2526,13 +2521,11 @@ const MarkdownMini = (() => {
             });
         },
         bindEvents() {
-            this.bindKeyboardShortcuts();
-            this.bindSidebarAndTreeEvents();
-            this.bindTabDragAndDrop();
-            this.bindTextareaEvents();
-            this.bindSettingsPanel();
-            this.bindContextMenuAndLongPress();
-            this.bindWindowLifecycle();
+            this.bindKeyboard();
+            this.bindTreeEvents();
+            this.bindTabEvents();
+            this.bindSettings();
+            this.bindLifecycle();
         },
         init: async () => {
             textarea = document.getElementById('textarea');
