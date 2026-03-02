@@ -30,9 +30,6 @@ FEATURES AT A GLANCE
   Sidebar           Full folder tree with lazy loading. Supports drag & drop
                     to move files, plus create, rename, copy, and delete.
 
-  Markdown          Files ending in .md get a live preview that renders
-                    automatically after a few seconds of inactivity.
-
   Line width        Use the ruler slider (top-right) to set a soft-wrap
                     column, or push it all the way right for no limit (∞).
 
@@ -121,7 +118,7 @@ window.LEGEND = `<!--
                   │   ├── highlightActive() (auto-triggered via State events) + updateHeader
                   │   └── registerNode / getNode / clear
                   │
-                  ├── TAB_TYPES – type registry (welcome · legend · text · markdown · extension)
+                  ├── TAB_TYPES – type registry (welcome · legend · text · extension)
                   │
                   ├── ExtensionManager – pluggable extension system
                   │   ├── loadAll() – restore saved extensions from IndexedDB
@@ -549,8 +546,8 @@ window.LEGEND = `<!--
             -webkit-overflow-scrolling: touch;
         }
 
-        /* ── Markdown tab toggle ── */
-        .tab .md-toggle {
+        /* ── Extension tab toggle ── */
+        .tab .ext-toggle {
             font-size: 10px;
             font-family: ui-monospace, monospace;
             color: var(--text-dim);
@@ -562,66 +559,9 @@ window.LEGEND = `<!--
             border: 1px solid transparent;
             flex-shrink: 0;
         }
-        .tab .md-toggle:hover { color: var(--text-secondary); border-color: var(--border-subtle); }
-        .tab .md-toggle.active { color: var(--text-secondary); border-color: var(--text-dim); }
-        .tab .md-toggle.inactive { text-decoration: line-through; color: var(--border-subtle); }
-
-        /* ── Markdown overlay preview ── */
-        #md-preview {
-            position: absolute;
-            top: 0;
-            left: 60px; /* after gutter */
-            right: 0;
-            bottom: 0;
-            overflow: auto;
-            background: var(--bg-editor);
-            color: var(--text-primary);
-            font-family: system-ui, -apple-system, sans-serif;
-            font-size: 14px;
-            line-height: 1.6;
-            padding: 12px 16px;
-            z-index: 4;
-            pointer-events: none;
-        }
-        #md-preview.hidden { display: none; }
-        #textarea.md-active { color: transparent; caret-color: var(--text-primary); }
-        #md-preview h1, #md-preview h2, #md-preview h3,
-        #md-preview h4, #md-preview h5, #md-preview h6 {
-            margin: 0.8em 0 0.4em; font-weight: 600; line-height: 1.3;
-        }
-        #md-preview h1 { font-size: 1.8em; }
-        #md-preview h2 { font-size: 1.4em; }
-        #md-preview h3 { font-size: 1.2em; }
-        #md-preview p { margin: 0.6em 0; }
-        #md-preview code {
-            font-family: ui-monospace, monospace;
-            background: var(--border-color);
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 0.9em;
-        }
-        #md-preview pre {
-            background: var(--bg-surface);
-            padding: 12px 16px;
-            border-radius: 4px;
-            overflow-x: auto;
-            border: 1px solid var(--border-color);
-            margin: 0.8em 0;
-        }
-        #md-preview pre code { background: none; padding: 0; font-size: 13px; }
-        #md-preview blockquote {
-            margin: 0.6em 0;
-            padding: 0 0 0 12px;
-            border-left: 3px solid var(--border-subtle);
-            color: var(--text-muted);
-        }
-        #md-preview ul, #md-preview ol { margin: 0.6em 0; padding-left: 24px; }
-        #md-preview li { margin: 0.2em 0; }
-        #md-preview hr { border: none; border-top: 1px solid var(--border-color); margin: 1em 0; }
-        #md-preview a { color: var(--text-muted); text-decoration: underline; }
-        #md-preview strong { font-weight: 700; }
-        #md-preview del { text-decoration: line-through; color: var(--text-muted); }
-        #md-preview img { max-width: 100%; }
+        .tab .ext-toggle:hover { color: var(--text-secondary); border-color: var(--border-subtle); }
+        .tab .ext-toggle.active { color: var(--text-secondary); border-color: var(--text-dim); }
+        .tab .ext-toggle.inactive { text-decoration: line-through; color: var(--border-subtle); }
 
         /* ── Extension iframe ── */
         .ext-frame {
@@ -675,7 +615,6 @@ window.LEGEND = `<!--
                 <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle Sidebar">›</button>
                 <div id="gutter"></div>
                 <textarea id="textarea" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea>
-                <div id="md-preview" class="hidden"></div>
             </div>
             <div class="status"><span id="status"></span><span style="flex:1"></span><span id="editor-status">No file open</span></div>
         </div>
@@ -683,133 +622,6 @@ window.LEGEND = `<!--
     
 <script>
 'use strict';
-// ────────────────────────────────────────────────────────
-// MarkdownRenderer – tiny Markdown → HTML (zero dep)
-// ────────────────────────────────────────────────────────
-class MarkdownRenderer {
-    static #escapeHtml(text) {
-        return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
-
-    static parseInline(text) {
-        if (!text) return '';
-        return text
-            .replace(/`([^`]+)`/g, (_, code) => `<code>${MarkdownRenderer.#escapeHtml(code)}</code>`)
-            .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) =>
-                `<img src="${MarkdownRenderer.#escapeHtml(url)}" alt="${MarkdownRenderer.#escapeHtml(alt)}">`)
-            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) =>
-                `<a href="${MarkdownRenderer.#escapeHtml(url)}">${MarkdownRenderer.parseInline(txt)}</a>`)
-            .replace(/(?<!["'=>])(https?:\/\/[^\s<>"']+)(?!["'])/g, url =>
-                `<a href="${MarkdownRenderer.#escapeHtml(url)}">${MarkdownRenderer.#escapeHtml(url)}</a>`)
-            .replace(/~~(.+?)~~/g, (_, s) => `<del>${MarkdownRenderer.#escapeHtml(s)}</del>`)
-            .replace(/\*\*([^*]+?)\*\*/g, (_, s) => `<strong>${MarkdownRenderer.#escapeHtml(s)}</strong>`)
-            .replace(/__([^_]+?)__/g, (_, s) => `<strong>${MarkdownRenderer.#escapeHtml(s)}</strong>`)
-            .replace(/\*([^*]+?)\*/g, (_, s) => `<em>${MarkdownRenderer.#escapeHtml(s)}</em>`)
-            .replace(/_([^_]+?)_/g, (_, s) => `<em>${MarkdownRenderer.#escapeHtml(s)}</em>`);
-    }
-
-    static #parseBlockquote(lines, idx, html) {
-        const content = [];
-        while (idx < lines.length && lines[idx].trim().startsWith('>')) {
-            content.push(lines[idx].replace(/^>\s?/, ''));
-            idx++;
-        }
-        html.push(`<blockquote>${MarkdownRenderer.parse(content.join('\n'))}</blockquote>`);
-        return idx;
-    }
-
-    /** @param {string} text */
-    static parse(text) {
-        if (!text?.trim()) return '';
-        const lines = text.split(/\r?\n/);
-        const html = [];
-        let i = 0;
-        let inList = false;
-        let listType = '';
-
-        while (i < lines.length) {
-            const line = lines[i];
-            const trimmed = line.trim();
-
-            if (!trimmed) {
-                if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
-                i++;
-                continue;
-            }
-
-            if (trimmed.startsWith('```')) {
-                const lang = MarkdownRenderer.#escapeHtml(trimmed.slice(3).trim());
-                const codeLines = [];
-                i++;
-                while (i < lines.length && !lines[i].trim().startsWith('```')) {
-                    codeLines.push(MarkdownRenderer.#escapeHtml(lines[i]));
-                    i++;
-                }
-                html.push(`<pre><code${lang ? ` class="${lang}"` : ''}>${codeLines.join('\n')}</code></pre>`);
-                i++;
-                continue;
-            }
-
-            const headerMatch = trimmed.match(/^(#{1,6})[ \t]*(.+?)\s*$/);
-            if (headerMatch) {
-                const level = headerMatch[1].length;
-                html.push(`<h${level}>${MarkdownRenderer.parseInline(headerMatch[2])}</h${level}>`);
-                i++;
-                continue;
-            }
-
-            if (/^([-*_]{3,})\s*$/.test(trimmed)) {
-                html.push('<hr>');
-                i++;
-                continue;
-            }
-
-            if (trimmed.startsWith('>')) {
-                if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
-                i = MarkdownRenderer.#parseBlockquote(lines, i, html);
-                continue;
-            }
-
-            const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
-            if (listMatch) {
-                const isOrdered = listMatch[2].includes('.');
-                const newType = isOrdered ? 'ol' : 'ul';
-                if (!inList || newType !== listType) {
-                    if (inList) html.push(listType === 'ol' ? '</ol>' : '</ul>');
-                    html.push(`<${newType}>`);
-                    listType = newType;
-                    inList = true;
-                }
-                const liText = listMatch[3].replace(/^\[x\]\s*/i, '\u2611 ').replace(/^\[ \]\s*/, '\u2610 ');
-                html.push(`<li>${MarkdownRenderer.parseInline(liText)}</li>`);
-                i++;
-                continue;
-            }
-
-            if (inList) { html.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; }
-
-            const para = [];
-            while (i < lines.length) {
-                const t = lines[i].trim();
-                if (!t || /^#{1,6}[ \t]*\S/.test(t) || t.startsWith('>') || t.startsWith('```') ||
-                    /^(\s*)([-*+]|\d+\.)\s/.test(lines[i]) || /^([-*_]{3,})\s*$/.test(t)) break;
-                para.push(lines[i].trim());
-                i++;
-            }
-            if (para.length) { html.push(`<p>${para.map(MarkdownRenderer.parseInline).join('<br>')}</p>`); continue; }
-            i++;
-        }
-
-        if (inList) html.push(listType === 'ol' ? '</ol>' : '</ul>');
-        return html.join('\n');
-    }
-}
-
 // ────────────────────────────────────────────────────────
 // ReactiveState – observable state container
 // ────────────────────────────────────────────────────────
@@ -1772,7 +1584,6 @@ class TabManager {
         welcome:   { canSave: false, canDirty: false },
         legend:    { canSave: false, canDirty: false },
         text:      { canSave: true,  canDirty: true  },
-        markdown:  { canSave: true,  canDirty: true  },
         extension: { canSave: true,  canDirty: true  }
     };
 
@@ -1781,17 +1592,15 @@ class TabManager {
 
     #nextTabId = 1;
 
-    /** @param {ReactiveState} state @param {FileSystemManager} fs @param {ExtensionManager} extensions @param {MarkdownRenderer} markdown */
-    constructor(state, fs, extensions, markdown) {
+    /** @param {ReactiveState} state @param {FileSystemManager} fs @param {ExtensionManager} extensions */
+    constructor(state, fs, extensions) {
         this.state = state;
         this.fs = fs;
         this.extensions = extensions;
-        this.markdown = markdown;
         /** @type {UIManager} */ this.ui = null;
         this.textarea = null;
         this.gutter = null;
         this.tabsContainer = null;
-        this.mdPreviewTimer = null;
     }
 
     static #moveArrayItem(arr, fromIdx, toIdx) {
@@ -1801,13 +1610,11 @@ class TabManager {
     #createTab(handle, name, content = '', path = null, type = 'text') {
         const ext = this.extensions.getForFile(name);
         if (ext) type = 'extension';
-        else if (type === 'text' && /\.(md|markdown)$/i.test(name)) type = 'markdown';
         return {
             id: this.#nextTabId++,
             name, handle, content, path, type,
             extension: ext || null,
             dirty: false,
-            mdPreview: type === 'markdown',
             element: null,
             extFrame: null,
             blobUrl: null,
@@ -1820,7 +1627,7 @@ class TabManager {
             e.stopPropagation();
             if (tab.type === 'extension') {
                 tab.type = 'text';
-                extToggle.className = 'md-toggle inactive';
+                extToggle.className = 'ext-toggle inactive';
                 if (tab.extFrame) tab.extFrame.classList.add('hidden');
                 // Clear state.currentTabId so switchToTab won't save stale textarea content
                 this.state.currentTabId = null;
@@ -1828,7 +1635,7 @@ class TabManager {
             } else {
                 if (this.state.currentTabId === tab.id) tab.content = this.textarea.value;
                 tab.type = 'extension';
-                extToggle.className = 'md-toggle active';
+                extToggle.className = 'ext-toggle active';
                 this.state.currentTabId = null;
                 this.switchToTab(tab.id);
             }
@@ -1838,12 +1645,12 @@ class TabManager {
     #createExtToggle(tab, ext) {
         const extToggle = document.createElement('span');
         if (ext) {
-            extToggle.className = 'md-toggle active';
+            extToggle.className = 'ext-toggle active';
             extToggle.title = 'Toggle extension: ' + ext.name;
             extToggle.textContent = ext.name;
             extToggle.onclick = this.#makeExtToggleHandler(tab, extToggle);
         } else {
-            extToggle.className = 'md-toggle inactive';
+            extToggle.className = 'ext-toggle inactive';
             extToggle.title = 'No extension installed – click to install';
             extToggle.textContent = 'ext';
             extToggle.onclick = async e => {
@@ -1856,7 +1663,7 @@ class TabManager {
                     tab.type = 'extension';
                     extToggle.textContent = newExt.name;
                     extToggle.title = 'Toggle extension: ' + newExt.name;
-                    extToggle.className = 'md-toggle active';
+                    extToggle.className = 'ext-toggle active';
                     extToggle.onclick = this.#makeExtToggleHandler(tab, extToggle);
                     this.state.currentTabId = null;
                     this.switchToTab(tab.id);
@@ -1875,29 +1682,16 @@ class TabManager {
                 if (newName != null) {
                     tab.name = newName;
                     if (tab.element) tab.element.querySelector('.tab-name').textContent = newName;
-                    if (tab.type === 'text' || tab.type === 'markdown') {
+                    if (tab.type === 'text') {
                         const ext = this.extensions.getForFile(newName);
-                        const newType = ext ? 'extension' : /\.(md|markdown)$/i.test(newName) ? 'markdown' : 'text';
+                        const newType = ext ? 'extension' : 'text';
                         if (newType !== tab.type) {
                             tab.type = newType;
-                            tab.mdPreview = newType === 'markdown';
                             tab.extension = ext || null;
                             if (tab.element) {
-                                const existingToggle = tab.element.querySelector('.md-toggle');
+                                const existingToggle = tab.element.querySelector('.ext-toggle');
                                 if (existingToggle) existingToggle.remove();
-                                if (newType === 'markdown') {
-                                    const mdToggle = document.createElement('span');
-                                    mdToggle.className = 'md-toggle active';
-                                    mdToggle.title = 'Toggle Markdown preview';
-                                    mdToggle.textContent = 'MD';
-                                    mdToggle.onclick = e => {
-                                        e.stopPropagation();
-                                        tab.mdPreview = !tab.mdPreview;
-                                        mdToggle.className = 'md-toggle' + (tab.mdPreview ? ' active' : ' inactive');
-                                        if (this.state.currentTabId === tab.id) this.ui.updateMdPreview();
-                                    };
-                                    tab.element.insertBefore(mdToggle, tab.element.querySelector('.tab-name'));
-                                } else if (newType === 'extension') {
+                                if (newType === 'extension') {
                                     const extToggle = this.#createExtToggle(tab, ext);
                                     tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
                                 } else if (newType === 'text') {
@@ -1905,7 +1699,6 @@ class TabManager {
                                     tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
                                 }
                             }
-                            if (this.state.currentTabId === tab.id) this.ui.updateMdPreview();
                         }
                     }
                 }
@@ -1962,19 +1755,7 @@ class TabManager {
         const closeBtn = document.createElement('span');
         closeBtn.className = 'close';
         closeBtn.textContent = '×';
-        if (tab.type === 'markdown') {
-            const mdToggle = document.createElement('span');
-            mdToggle.className = 'md-toggle active';
-            mdToggle.title = 'Toggle Markdown preview';
-            mdToggle.textContent = 'MD';
-            mdToggle.onclick = e => {
-                e.stopPropagation();
-                tab.mdPreview = !tab.mdPreview;
-                mdToggle.className = 'md-toggle' + (tab.mdPreview ? ' active' : ' inactive');
-                if (this.state.currentTabId === tab.id) this.ui.updateMdPreview();
-            };
-            tabEl.append(mdToggle, tabName, dirtyInd, closeBtn);
-        } else if (tab.type === 'extension') {
+        if (tab.type === 'extension') {
             const extToggle = this.#createExtToggle(tab, tab.extension);
             tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
         } else if (tab.type === 'text') {
@@ -2015,7 +1796,6 @@ class TabManager {
     }
 
     switchToTab(id) {
-        if (this.mdPreviewTimer) clearTimeout(this.mdPreviewTimer);
         if (this.state.currentTabId !== null) {
             const cur = this.state.tabs.find(t => t.id === this.state.currentTabId);
             if (cur) {
@@ -2049,7 +1829,6 @@ class TabManager {
             this.gutter.scrollTop = tab.scrollTop;
         }
         this.ui.updateEditorStatus(tab);
-        this.ui.updateMdPreview();
         if (tab.path) {
             this.state.activeFilePath = tab.path;
         }
@@ -2057,7 +1836,6 @@ class TabManager {
     }
 
     async closeTab(id) {
-        if (this.mdPreviewTimer) clearTimeout(this.mdPreviewTimer);
         const idx = this.state.tabs.findIndex(t => t.id === id);
         if (idx === -1) return;
         const tab = this.state.tabs[idx];
@@ -2179,7 +1957,6 @@ class UIManager {
         if (savedFontSize) {
             this.#textarea.style.fontSize = savedFontSize + 'px';
             this.#gutter.style.fontSize = savedFontSize + 'px';
-            document.getElementById('md-preview').style.fontSize = savedFontSize + 'px';
         }
         if (localStorage.getItem('sliderVisible') === 'false') {
             document.getElementById('line-width-slider').classList.add('hidden');
@@ -2188,7 +1965,6 @@ class UIManager {
         if (localStorage.getItem('gutterVisible') === 'false') {
             this.#gutter.classList.add('hidden');
             document.getElementById('settings-toggle-gutter').classList.remove('active');
-            document.getElementById('md-preview').style.left = '0';
         }
         await this.fs.initDB();
         await this.extensions.loadAll();
@@ -2394,19 +2170,6 @@ class UIManager {
         this.#editorStatusEl.textContent = tab.name + modified;
     }
 
-    updateMdPreview() {
-        const previewEl = document.getElementById('md-preview');
-        const tab = this.state.currentTabId !== null ? this.state.tabs.find(t => t.id === this.state.currentTabId) : null;
-        if (!tab || tab.type !== 'markdown' || !tab.mdPreview) {
-            previewEl.classList.add('hidden');
-            this.#textarea.classList.remove('md-active');
-            return;
-        }
-        previewEl.classList.remove('hidden');
-        previewEl.innerHTML = MarkdownRenderer.parse(this.#textarea.value);
-        this.#textarea.classList.add('md-active');
-    }
-
     bindKeyboard() {
         document.addEventListener('keydown', e => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
@@ -2560,15 +2323,6 @@ class UIManager {
             this.#tabsContainer.appendChild(movedTab.element);
             this.fs.saveOpenTabs(this.state.currentTabId);
         });
-        const MD_PREVIEW_DEBOUNCE_DELAY = 3000; // ms of inactivity before showing Markdown preview
-        this.#textarea.addEventListener('mousedown', () => {
-            const tab = this.state.currentTabId ? this.state.tabs.find(t => t.id === this.state.currentTabId) : null;
-            if (tab?.type === 'markdown' && tab.mdPreview) {
-                clearTimeout(this.tabs.mdPreviewTimer);
-                document.getElementById('md-preview').classList.add('hidden');
-                this.#textarea.classList.remove('md-active');
-            }
-        });
         this.#textarea.addEventListener('input', () => {
             this.updateLineNumbers();
             if (this.state.currentTabId) {
@@ -2580,28 +2334,11 @@ class UIManager {
                         this.fs.scheduleSave();
                     }
                     this.updateEditorStatus(tab);
-                    if (tab.type === 'markdown' && tab.mdPreview) {
-                        clearTimeout(this.tabs.mdPreviewTimer);
-                        document.getElementById('md-preview').classList.add('hidden');
-                        this.#textarea.classList.remove('md-active');
-                        this.tabs.mdPreviewTimer = setTimeout(() => this.updateMdPreview(), MD_PREVIEW_DEBOUNCE_DELAY);
-                    } else {
-                        this.updateMdPreview();
-                    }
                 }
             }
         });
         this.#textarea.addEventListener('scroll', () => this.#gutter.scrollTop = this.#textarea.scrollTop);
         this.#textarea.addEventListener('keydown', e => {
-            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-                const tab = this.state.currentTabId !== null ? this.state.tabs.find(t => t.id === this.state.currentTabId) : null;
-                if (tab && tab.type === 'markdown' && tab.mdPreview) {
-                    clearTimeout(this.tabs.mdPreviewTimer);
-                    document.getElementById('md-preview').classList.add('hidden');
-                    this.#textarea.classList.remove('md-active');
-                    this.tabs.mdPreviewTimer = setTimeout(() => this.updateMdPreview(), MD_PREVIEW_DEBOUNCE_DELAY);
-                }
-            }
             if (e.key === 'Tab') {
                 e.preventDefault();
                 const start = this.#textarea.selectionStart;
@@ -2616,18 +2353,15 @@ class UIManager {
         const MAX_CHARS = 200;
         slider.addEventListener('input', e => {
             const v = +e.target.value;
-            const previewEl = document.getElementById('md-preview');
             valueEl.textContent = (v === MAX_CHARS) ? '∞' : `${v} char/line`;
             if (v === MAX_CHARS) {
                 this.#textarea.style.maxWidth = 'none';
                 this.#textarea.style.whiteSpace = 'pre';
                 this.#textarea.style.wordWrap = 'normal';
-                previewEl.style.maxWidth = 'none';
             } else {
                 this.#textarea.style.maxWidth = v + 'ch';
                 this.#textarea.style.whiteSpace = 'pre-wrap';
                 this.#textarea.style.wordWrap = 'break-word';
-                previewEl.style.maxWidth = v + 'ch';
             }
         });
         slider.dispatchEvent(new Event('input'));
@@ -2652,8 +2386,6 @@ class UIManager {
         document.getElementById('settings-toggle-gutter').addEventListener('click', () => {
             const nowHidden = this.#gutter.classList.toggle('hidden');
             document.getElementById('settings-toggle-gutter').classList.toggle('active', !nowHidden);
-            const previewEl = document.getElementById('md-preview');
-            previewEl.style.left = nowHidden ? '0' : '60px';
             localStorage.setItem('gutterVisible', !nowHidden);
         });
         // Font size
@@ -2661,7 +2393,6 @@ class UIManager {
         const applyFontSize = sz => {
             this.#textarea.style.fontSize = sz + 'px';
             this.#gutter.style.fontSize = sz + 'px';
-            document.getElementById('md-preview').style.fontSize = sz + 'px';
         };
         document.getElementById('settings-font-decrease').addEventListener('click', () => {
             const cur = parseInt(this.#textarea.style.fontSize) || DEFAULT_FONT_SIZE;
@@ -2730,12 +2461,11 @@ class UIManager {
 class EditorApp {
     constructor() {
         this.state      = new ReactiveState();
-        this.markdown   = new MarkdownRenderer();
         this.pathUtils  = new PathUtils();
         this.fs         = new FileSystemManager(this.state, this.pathUtils);
         this.tree       = new TreeManager(this.state, this.fs);
         this.extensions = new ExtensionManager(this.state, this.fs);
-        this.tabs       = new TabManager(this.state, this.fs, this.extensions, this.markdown);
+        this.tabs       = new TabManager(this.state, this.fs, this.extensions);
         this.ui         = new UIManager(this.state, this.tabs, this.tree, this.fs, this.extensions);
         // Resolve cross-references
         this.fs.tree = this.tree;
