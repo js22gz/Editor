@@ -1582,7 +1582,7 @@ class ExtensionManager {
         return null;
     }
 
- renderTab(tab) {
+    renderTab(tab) {
         if (!tab.extFrame) {
             const iframe = document.createElement('iframe');
             iframe.className = 'ext-frame hidden';
@@ -1590,6 +1590,9 @@ class ExtensionManager {
             document.querySelector('.editor-wrapper').appendChild(iframe);
             tab.extFrame = iframe;
         }
+
+        // Cancel stale fallback timers from a previous render
+        if (tab._extTimers) tab._extTimers.forEach(t => clearTimeout(t));
 
         tab.extFrame.classList.remove('hidden');
         tab.extFrame.srcdoc = tab.extension.html;
@@ -1606,8 +1609,10 @@ class ExtensionManager {
         };
 
         tab.extFrame.onload = sendLoadMessage;
-        setTimeout(sendLoadMessage, 60);   // fallback
-        setTimeout(sendLoadMessage, 180);  // extra safety for CDNs
+        tab._extTimers = [
+            setTimeout(sendLoadMessage, 60),   // fallback
+            setTimeout(sendLoadMessage, 180)    // extra safety for CDNs
+        ];
     }
 }
 
@@ -1750,22 +1755,21 @@ class TabManager {
                 if (newName != null) {
                     tab.name = newName;
                     if (tab.element) tab.element.querySelector('.tab-name').textContent = newName;
-                    if (tab.type === 'text') {
+                    if (tab.type === 'text' || tab.type === 'extension') {
                         const ext = this.extensions.getForFile(newName);
                         const newType = ext ? 'extension' : 'text';
                         if (newType !== tab.type) {
                             tab.type = newType;
                             tab.extension = ext || null;
+                            if (tab.extFrame && newType === 'text') {
+                                tab.extFrame.remove();
+                                tab.extFrame = null;
+                            }
                             if (tab.element) {
                                 const existingToggle = tab.element.querySelector('.ext-toggle');
                                 if (existingToggle) existingToggle.remove();
-                                if (newType === 'extension') {
-                                    const extToggle = this.#createExtToggle(tab, ext);
-                                    tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
-                                } else if (newType === 'text') {
-                                    const extToggle = this.#createExtToggle(tab, null);
-                                    tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
-                                }
+                                const extToggle = this.#createExtToggle(tab, ext || null);
+                                tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
                             }
                         }
                     }
@@ -2497,7 +2501,11 @@ class UIManager {
                 tab.content = e.data.content;
                 tab.dirty = true;
                 if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
-                this.fs.scheduleSave();
+                if (tab.id === this.state.currentTabId) {
+                    this.fs.scheduleSave();
+                } else {
+                    this.fs.saveTab(tab);
+                }
             } else if (e.data.type === 'extension:dirty') {
                 tab.dirty = true;
                 if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
