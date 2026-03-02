@@ -227,9 +227,7 @@ window.LEGEND = `<!--
         }
         #tab-settings-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
         #tab-settings-popover {
-            position: absolute;
-            top: 100%;
-            left: 0;
+            position: fixed;
             display: flex;
             flex-direction: column;
             gap: 4px;
@@ -2377,6 +2375,19 @@ class UIManager {
         settingsBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             popover.classList.toggle('hidden');
+            if (!popover.classList.contains('hidden')) {
+                const rect = settingsBtn.getBoundingClientRect();
+                popover.style.top = rect.bottom + 'px';
+                popover.style.left = rect.left + 'px';
+            }
+        });
+        // Reposition popover on window resize
+        window.addEventListener('resize', () => {
+            if (!popover.classList.contains('hidden')) {
+                const rect = settingsBtn.getBoundingClientRect();
+                popover.style.top = rect.bottom + 'px';
+                popover.style.left = rect.left + 'px';
+            }
         });
         // Close popover when clicking outside
         document.addEventListener('click', (e) => {
