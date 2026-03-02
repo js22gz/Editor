@@ -1586,25 +1586,23 @@ class ExtensionManager {
         if (!tab.extFrame) {
             const iframe = document.createElement('iframe');
             iframe.className = 'ext-frame hidden';
-            iframe.sandbox = 'allow-scripts allow-same-origin';
+            iframe.sandbox = 'allow-scripts';
             document.querySelector('.editor-wrapper').appendChild(iframe);
             tab.extFrame = iframe;
         }
+
+        // Use srcdoc instead of blob URL → no more warnings, no more origin issues
+        tab.extFrame.srcdoc = tab.extension.html;
         tab.extFrame.classList.remove('hidden');
-        if (!tab.blobUrl) {
-            const blob = new Blob([tab.extension.html], { type: 'text/html' });
-            tab.blobUrl = URL.createObjectURL(blob);
-        }
-        if (tab.extFrame.src !== tab.blobUrl) {
-            tab.extFrame.src = tab.blobUrl;
-            tab.extFrame.onload = () => {
-                tab.extFrame.contentWindow.postMessage({
-                    type: 'editor:load',
-                    content: tab.content,
-                    filename: tab.name
-                }, '*');
-            };
-        }
+
+        // Send the file content after the extension loads
+        tab.extFrame.onload = () => {
+            tab.extFrame.contentWindow.postMessage({
+                type: 'editor:load',
+                content: tab.content,
+                filename: tab.name
+            }, '*');
+        };
     }
 }
 
@@ -1903,7 +1901,6 @@ class TabManager {
         const tab = this.state.tabs[idx];
         if (tab.dirty && !await this.ui.showDialog({isConfirm: true, confirmMessage: `"${tab.name}" has unsaved changes. Close anyway?`})) return;
         if (tab.extFrame) {
-            if (tab.blobUrl) URL.revokeObjectURL(tab.blobUrl);
             tab.extFrame.remove();
         }
         this.state.tabs.splice(idx, 1);
