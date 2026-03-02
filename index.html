@@ -1995,6 +1995,7 @@ class UIManager {
         this.#tabsContainer = document.getElementById('tabs');
         this.#treeContainer = document.getElementById('tree-container');
         this.#sidebarEl = document.getElementById('sidebar');
+        if (this.#isMobile) this.#sidebarEl.classList.add('hidden');
         this.#statusEl = document.getElementById('status');
         this.#editorStatusEl = document.getElementById('editor-status');
         this.#activeDirNameEl = document.getElementById('active-dir-name');
@@ -2032,7 +2033,6 @@ class UIManager {
         await this.fs.initDB();
         await this.extensions.loadAll();
         await this.fs.restoreSession();
-        if (this.#isMobile) this.#sidebarEl.classList.add('hidden');
     }
 
     showToast(message, duration = 2800) {
