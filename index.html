@@ -96,9 +96,10 @@ window.LEGEND = `<!--
          │
          └── <script> (IIFE: const App = (() => { … })())
                   │
-                  ├── STATE – currentDirHandle, tabs[], currentTabId,
+                  ├── STATE – State { currentDirHandle, tabs[], currentTabId,
                   │           expandedFolders, activeFilePath,
-                  │           activeDirectoryPath …
+                  │           activeDirectoryPath, copiedNode,
+                  │           getTab(), getActiveTab() }
                   │
                   ├── FSA – FileSystemAccess + persistence
                   │   ├── IndexedDB handle storage
@@ -129,6 +130,8 @@ window.LEGEND = `<!--
                   │         editor → ext:  { type: 'editor:load', content, filename }
                   │         ext → editor:  { type: 'extension:save', content }
                   │         ext → editor:  { type: 'extension:dirty' }
+                  │
+                  ├── createTab(handle, name, content, path, type) – tab data-object factory
                   │
                   ├── TabManager
                   │   ├── createNewTab(handle, name, content, path, type)
@@ -817,7 +820,7 @@ const MarkdownMini = (() => {
         copiedNode: null,
 
         getTab(id) { return this.tabs.find(t => t.id === id); },
-        getActiveTab() { return this.getTab(this.currentTabId); },
+        getActiveTab() { return this.currentTabId !== null ? this.getTab(this.currentTabId) : null; },
     };
     let nextTabId = 1;
     let contextMenu = null;
@@ -1850,7 +1853,6 @@ const MarkdownMini = (() => {
                 }
             }
             const tab = createTab(handle, name, content, path, type);
-            const { type } = tab;
             State.tabs.push(tab);
             const tabEl = document.createElement('div');
             tabEl.className = 'tab';
@@ -1866,7 +1868,7 @@ const MarkdownMini = (() => {
             const closeBtn = document.createElement('span');
             closeBtn.className = 'close';
             closeBtn.textContent = '×';
-            if (type === 'markdown') {
+            if (tab.type === 'markdown') {
                 const mdToggle = document.createElement('span');
                 mdToggle.className = 'md-toggle active';
                 mdToggle.title = 'Toggle Markdown preview';
@@ -1878,10 +1880,10 @@ const MarkdownMini = (() => {
                     if (State.currentTabId === tab.id) UI.updateMdPreview();
                 };
                 tabEl.append(mdToggle, tabName, dirtyInd, closeBtn);
-            } else if (type === 'extension') {
+            } else if (tab.type === 'extension') {
                 const extToggle = this._createExtToggle(tab, tab.extension);
                 tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
-            } else if (type === 'text') {
+            } else if (tab.type === 'text') {
                 const extToggle = this._createExtToggle(tab, null);
                 tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
             } else {
