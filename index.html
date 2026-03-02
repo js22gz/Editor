@@ -807,22 +807,27 @@ const MarkdownMini = (() => {
     // ──────────────────────────────────────────────
     // STATE
     // ──────────────────────────────────────────────
-    let currentDirHandle = null;
-    let tabs = [];
-    let currentTabId = null;
+    const State = {
+        currentDirHandle: null,
+        tabs: [],
+        currentTabId: null,
+        expandedFolders: new Set(),
+        activeFilePath: null,
+        activeDirectoryPath: null,
+        copiedNode: null,
+
+        getTab(id) { return this.tabs.find(t => t.id === id); },
+        getActiveTab() { return this.getTab(this.currentTabId); },
+    };
     let nextTabId = 1;
-    let expandedFolders = new Set();
     let contextMenu = null;
     let contextMenuTarget = null;
-    let copiedNode = null;
     let saveTimer = null;
     let mdPreviewTimer = null;
     let saveInProgress = false;
     let isMobile = window.innerWidth <= 768;
     let lastLineCount = 1;
     let longPressTriggered = false;
-    let activeFilePath = null;
-    let activeDirectoryPath = null;
     // DOM references
     let textarea, gutter, tabsContainer, treeContainer, sidebarHeader, sidebarEl, statusEl, editorStatusEl, activeDirNameEl, rootDirNameEl, sidebarHeaderActionsEl;
     const Utils = {
@@ -896,10 +901,10 @@ const MarkdownMini = (() => {
                 const tx = this.db.transaction('handles', 'readwrite');
                 tx.objectStore('handles').delete('main');
             }
-            currentDirHandle = null;
-            activeDirectoryPath = null;
-            expandedFolders.clear();
-            localStorage.removeItem('expandedFolders');
+            State.currentDirHandle = null;
+            State.activeDirectoryPath = null;
+            State.expandedFolders.clear();
+            localStorage.removeItem('State.expandedFolders');
             localStorage.removeItem('openTabs');
             TreeManager.clear();
             TreeManager.updateHeader();
@@ -971,14 +976,14 @@ const MarkdownMini = (() => {
         },
 
         async mutateAndRebuild() {
-            if (!currentDirHandle) return;
-            const previouslyExpanded = new Set(expandedFolders);
-            await this.build(currentDirHandle);
+            if (!State.currentDirHandle) return;
+            const previouslyExpanded = new Set(State.expandedFolders);
+            await this.build(State.currentDirHandle);
             for (const path of previouslyExpanded) {
                 const node = TreeManager.getNode(path);
                 if (node && node.kind === 'directory') {
                     await this.loadChildren(node);
-                    expandedFolders.add(path);
+                    State.expandedFolders.add(path);
                 }
             }
             TreeManager.render();
@@ -987,22 +992,22 @@ const MarkdownMini = (() => {
         },
         loadExpandedState() {
             try {
-                const saved = localStorage.getItem('expandedFolders');
-                if (saved) expandedFolders = new Set(JSON.parse(saved));
+                const saved = localStorage.getItem('State.expandedFolders');
+                if (saved) State.expandedFolders = new Set(JSON.parse(saved));
             } catch {}
         },
         saveExpandedState() {
-            try { localStorage.setItem('expandedFolders', JSON.stringify([...expandedFolders])); } catch {}
+            try { localStorage.setItem('State.expandedFolders', JSON.stringify([...State.expandedFolders])); } catch {}
         },
         saveOpenTabs(currentId) {
             try {
-                const data = tabs.filter(t => t.path).map(t => ({
+                const data = State.tabs.filter(t => t.path).map(t => ({
                     path: t.path,
                     name: t.name,
                     type: t.type,
                     active: t.id === currentId
                 }));
-                if (data.length === 0 && !currentDirHandle) return;
+                if (data.length === 0 && !State.currentDirHandle) return;
                 localStorage.setItem('openTabs', JSON.stringify(data));
             } catch {}
         },
@@ -1018,10 +1023,10 @@ const MarkdownMini = (() => {
             let hadSavedTabs = false;
 
             if (saved.status === 'granted') {
-                currentDirHandle = saved.handle;
-                await FSA.build(currentDirHandle);
+                State.currentDirHandle = saved.handle;
+                await FSA.build(State.currentDirHandle);
 
-                for (const path of [...expandedFolders]
+                for (const path of [...State.expandedFolders]
                         .sort((a, b) => a.split('/').length - b.split('/').length)) {
                     const node = TreeManager.getNode(path);
                     if (node && node.kind === 'directory') await FSA.loadChildren(node);
@@ -1029,7 +1034,7 @@ const MarkdownMini = (() => {
                 TreeManager.render();
                 TreeManager.updateHeader();
 
-                const restored = await TabManager.restoreOpenTabs(currentDirHandle);
+                const restored = await TabManager.restoreOpenTabs(State.currentDirHandle);
                 hadSavedTabs = restored > 0;
                 if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
             } else if (saved.status === 'needs-auth') {
@@ -1044,11 +1049,11 @@ const MarkdownMini = (() => {
                                 return;
                             }
 
-                            currentDirHandle = saved.handle;
-                            await FSA.build(currentDirHandle);
+                            State.currentDirHandle = saved.handle;
+                            await FSA.build(State.currentDirHandle);
 
                             FSA.loadExpandedState();
-                            for (const path of [...expandedFolders]
+                            for (const path of [...State.expandedFolders]
                                     .sort((a, b) => a.split('/').length - b.split('/').length)) {
                                 const node = TreeManager.getNode(path);
                                 if (node && node.kind === 'directory') await FSA.loadChildren(node);
@@ -1056,16 +1061,16 @@ const MarkdownMini = (() => {
                             TreeManager.render();
                             TreeManager.updateHeader();
 
-                            // Remove welcome tab before restoring saved tabs
-                            const welcomeIdx = tabs.findIndex(t => t.type === 'welcome');
+                            // Remove welcome tab before restoring saved State.tabs
+                            const welcomeIdx = State.tabs.findIndex(t => t.type === 'welcome');
                             if (welcomeIdx !== -1) {
-                                tabs[welcomeIdx].element.remove();
-                                tabs.splice(welcomeIdx, 1);
+                                State.tabs[welcomeIdx].element.remove();
+                                State.tabs.splice(welcomeIdx, 1);
                             }
 
-                            const restored = await TabManager.restoreOpenTabs(currentDirHandle, pendingTabs);
+                            const restored = await TabManager.restoreOpenTabs(State.currentDirHandle, pendingTabs);
                             if (restored > 0) UI.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-                            else if (tabs.length === 0) {
+                            else if (State.tabs.length === 0) {
                                 await TabManager.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
                             }
 
@@ -1079,17 +1084,17 @@ const MarkdownMini = (() => {
                 );
             }
 
-            if (!hadSavedTabs && tabs.length === 0) {
+            if (!hadSavedTabs && State.tabs.length === 0) {
                 await TabManager.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
             }
         },
         async openFolder() {
             try {
-                currentDirHandle = await window.showDirectoryPicker();
-                await this.saveFolderHandle(currentDirHandle);
-                expandedFolders.clear();
-                activeDirectoryPath = null;
-                await FSA.build(currentDirHandle);
+                State.currentDirHandle = await window.showDirectoryPicker();
+                await this.saveFolderHandle(State.currentDirHandle);
+                State.expandedFolders.clear();
+                State.activeDirectoryPath = null;
+                await FSA.build(State.currentDirHandle);
                 TreeManager.render();
                 TreeManager.updateHeader();
                 UI.showToast('Folder opened successfully');
@@ -1123,14 +1128,14 @@ const MarkdownMini = (() => {
             }
         },
         async getTargetDir() {
-            const targetPath = contextMenuTarget?.kind === 'directory' ? contextMenuTarget.path : (activeDirectoryPath || '');
-            const { parent: dirParent, name: dirName } = await this.resolvePath(currentDirHandle, targetPath);
+            const targetPath = contextMenuTarget?.kind === 'directory' ? contextMenuTarget.path : (State.activeDirectoryPath || '');
+            const { parent: dirParent, name: dirName } = await this.resolvePath(State.currentDirHandle, targetPath);
             const dir = targetPath ? await dirParent.getDirectoryHandle(dirName) : dirParent;
             await this.ensureRW(dir);
             return { dir, targetPath };
         },
         async newFile() {
-            if (!currentDirHandle) return UI.showToast('Open a folder first');
+            if (!State.currentDirHandle) return UI.showToast('Open a folder first');
             const name = await UI.showDialog({promptTitle: 'New file name:'});
             if (!name?.trim()) return;
             const trimmed = name.trim();
@@ -1138,20 +1143,20 @@ const MarkdownMini = (() => {
             const { dir: parent, targetPath } = await this.getTargetDir();
             const fileHandle = await parent.getFileHandle(trimmed, { create: true });
             await this.writeFile(fileHandle, '');
-            if (targetPath) { expandedFolders.add(targetPath); this.saveExpandedState(); }
+            if (targetPath) { State.expandedFolders.add(targetPath); this.saveExpandedState(); }
             await FSA.mutateAndRebuild();
             await TabManager.createNewTab(fileHandle, trimmed, '', targetPath ? `${targetPath}/${trimmed}` : trimmed);
             UI.closeContextMenu();
         },
         async newFolder() {
-            if (!currentDirHandle) return UI.showToast('Open a folder first');
+            if (!State.currentDirHandle) return UI.showToast('Open a folder first');
             const name = await UI.showDialog({promptTitle: 'New folder name:'});
             if (!name?.trim()) return;
             const trimmed = name.trim();
             if (INVALID_FILENAME_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) return UI.showToast('Invalid folder name');
             const { dir: parent, targetPath } = await this.getTargetDir();
             await parent.getDirectoryHandle(trimmed, { create: true });
-            if (targetPath) { expandedFolders.add(targetPath); this.saveExpandedState(); }
+            if (targetPath) { State.expandedFolders.add(targetPath); this.saveExpandedState(); }
             await FSA.mutateAndRebuild();
             UI.showToast('Folder created');
             UI.closeContextMenu();
@@ -1159,7 +1164,7 @@ const MarkdownMini = (() => {
         async saveTab(tab) {
             if (!tab || !tab.handle || !tab.dirty) return;
             try {
-                const content = (currentTabId === tab.id && tab.type !== 'extension') ? textarea.value : tab.content;
+                const content = (State.currentTabId === tab.id && tab.type !== 'extension') ? textarea.value : tab.content;
                 await this.writeFile(tab.handle, content);
                 tab.content = content;
                 tab.dirty = false;
@@ -1174,20 +1179,20 @@ const MarkdownMini = (() => {
             }
         },
         saveCurrentFile() {
-            if (currentTabId === null) return;
-            const tab = tabs.find(t => t.id === currentTabId);
+            if (State.currentTabId === null) return;
+            const tab = State.tabs.find(t => t.id === State.currentTabId);
             if (tab) this.saveTab(tab);
         },
         scheduleSave: Utils.debounce(function() {
-            if (saveInProgress || !currentTabId) return;
-            const tab = tabs.find(t => t.id === currentTabId);
+            if (saveInProgress || !State.currentTabId) return;
+            const tab = State.tabs.find(t => t.id === State.currentTabId);
             if (tab?.dirty) FSA.saveTab(tab);
         }, 750),
         async flushSave() {
             if (saveInProgress) return;
             saveInProgress = true;
             try {
-                await Promise.allSettled(tabs.filter(t => t.dirty).map(t => this.saveTab(t)));
+                await Promise.allSettled(State.tabs.filter(t => t.dirty).map(t => this.saveTab(t)));
             } finally { saveInProgress = false; }
         },
         async deleteFile() {
@@ -1195,13 +1200,13 @@ const MarkdownMini = (() => {
             if (!target || target.kind !== 'file') return;
             if (!await UI.showDialog({isConfirm: true, confirmMessage: `Delete "${target.name}"?`, danger: true})) { UI.closeContextMenu(); return; }
             try {
-                for (let i = 0; i < tabs.length; i++) {
-                    if (tabs[i].handle && await this.isSameEntry(tabs[i].handle, target.handle)) {
-                        await TabManager.closeTab(tabs[i].id);
+                for (let i = 0; i < State.tabs.length; i++) {
+                    if (State.tabs[i].handle && await this.isSameEntry(State.tabs[i].handle, target.handle)) {
+                        await TabManager.closeTab(State.tabs[i].id);
                         break;
                     }
                 }
-                const { parent, name } = await this.resolvePath(currentDirHandle, target.path);
+                const { parent, name } = await this.resolvePath(State.currentDirHandle, target.path);
                 await this.ensureRW(parent);
                 await parent.removeEntry(name);
                 await FSA.mutateAndRebuild();
@@ -1220,10 +1225,10 @@ const MarkdownMini = (() => {
                 if (!await UI.showDialog({isConfirm: true, confirmMessage: `Delete folder "${target.name}"?`, danger: true})) { UI.closeContextMenu(); return; }
             }
             try {
-                const { parent, name } = await this.resolvePath(currentDirHandle, target.path);
+                const { parent, name } = await this.resolvePath(State.currentDirHandle, target.path);
                 await this.ensureRW(parent);
                 await parent.removeEntry(name, { recursive: true });
-                expandedFolders.delete(target.path);
+                State.expandedFolders.delete(target.path);
                 this.saveExpandedState();
                 await FSA.mutateAndRebuild();
                 UI.showToast('Folder deleted');
@@ -1245,7 +1250,7 @@ const MarkdownMini = (() => {
             }
             try {
                 const oldPath = target.path;
-                const { parent } = await this.resolvePath(currentDirHandle, oldPath);
+                const { parent } = await this.resolvePath(State.currentDirHandle, oldPath);
                 await this.ensureRW(parent);
                 const oldHandle = target.handle;
                 let updatedHandle = oldHandle;
@@ -1279,7 +1284,7 @@ const MarkdownMini = (() => {
             const srcNode = TreeManager.getNode(srcPath);
             if (!srcNode) return;
             if (srcNode.kind === 'directory' && destFolderPath.startsWith(srcPath + '/')) return UI.showToast('Cannot move folder into itself');
-            const { parent: srcParent } = await this.resolvePath(currentDirHandle, srcPath);
+            const { parent: srcParent } = await this.resolvePath(State.currentDirHandle, srcPath);
             const destNode = TreeManager.getNode(destFolderPath || '/');
             if (!destNode) return UI.showToast('Destination folder not found');
             const destHandle = destNode.handle;
@@ -1325,7 +1330,7 @@ const MarkdownMini = (() => {
 
                 const newPath = destFolderPath ? `${destFolderPath}/${srcNode.name}` : srcNode.name;
                 this._updateTabPaths(srcPath, newPath, updatedHandle);
-                if (destFolderPath) { expandedFolders.add(destFolderPath); this.saveExpandedState(); }
+                if (destFolderPath) { State.expandedFolders.add(destFolderPath); this.saveExpandedState(); }
                 await FSA.mutateAndRebuild();
                 UI.showToast(`Moved "${srcNode.name}"`);
             } catch (e) {
@@ -1339,7 +1344,7 @@ const MarkdownMini = (() => {
             UI.closeContextMenu();
         },
         _updateTabPaths(oldPath, newPath, updatedHandle, newName = null) {
-            for (const tab of tabs) {
+            for (const tab of State.tabs) {
                 if (tab.path === oldPath) {
                     tab.path = newPath;
                     tab.handle = updatedHandle;
@@ -1365,7 +1370,7 @@ const MarkdownMini = (() => {
                                             e.stopPropagation();
                                             tab.mdPreview = !tab.mdPreview;
                                             mdToggle.className = 'md-toggle' + (tab.mdPreview ? ' active' : ' inactive');
-                                            if (currentTabId === tab.id) UI.updateMdPreview();
+                                            if (State.currentTabId === tab.id) UI.updateMdPreview();
                                         };
                                         tab.element.insertBefore(mdToggle, tab.element.querySelector('.tab-name'));
                                     } else if (newType === 'extension') {
@@ -1376,7 +1381,7 @@ const MarkdownMini = (() => {
                                         tab.element.insertBefore(extToggle, tab.element.querySelector('.tab-name'));
                                     }
                                 }
-                                if (currentTabId === tab.id) UI.updateMdPreview();
+                                if (State.currentTabId === tab.id) UI.updateMdPreview();
                             }
                         }
                     }
@@ -1384,9 +1389,9 @@ const MarkdownMini = (() => {
                     tab.path = newPath + tab.path.substring(oldPath.length);
                 }
             }
-            if (activeFilePath === oldPath) activeFilePath = newPath;
-            else if (activeFilePath && activeFilePath.startsWith(oldPath + '/')) {
-                activeFilePath = newPath + activeFilePath.substring(oldPath.length);
+            if (State.activeFilePath === oldPath) State.activeFilePath = newPath;
+            else if (State.activeFilePath && State.activeFilePath.startsWith(oldPath + '/')) {
+                State.activeFilePath = newPath + State.activeFilePath.substring(oldPath.length);
             }
         },
         async _copyDirectory(srcDirHandle, destParentHandle, name) {
@@ -1432,7 +1437,7 @@ const MarkdownMini = (() => {
                 } else {
                     await this._copyDirectory(srcNode.handle, destHandle, srcNode.name);
                 }
-                if (destFolderPath) { expandedFolders.add(destFolderPath); this.saveExpandedState(); }
+                if (destFolderPath) { State.expandedFolders.add(destFolderPath); this.saveExpandedState(); }
                 await FSA.mutateAndRebuild();
                 UI.showToast(`Copied "${srcNode.name}"`);
             } catch (e) {
@@ -1463,33 +1468,33 @@ const MarkdownMini = (() => {
                 header.tabIndex = 0;
                 const toggle = document.createElement('span');
                 toggle.className = 'toggle';
-                toggle.textContent = expandedFolders.has(node.path) ? '▼' : '▶';
+                toggle.textContent = State.expandedFolders.has(node.path) ? '▼' : '▶';
                 header.append(toggle, document.createTextNode(' ' + node.name + '/'));
                 const childrenDiv = document.createElement('div');
                 childrenDiv.className = 'tree-children';
-                childrenDiv.style.display = expandedFolders.has(node.path) ? 'block' : 'none';
+                childrenDiv.style.display = State.expandedFolders.has(node.path) ? 'block' : 'none';
                 folderDiv.append(header, childrenDiv);
                 parentEl.appendChild(folderDiv);
 
                 header.onclick = async (e) => {
                     if (longPressTriggered) return;
-                    const isExpanded = expandedFolders.has(node.path);
+                    const isExpanded = State.expandedFolders.has(node.path);
                     if (!isExpanded) {
                         await FSA.loadChildren(node);
                         childrenDiv.replaceChildren();
                         node.children.forEach(c => _renderTreeItem(c, childrenDiv, level + 1));
                     }
                     if (isExpanded) {
-                        expandedFolders.delete(node.path);
+                        State.expandedFolders.delete(node.path);
                         childrenDiv.style.display = 'none';
                         toggle.textContent = '▶';
                     } else {
-                        expandedFolders.add(node.path);
+                        State.expandedFolders.add(node.path);
                         childrenDiv.style.display = 'block';
                         toggle.textContent = '▼';
                     }
                     FSA.saveExpandedState();
-                    activeDirectoryPath = node.path;
+                    State.activeDirectoryPath = node.path;
                     TreeManager.highlightActive();
                     TreeManager.updateHeader();
                 };
@@ -1518,7 +1523,7 @@ const MarkdownMini = (() => {
                     }
                 });
 
-                if (expandedFolders.has(node.path) && node.children.length) {
+                if (State.expandedFolders.has(node.path) && node.children.length) {
                     node.children.forEach(c => _renderTreeItem(c, childrenDiv, level + 1));
                 }
             } else {
@@ -1561,15 +1566,15 @@ const MarkdownMini = (() => {
                 this.highlightActive();
             },
             updateHeader() {
-                if (!fileTree || !currentDirHandle) {
+                if (!fileTree || !State.currentDirHandle) {
                     activeDirNameEl.textContent = '/';
                     rootDirNameEl.textContent = 'Click to open folder';
                     sidebarHeaderActionsEl.replaceChildren();
                     return;
                 }
-                const safeName = currentDirHandle.name;
+                const safeName = State.currentDirHandle.name;
                 rootDirNameEl.textContent = safeName;
-                activeDirNameEl.textContent = activeDirectoryPath ? safeName + '/' + activeDirectoryPath : safeName;
+                activeDirNameEl.textContent = State.activeDirectoryPath ? safeName + '/' + State.activeDirectoryPath : safeName;
                 const refreshSpan = document.createElement('span');
                 refreshSpan.className = 'directory-clear';
                 refreshSpan.id = 'refresh-folder';
@@ -1583,20 +1588,20 @@ const MarkdownMini = (() => {
             },
             highlightActive() {
                 treeContainer.querySelectorAll('.file-item.active,.folder-header.active,.folder-header.active-dir,.folder-header.active-ancestor').forEach(el => el.classList.remove('active','active-dir','active-ancestor'));
-                if (activeFilePath) {
-                    const el = treeContainer.querySelector(`.file-item[data-path="${activeFilePath.replace(/"/g, '\\"')}"]`);
+                if (State.activeFilePath) {
+                    const el = treeContainer.querySelector(`.file-item[data-path="${State.activeFilePath.replace(/"/g, '\\"')}"]`);
                     if (el) el.classList.add('active');
-                    const parts = activeFilePath.split('/');
+                    const parts = State.activeFilePath.split('/');
                     for (let i = 1; i < parts.length; i++) {
                         const p = parts.slice(0, i).join('/');
                         const folderEl = treeContainer.querySelector(`.folder-header[data-path="${p.replace(/"/g, '\\"')}"]`);
                         if (folderEl) folderEl.classList.add('active');
                     }
                 }
-                if (activeDirectoryPath) {
-                    const dirEl = treeContainer.querySelector(`.folder-header[data-path="${activeDirectoryPath.replace(/"/g, '\\"')}"]`);
+                if (State.activeDirectoryPath) {
+                    const dirEl = treeContainer.querySelector(`.folder-header[data-path="${State.activeDirectoryPath.replace(/"/g, '\\"')}"]`);
                     if (dirEl) dirEl.classList.add('active-dir');
-                    const parts = activeDirectoryPath.split('/');
+                    const parts = State.activeDirectoryPath.split('/');
                     for (let i = 1; i < parts.length; i++) {
                         const p = parts.slice(0, i).join('/');
                         const folderEl = treeContainer.querySelector(`.folder-header[data-path="${p.replace(/"/g, '\\"')}"]`);
@@ -1742,6 +1747,26 @@ const MarkdownMini = (() => {
             }
         }
     };
+
+    // ──────────────────────────────────────────────
+    // createTab – tab data-object factory
+    // ──────────────────────────────────────────────
+    const createTab = (handle, name, content = '', path = null, type = 'text') => {
+        const ext = ExtensionManager.getForFile(name);
+        if (ext) type = 'extension';
+        else if (type === 'text' && /\.(md|markdown)$/i.test(name)) type = 'markdown';
+        return {
+            id: nextTabId++,
+            name, handle, content, path, type,
+            extension: ext || null,
+            dirty: false,
+            mdPreview: type === 'markdown',
+            element: null,
+            extFrame: null,
+            blobUrl: null,
+            scrollTop: 0,
+        };
+    };
     // ──────────────────────────────────────────────
     // TabManager – tab creation, switching & closing
     // ──────────────────────────────────────────────
@@ -1753,15 +1778,15 @@ const MarkdownMini = (() => {
             targetEl.classList.remove('drag-over');
             const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
             if (draggedId === targetTabId || isNaN(draggedId)) return;
-            const fromIdx = tabs.findIndex(t => t.id === draggedId);
-            const toIdx = tabs.findIndex(t => t.id === targetTabId);
+            const fromIdx = State.tabs.findIndex(t => t.id === draggedId);
+            const toIdx = State.tabs.findIndex(t => t.id === targetTabId);
             if (fromIdx === -1 || toIdx === -1) return;
             const rect = targetEl.getBoundingClientRect();
             const insertBefore = e.clientX < rect.left + rect.width / 2;
             const adjustedToIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
-            Utils.moveArrayItem(tabs, fromIdx, insertBefore ? adjustedToIdx : adjustedToIdx + 1);
-            tabs.forEach(tab => tabsContainer.appendChild(tab.element));
-            FSA.saveOpenTabs(currentTabId);
+            Utils.moveArrayItem(State.tabs, fromIdx, insertBefore ? adjustedToIdx : adjustedToIdx + 1);
+            State.tabs.forEach(tab => tabsContainer.appendChild(tab.element));
+            FSA.saveOpenTabs(State.currentTabId);
         },
 
         _makeExtToggleHandler(tab, extToggle) {
@@ -1771,14 +1796,14 @@ const MarkdownMini = (() => {
                     tab.type = 'text';
                     extToggle.className = 'md-toggle inactive';
                     if (tab.extFrame) tab.extFrame.classList.add('hidden');
-                    // Clear currentTabId so switchToTab won't save stale textarea content
-                    currentTabId = null;
+                    // Clear State.currentTabId so switchToTab won't save stale textarea content
+                    State.currentTabId = null;
                     TabManager.switchToTab(tab.id);
                 } else {
-                    if (currentTabId === tab.id) tab.content = textarea.value;
+                    if (State.currentTabId === tab.id) tab.content = textarea.value;
                     tab.type = 'extension';
                     extToggle.className = 'md-toggle active';
-                    currentTabId = null;
+                    State.currentTabId = null;
                     TabManager.switchToTab(tab.id);
                 }
             };
@@ -1801,13 +1826,13 @@ const MarkdownMini = (() => {
                     const newExt = ExtensionManager.getForFile(tab.name);
                     if (newExt) {
                         tab.extension = newExt;
-                        if (currentTabId === tab.id) tab.content = textarea.value;
+                        if (State.currentTabId === tab.id) tab.content = textarea.value;
                         tab.type = 'extension';
                         extToggle.textContent = newExt.name;
                         extToggle.title = 'Toggle extension: ' + newExt.name;
                         extToggle.className = 'md-toggle active';
                         extToggle.onclick = TabManager._makeExtToggleHandler(tab, extToggle);
-                        currentTabId = null;
+                        State.currentTabId = null;
                         TabManager.switchToTab(tab.id);
                     }
                 };
@@ -1816,25 +1841,17 @@ const MarkdownMini = (() => {
         },
       
         async createNewTab(handle, name, content = '', path = null, type = 'text') {
-        let ext = ExtensionManager.getForFile(name);
-        
-            if (ext) {
-                type = 'extension';
-            } 
-            else if (type === 'text' && /\.(md|markdown)$/i.test(name)) {
-                type = 'markdown';
-            }
-          if (handle) {
-                for (const t of tabs) {
+            if (handle) {
+                for (const t of State.tabs) {
                     if (t.handle && await FSA.isSameEntry(t.handle, handle)) {
                         this.switchToTab(t.id);
                         return;
                     }
                 }
             }
-            const id = nextTabId++;
-            const tab = { id, name, handle, content, dirty: false, path, type, element: null, mdPreview: type === 'markdown', extension: ext };
-            tabs.push(tab);
+            const tab = createTab(handle, name, content, path, type);
+            const { type } = tab;
+            State.tabs.push(tab);
             const tabEl = document.createElement('div');
             tabEl.className = 'tab';
             tabEl.dataset.id = id;
@@ -1858,11 +1875,11 @@ const MarkdownMini = (() => {
                     e.stopPropagation();
                     tab.mdPreview = !tab.mdPreview;
                     mdToggle.className = 'md-toggle' + (tab.mdPreview ? ' active' : ' inactive');
-                    if (currentTabId === tab.id) UI.updateMdPreview();
+                    if (State.currentTabId === tab.id) UI.updateMdPreview();
                 };
                 tabEl.append(mdToggle, tabName, dirtyInd, closeBtn);
             } else if (type === 'extension') {
-                const extToggle = this._createExtToggle(tab, ext);
+                const extToggle = this._createExtToggle(tab, tab.extension);
                 tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
             } else if (type === 'text') {
                 const extToggle = this._createExtToggle(tab, null);
@@ -1887,7 +1904,7 @@ const MarkdownMini = (() => {
                     tabEl.title = tab.name;
                     return;
                 }
-                const prefix = activeDirectoryPath ? activeDirectoryPath + '/' : null;
+                const prefix = State.activeDirectoryPath ? State.activeDirectoryPath + '/' : null;
                 if (prefix && tab.path.startsWith(prefix)) {
                     tabEl.title = tab.path.slice(prefix.length);
                 } else {
@@ -1902,8 +1919,8 @@ const MarkdownMini = (() => {
         },
         switchToTab(id) {
             if (mdPreviewTimer) clearTimeout(mdPreviewTimer);
-            if (currentTabId !== null) {
-                const cur = tabs.find(t => t.id === currentTabId);
+            if (State.currentTabId !== null) {
+                const cur = State.tabs.find(t => t.id === State.currentTabId);
                 if (cur) {
                     if (cur.type !== 'extension') {
                         cur.content = textarea.value;
@@ -1913,9 +1930,9 @@ const MarkdownMini = (() => {
                 }
             }
             // Hide all per-tab extension iframes
-            tabs.forEach(t => { if (t.extFrame) t.extFrame.classList.add('hidden'); });
-            currentTabId = id;
-            const tab = tabs.find(t => t.id === id);
+            State.tabs.forEach(t => { if (t.extFrame) t.extFrame.classList.add('hidden'); });
+            State.currentTabId = id;
+            const tab = State.tabs.find(t => t.id === id);
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             tab.element.classList.add('active');
             const gutterUserHidden = localStorage.getItem('gutterVisible') === 'false';
@@ -1938,25 +1955,25 @@ const MarkdownMini = (() => {
             UI.updateEditorStatus(tab);
             UI.updateMdPreview();
             if (tab.path) {
-                activeFilePath = tab.path;
+                State.activeFilePath = tab.path;
                 TreeManager.highlightActive();
             }
             FSA.saveOpenTabs(id);
         },
         async closeTab(id) {
             if (mdPreviewTimer) clearTimeout(mdPreviewTimer);
-            const idx = tabs.findIndex(t => t.id === id);
+            const idx = State.tabs.findIndex(t => t.id === id);
             if (idx === -1) return;
-            const tab = tabs[idx];
+            const tab = State.tabs[idx];
             if (tab.dirty && !await UI.showDialog({isConfirm: true, confirmMessage: `"${tab.name}" has unsaved changes. Close anyway?`})) return;
             if (tab.extFrame) {
                 if (tab.blobUrl) URL.revokeObjectURL(tab.blobUrl);
                 tab.extFrame.remove();
             }
-            tabs.splice(idx, 1);
+            State.tabs.splice(idx, 1);
             tab.element.remove();
-            if (tabs.length === 0) {
-                currentTabId = null;
+            if (State.tabs.length === 0) {
+                State.currentTabId = null;
                 textarea.value = '';
                 gutter.replaceChildren();
                 editorStatusEl.textContent = 'No file open';
@@ -1964,7 +1981,7 @@ const MarkdownMini = (() => {
                 localStorage.removeItem('openTabs');
                 return;
             }
-            this.switchToTab(tabs[Math.min(idx, tabs.length - 1)].id);
+            this.switchToTab(State.tabs[Math.min(idx, State.tabs.length - 1)].id);
         },
         async restoreOpenTabs(dirHandle, savedTabs) {
             if (!savedTabs) savedTabs = FSA.loadOpenTabs();
@@ -1991,10 +2008,10 @@ const MarkdownMini = (() => {
             }
 
             if (activeTabPath) {
-                const activeTab = tabs.find(t => t.path === activeTabPath);
+                const activeTab = State.tabs.find(t => t.path === activeTabPath);
                 if (activeTab) this.switchToTab(activeTab.id);
-            } else if (tabs.length > 0) {
-                this.switchToTab(tabs[0].id);
+            } else if (State.tabs.length > 0) {
+                this.switchToTab(State.tabs[0].id);
             }
 
             return restored;
@@ -2105,27 +2122,27 @@ const MarkdownMini = (() => {
                 addItem('Open Folder', () => FSA.openFolder());
                 addSeparator();
                 addItem('Open legend.txt', () => {
-                    const existing = tabs.find(t => t.type === 'legend');
+                    const existing = State.tabs.find(t => t.type === 'legend');
                     if (existing) {
                         TabManager.switchToTab(existing.id);
                     } else {
                         TabManager.createNewTab(null, 'legend.txt', window.LEGEND, null, 'legend');
                     }
                 });
-                if (copiedNode) { addSeparator(); addItem('Paste', () => FSA.copyEntry(copiedNode, activeDirectoryPath || '')); }
+                if (State.copiedNode) { addSeparator(); addItem('Paste', () => FSA.copyEntry(State.copiedNode, State.activeDirectoryPath || '')); }
             } else if (node.kind === 'directory') {
                 addItem('New File', () => FSA.newFile());
                 addItem('New Folder', () => FSA.newFolder());
                 addSeparator();
                 addItem('Rename', () => FSA.renameItem());
-                addItem('Copy', () => { copiedNode = node; UI.showToast(`"${node.name}" ready to paste`); });
-                if (copiedNode) addItem('Paste', () => FSA.copyEntry(copiedNode, node.path));
+                addItem('Copy', () => { State.copiedNode = node; UI.showToast(`"${node.name}" ready to paste`); });
+                if (State.copiedNode) addItem('Paste', () => FSA.copyEntry(State.copiedNode, node.path));
                 addSeparator();
                 addItem('Delete Folder', () => FSA.deleteFolder(), 'danger');
             } else {
                 addItem('Open', () => FSA.openFileFromNode(contextMenuTarget));
                 addItem('Rename', () => FSA.renameItem());
-                addItem('Copy', () => { copiedNode = contextMenuTarget; UI.showToast(`"${contextMenuTarget.name}" ready to paste`); });
+                addItem('Copy', () => { State.copiedNode = contextMenuTarget; UI.showToast(`"${contextMenuTarget.name}" ready to paste`); });
                 addSeparator();
                 addItem('Delete File', () => FSA.deleteFile(), 'danger');
             }
@@ -2152,20 +2169,20 @@ const MarkdownMini = (() => {
         updateEditorStatus(tab) {
             const modified = tab.dirty ? ' • Modified' : '';
             if (tab.type === 'extension') {
-                statusEl.textContent = `${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`;
+                statusEl.textContent = `${State.tabs.length} tab${State.tabs.length !== 1 ? 's' : ''}`;
             } else {
                 const pos = textarea.selectionStart || 0;
                 const before = textarea.value.substring(0, pos);
                 const lines = before.split('\n');
                 const line = lines.length;
                 const col = lines[lines.length - 1].length + 1;
-                statusEl.textContent = `Ln ${line}, Col ${col} | ${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`;
+                statusEl.textContent = `Ln ${line}, Col ${col} | ${State.tabs.length} tab${State.tabs.length !== 1 ? 's' : ''}`;
             }
             editorStatusEl.textContent = tab.name + modified;
         },
         updateMdPreview() {
             const previewEl = document.getElementById('md-preview');
-            const tab = currentTabId !== null ? tabs.find(t => t.id === currentTabId) : null;
+            const tab = State.currentTabId !== null ? State.tabs.find(t => t.id === State.currentTabId) : null;
             if (!tab || tab.type !== 'markdown' || !tab.mdPreview) {
                 previewEl.classList.add('hidden');
                 textarea.classList.remove('md-active');
@@ -2182,7 +2199,7 @@ const MarkdownMini = (() => {
                 FSA.openFolder();
             });
             document.getElementById('topbar-active-row').addEventListener('click', () => {
-                activeDirectoryPath = null;
+                State.activeDirectoryPath = null;
                 TreeManager.highlightActive();
                 TreeManager.updateHeader();
             });
@@ -2284,14 +2301,14 @@ const MarkdownMini = (() => {
                 if (e.target.id === 'clear-folder') { e.stopPropagation(); FSA.clearSavedFolder(); return; }
                 if (e.target.id === 'refresh-folder') {
                     e.stopPropagation();
-                    if (currentDirHandle) FSA.mutateAndRebuild();
+                    if (State.currentDirHandle) FSA.mutateAndRebuild();
                     return;
                 }
                 if (!e.target.closest('.context-menu')) UI.closeContextMenu();
             });
             window.addEventListener('message', e => {
                 if (!e.data || typeof e.data !== 'object') return;
-                const tab = tabs.find(t => t.type === 'extension' && t.extFrame && t.extFrame.contentWindow === e.source);
+                const tab = State.tabs.find(t => t.type === 'extension' && t.extFrame && t.extFrame.contentWindow === e.source);
                 if (!tab) return;
                 if (e.data.type === 'extension:save') {
                     tab.content = e.data.content;
@@ -2306,7 +2323,7 @@ const MarkdownMini = (() => {
             document.addEventListener('keydown', e => {
                 if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
                     e.preventDefault();
-                    if (currentTabId) TabManager.closeTab(currentTabId);
+                    if (State.currentTabId) TabManager.closeTab(State.currentTabId);
                 }
                 if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                     e.preventDefault();
@@ -2383,17 +2400,17 @@ const MarkdownMini = (() => {
                 e.preventDefault();
                 const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
                 if (isNaN(draggedId)) return;
-                const fromIdx = tabs.findIndex(t => t.id === draggedId);
+                const fromIdx = State.tabs.findIndex(t => t.id === draggedId);
                 if (fromIdx === -1) return;
-                const movedTab = tabs[fromIdx];
-                tabs.splice(fromIdx, 1);
-                tabs.push(movedTab);
+                const movedTab = State.tabs[fromIdx];
+                State.tabs.splice(fromIdx, 1);
+                State.tabs.push(movedTab);
                 tabsContainer.appendChild(movedTab.element);
-                FSA.saveOpenTabs(currentTabId);
+                FSA.saveOpenTabs(State.currentTabId);
             });
             textarea.addEventListener('mousedown', () => {
-                if (currentTabId) {
-                    const tab = tabs.find(t => t.id === currentTabId);
+                if (State.currentTabId) {
+                    const tab = State.tabs.find(t => t.id === State.currentTabId);
                     if (tab) {
                         tabsContainer.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
                         tab.element.classList.add('active');
@@ -2407,8 +2424,8 @@ const MarkdownMini = (() => {
             });
             textarea.addEventListener('input', () => {
                 this.updateLineNumbers();
-                if (currentTabId) {
-                    const tab = tabs.find(t => t.id === currentTabId);
+                if (State.currentTabId) {
+                    const tab = State.tabs.find(t => t.id === State.currentTabId);
                     if (tab) {
                         if (TAB_TYPES[tab.type]?.canDirty) {
                             tab.dirty = true;
@@ -2429,14 +2446,14 @@ const MarkdownMini = (() => {
             });
             textarea.addEventListener('scroll', () => gutter.scrollTop = textarea.scrollTop);
             textarea.addEventListener('selectionchange', () => {
-                if (currentTabId) {
-                    const tab = tabs.find(t => t.id === currentTabId);
+                if (State.currentTabId) {
+                    const tab = State.tabs.find(t => t.id === State.currentTabId);
                     if (tab) this.updateEditorStatus(tab);
                 }
             });
             textarea.addEventListener('keydown', e => {
                 if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-                    const tab = currentTabId !== null ? tabs.find(t => t.id === currentTabId) : null;
+                    const tab = State.currentTabId !== null ? State.tabs.find(t => t.id === State.currentTabId) : null;
                     if (tab && tab.type === 'markdown' && tab.mdPreview) {
                         clearTimeout(mdPreviewTimer);
                         document.getElementById('md-preview').classList.add('hidden');
@@ -2476,8 +2493,8 @@ const MarkdownMini = (() => {
             slider.dispatchEvent(new Event('input'));
            
             window.addEventListener('beforeunload', e => {
-                if (currentDirHandle) FSA.saveOpenTabs(currentTabId);
-                if (tabs.some(t => t.dirty)) {
+                if (State.currentDirHandle) FSA.saveOpenTabs(State.currentTabId);
+                if (State.tabs.some(t => t.dirty)) {
                     FSA.flushSave();
                     e.preventDefault();
                     return e.returnValue = 'Unsaved changes will be lost';
@@ -2522,12 +2539,12 @@ const MarkdownMini = (() => {
             // Re-run restore when page returns from bfcache (back/forward nav or wake from sleep)
             window.addEventListener('pageshow', async (e) => {
                 if (!e.persisted) return;
-                if (!currentDirHandle) { await FSA.restoreSession(); return; }
+                if (!State.currentDirHandle) { await FSA.restoreSession(); return; }
                 // Re-validate permission in case it lapsed while the page was cached
-                const perm = await FSA.queryPermission(currentDirHandle);
+                const perm = await FSA.queryPermission(State.currentDirHandle);
                 if (perm !== 'granted') {
                     UI.showActionToast('Tap to restore folder access', async () => {
-                        try { await currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
+                        try { await State.currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
                     });
                 }
             });
@@ -2535,15 +2552,15 @@ const MarkdownMini = (() => {
             document.addEventListener('visibilitychange', async () => {
                 if (document.visibilityState !== 'visible') {
                     // Save tab state before page may be frozen/killed
-                    if (currentDirHandle) FSA.saveOpenTabs(currentTabId);
+                    if (State.currentDirHandle) FSA.saveOpenTabs(State.currentTabId);
                     return;
                 }
-                if (!currentDirHandle) { await FSA.restoreSession(); return; }
+                if (!State.currentDirHandle) { await FSA.restoreSession(); return; }
                 // Re-validate permission in case it lapsed during sleep
-                const perm = await FSA.queryPermission(currentDirHandle);
+                const perm = await FSA.queryPermission(State.currentDirHandle);
                 if (perm !== 'granted') {
                     UI.showActionToast('Tap to restore folder access', async () => {
-                        try { await currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
+                        try { await State.currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch (err) { console.warn('requestPermission failed:', err); }
                     });
                 }
             });
