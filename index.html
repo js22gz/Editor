@@ -1003,9 +1003,8 @@ class FileSystemManager {
             }
             const content = await file.text();
             await this.tabs.createNewTab(node.handle, node.name, content, node.path);
-            if (this.ui.isMobile) {
-                this.ui.sidebarEl.classList.add('hidden');
-                document.getElementById('sidebar-toggle').textContent = '›';
+            if (this.ui.isMobile && !this.ui.sidebarEl.classList.contains('hidden')) {
+                this.ui.toggleSidebar();
             }
         } catch (e) {
             this.ui.showToast(e.message.includes('permission') ? 'Re-open folder to grant write access' : 'Failed to open file');
@@ -2065,7 +2064,7 @@ class UIManager {
                 `<button style="flex:1;min-height:44px;background:${okBg};color:${okFg};border:none;border-radius:4px;">${isConfirm ? 'Confirm' : 'OK'}</button>` +
                 `<button style="flex:1;min-height:44px;background:#27272a;color:#e4e4e7;border:none;border-radius:4px;">Cancel</button></div></div>`;
             // textContent assignment keeps user-supplied strings free of HTML injection
-            modal.querySelector('div > div').textContent = isConfirm ? confirmMessage : promptTitle;
+            modal.firstElementChild.firstElementChild.textContent = isConfirm ? confirmMessage : promptTitle;
             const input = modal.querySelector('input');
             const [okBtn, cancelBtn] = modal.querySelectorAll('button');
             if (input) input.value = defaultValue;
@@ -2075,7 +2074,10 @@ class UIManager {
             if (input) {
                 input.focus(); input.select();
                 input.onkeydown = e => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') cancel(); };
-            } else { okBtn.focus(); }
+            } else {
+                okBtn.focus();
+                okBtn.onkeydown = e => { if (e.key === 'Escape') cancel(); };
+            }
             okBtn.onclick = confirm;
             cancelBtn.onclick = cancel;
             modal.onclick = e => { if (e.target === modal) cancel(); };
