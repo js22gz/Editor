@@ -1587,7 +1587,7 @@ class ExtensionManager {
         if (tab._extTimers) tab._extTimers.forEach(t => clearTimeout(t));
 
         // Always recreate the iframe to guarantee a clean reload
-        if (tab.extFrame) tab.extFrame.remove();
+        if (tab.extFrame) { tab.extFrame.remove(); tab.extFrame = null; }
         const iframe = document.createElement('iframe');
         iframe.className = 'ext-frame';
         iframe.sandbox = 'allow-scripts';
