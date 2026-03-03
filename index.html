@@ -1583,19 +1583,18 @@ class ExtensionManager {
     }
 
     renderTab(tab) {
-        if (!tab.extFrame) {
-            const iframe = document.createElement('iframe');
-            iframe.className = 'ext-frame hidden';
-            iframe.sandbox = 'allow-scripts';           // no warning
-            document.querySelector('.editor-wrapper').appendChild(iframe);
-            tab.extFrame = iframe;
-        }
-
         // Cancel stale fallback timers from a previous render
         if (tab._extTimers) tab._extTimers.forEach(t => clearTimeout(t));
 
-        tab.extFrame.classList.remove('hidden');
-        tab.extFrame.srcdoc = tab.extension.html;
+        // Always recreate the iframe to guarantee a clean reload
+        if (tab.extFrame) { tab.extFrame.remove(); tab.extFrame = null; }
+        const iframe = document.createElement('iframe');
+        iframe.className = 'ext-frame';
+        iframe.sandbox = 'allow-scripts';
+        document.querySelector('.editor-wrapper').appendChild(iframe);
+        tab.extFrame = iframe;
+
+        iframe.srcdoc = tab.extension.html;
 
         // Reliable delivery (srcdoc can be async)
         const sendLoadMessage = () => {
@@ -2021,7 +2020,7 @@ class UIManager {
         this.tree.sidebarHeaderActionsEl = this.#sidebarHeaderActionsEl;
 
         const savedSidebarWidth = localStorage.getItem('sidebarWidth');
-        if (savedSidebarWidth) this.#sidebarEl.style.width = savedSidebarWidth;
+        if (savedSidebarWidth && !this.#sidebarEl.classList.contains('hidden')) this.#sidebarEl.style.width = savedSidebarWidth;
 
         this.bindEvents();
 
