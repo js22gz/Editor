@@ -441,33 +441,39 @@ window.LEGEND = `<!--
             tab-size: 4;
         }
        
+/* ── Line width slider – custom downward triangle thumb (works in Chrome + Firefox) ── */
 #line-width-slider {
-            display: flex;
-            align-items: center;
-            height: 16px;
-            background: var(--bg-surface);
-            border-bottom: 1px solid var(--border-color);
-            padding: 0 8px 0 26px;
-            gap: 5px;
-        }
-        #line-width-slider input {
-            flex: 1;
-            accent-color: var(--text-secondary);
-            background: var(--border-color);
-        }
-/* Remove default thumb and create custom upside-down triangle thumb */
+    display: flex;
+    align-items: center;
+    height: 16px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 8px 0 26px;
+    gap: 5px;
+}
+
+#line-width-slider input[type="range"] {
+    flex: 1;
+    accent-color: var(--text-secondary);
+    height: 4px;                    /* thinner, cleaner track */
+    background: var(--border-color);
+    border-radius: 2px;
+}
+
+/* Triangle thumb */
 #line-width-slider input[type="range"]::-webkit-slider-thumb,
 #line-width-slider input[type="range"]::-moz-range-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 14px;
-    height: 14px;
-    margin-top: -5.5px; /* center on the 3px track */
+    width: 18px;
+    height: 18px;
+    margin-top: -7px;               /* centers perfectly on the 4px track */
     background: var(--text-secondary);
-    border: none;
+    border: 2px solid var(--bg-surface);   /* gives it a nice inset look */
     border-radius: 0;
-    clip-path: polygon(0% 0%, 100% 0%, 50% 100%); /* upside-down triangle */
+    clip-path: polygon(0% 0%, 100% 0%, 50% 100%); /* upside-down triangle (pointing down) */
     cursor: ew-resize;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35);
     transition: background 0.15s, transform 0.12s;
 }
 
@@ -476,12 +482,12 @@ window.LEGEND = `<!--
     background: var(--text-primary);
     transform: scale(1.15);
 }
-      
-/* Specific fix for Firefox thumb alignment */
+
+/* Firefox-specific alignment tweak */
 #line-width-slider input[type="range"]::-moz-range-thumb {
-    margin-top: 0; /* Firefox handles track alignment differently than Webkit */
+    margin-top: -7px;
 }
-      #width-value {
+    #width-value {
             font-family: ui-monospace, monospace;
             color: var(--text-secondary);
             min-width: 36px;
