@@ -441,7 +441,7 @@ window.LEGEND = `<!--
             tab-size: 4;
         }
        
-/* ── Line width slider – custom downward triangle thumb (works in Chrome + Firefox) ── */
+/* ── Line width slider – bulletproof downward triangle thumb (SVG) ── */
 #line-width-slider {
     display: flex;
     align-items: center;
@@ -454,47 +454,51 @@ window.LEGEND = `<!--
 
 #line-width-slider input[type="range"] {
     flex: 1;
-    accent-color: var(--text-secondary);
-    height: 4px;                    /* thinner, cleaner track */
+    height: 4px;
     background: var(--border-color);
+    border-radius: 2px;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+/* Firefox track fix */
+#line-width-slider input[type="range"]::-moz-range-track {
+    background: var(--border-color);
+    height: 4px;
     border-radius: 2px;
 }
 
-/* Triangle thumb */
+/* Triangle thumb (SVG + currentColor so it matches your theme) */
 #line-width-slider input[type="range"]::-webkit-slider-thumb,
 #line-width-slider input[type="range"]::-moz-range-thumb {
     -webkit-appearance: none;
     appearance: none;
     width: 18px;
     height: 18px;
-    margin-top: -7px;               /* centers perfectly on the 4px track */
-    background: var(--text-secondary);
-    border: 2px solid var(--bg-surface);   /* gives it a nice inset look */
-    border-radius: 0;
-    clip-path: polygon(0% 0%, 100% 0%, 50% 100%); /* upside-down triangle (pointing down) */
+    margin-top: -7px;
+    color: var(--text-secondary);               /* theme color */
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 18 18'%3E%3Cpolygon points='0,0 18,0 9,18' fill='currentColor' stroke='%2318181b' stroke-width='2'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+    border: none;
     cursor: ew-resize;
     box-shadow: 0 2px 6px rgba(0,0,0,0.35);
-    transition: background 0.15s, transform 0.12s;
+    transition: color 0.15s, transform 0.12s;
 }
 
 #line-width-slider input[type="range"]::-webkit-slider-thumb:hover,
 #line-width-slider input[type="range"]::-moz-range-thumb:hover {
-    background: var(--text-primary);
+    color: var(--text-primary);
     transform: scale(1.15);
 }
 
-/* Firefox-specific alignment tweak */
-#line-width-slider input[type="range"]::-moz-range-thumb {
-    margin-top: -7px;
+#width-value {
+    font-family: ui-monospace, monospace;
+    color: var(--text-secondary);
+    min-width: 36px;
+    font-size: 0.7rem;
+    text-align: right;
 }
-    #width-value {
-            font-family: ui-monospace, monospace;
-            color: var(--text-secondary);
-            min-width: 36px;
-            font-size: 0.7rem;
-            text-align: right;
-        }
-       
+      
         .status {
             height: 28px;
             background: var(--bg-surface);
