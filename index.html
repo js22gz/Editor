@@ -142,7 +142,7 @@ window.LEGEND = `<!--
     <title>EDITOR</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#18181b">
-    <style>
+<style>
         :root {
             --bg-base: #09090b;
             --bg-surface: #18181b;
@@ -176,7 +176,7 @@ window.LEGEND = `<!--
             display: flex;
             flex-direction: column;
         }
-   
+  
         header {
             height: 44px;
             min-height: 44px;
@@ -209,7 +209,6 @@ window.LEGEND = `<!--
             white-space: nowrap;
             user-select: none;
         }
-
         #tab-settings-wrap {
             position: relative;
             flex-shrink: 0;
@@ -262,9 +261,9 @@ window.LEGEND = `<!--
         }
         .settings-btn:hover { background: var(--border-color); color: var(--text-primary); }
         .settings-btn.active { background: var(--bg-active); color: var(--text-strong); border-color: var(--border-subtle); }
-   
+  
         main { flex: 1; display: flex; overflow: hidden; }
-   
+  
         #sidebar {
             width: 280px;
             background: var(--bg-sidebar);
@@ -281,7 +280,7 @@ window.LEGEND = `<!--
             opacity: 0;
             pointer-events: none;
         }
-   
+  
         #sidebar-header {
             padding: 0;
             font-size: 0.7rem;
@@ -306,57 +305,94 @@ window.LEGEND = `<!--
             white-space: nowrap;
         }
         #topbar-active-row:hover { color: var(--text-primary); }
-
         .directory-clear { cursor: pointer; margin-left: 8px; }
-   
-        #tree-container {
-            flex: 1;
-            overflow-y: auto;
-            padding: 8px 0;
-            font-size: 13px;
-        }
-   
-        .folder-header {
-            padding: 4px 12px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            cursor: pointer;
-            user-select: none;
-            color: var(--text-muted);
-            background: var(--bg-surface);
-            border: 1px solid var(--border-color);
-            border-left: none;
-            border-right: none;
-            margin-bottom: -1px;
-        }
-        .folder-header:hover { background: var(--bg-hover); color: var(--text-secondary); }
-        .folder-header.top-level { font-weight: 700; color: var(--text-strong); }
-        .folder-header.active { background: var(--bg-active); color: var(--text-secondary); font-weight: 500; }
-        .folder-header.top-level.active { font-weight: 700; }
-        .folder-header.active-ancestor { color: var(--text-hover); }
-        .folder-header.active-dir { border-left: 2px solid var(--text-dim); color: var(--text-strong); }
-        .toggle { display: inline-block; width: 14px; font-size: 11px; color: var(--text-dim); }
-        .tree-children { padding-left: 20px; }
-        .file-item {
-            padding: 4px 12px 4px 32px;
-            cursor: pointer;
-            color: var(--text-secondary);
-        }
-        .file-item:hover,
-        .file-item:focus { background: var(--bg-item-hover); color: var(--text-hover); }
-        .file-item.active {
-            background: none;
-            color: var(--text-strong);
-            font-weight: 500;
-        }
+ 
+#tree-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+    font-size: 13px;
+}
+
+.tree-branch {
+    position: relative;
+    padding-left: 30px;
+    margin: 0;
+}
+.tree-branch::before {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: -7px;
+    border-left: 2px solid var(--text-dim);
+    border-bottom: 2px solid var(--text-dim);
+    width: 14px;
+    height: 19px;
+    z-index: 1;
+}
+.tree-branch::after {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: 12px;
+    bottom: 0;
+    border-left: 2px solid var(--text-dim);
+    z-index: 1;
+}
+.tree-branch:last-child::after { display: none; }
+
+/* Only the square on files (no horizontal line, no spacer) */
+.file-item::before { display: none; }
+.file-item::after {
+    content: "▪";
+    position: absolute;
+    left: 13px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 15px;
+    color: var(--text-dim);
+    z-index: 3;
+    pointer-events: none;
+}
+
+.folder-header,
+.file-item {
+    position: relative;
+    padding: 8px 8px 10px 8px;  
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: ui-monospace, monospace;
+    z-index: 3;
+}
+
+.folder-header:hover { background: var(--bg-hover); color: var(--text-secondary); }
+.folder-header.top-level { font-weight: 700; color: var(--text-strong); }
+.folder-header.active { background: var(--bg-active); color: var(--text-secondary); font-weight: 500; }
+.folder-header.top-level.active { font-weight: 700; }
+.folder-header.active-ancestor { color: var(--text-hover); }
+.folder-header.active-dir { border-left: 2px solid var(--text-dim); color: var(--text-strong); }
+
+.file-item:hover,
+.file-item:focus { background: var(--bg-item-hover); color: var(--text-hover); }
+.file-item.active {
+    background: none;
+    color: var(--text-strong);
+    font-weight: 500;
+}
         .folder-header.drop-target,
         #tree-container.drop-target { background: var(--border-color); outline: 1px dashed var(--text-dim); }
         .file-item.dragging,
         .folder-header.dragging { opacity: 0.4; }
-   
+
+
+
+
+
+
+  
         .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-   
+  
         #tabs {
             display: flex;
             background: var(--bg-surface);
@@ -364,7 +400,7 @@ window.LEGEND = `<!--
             overflow-x: auto;
             flex-shrink: 0;
         }
-   
+  
         .tab {
             padding: 10px 20px 8px;
             white-space: nowrap;
@@ -385,7 +421,7 @@ window.LEGEND = `<!--
         .tab.drag-over { border-left: 2px solid var(--text-secondary); }
         .tab[draggable] { cursor: grab; }
         .tab[draggable]:active { cursor: grabbing; }
-   
+  
         .toast {
             position: fixed;
             top: 16px;
@@ -399,17 +435,17 @@ window.LEGEND = `<!--
             z-index: 9999;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
         }
-           
+          
         .editor-wrapper {
             flex: 1;
             display: flex;
             position: relative;
             background: var(--bg-editor);
             overflow: hidden;
-            overflow-x: auto;         
-            overflow-y: hidden;         
+            overflow-x: auto;
+            overflow-y: hidden;
         }
-      
+     
         #gutter {
             width: 60px;
             background: var(--bg-gutter);
@@ -425,7 +461,7 @@ window.LEGEND = `<!--
             flex-shrink: 0;
             white-space: pre;
         }
-   
+  
 #textarea {
     flex: 1;
     width: 100%;
@@ -444,7 +480,7 @@ window.LEGEND = `<!--
     word-wrap: normal;
     tab-size: 4;
 }
-      
+     
 /* ── Line width slider – reliable downward triangle thumb (Chrome-first) ── */
 #line-width-slider {
     display: flex;
@@ -455,7 +491,6 @@ window.LEGEND = `<!--
     padding: 0 8px 0 26px;
     gap: 5px;
 }
-
 #line-width-slider input[type="range"] {
     flex: 1;
     height: 5px;
@@ -464,17 +499,15 @@ window.LEGEND = `<!--
     -webkit-appearance: none;
     appearance: none;
     outline: none;
-    accent-color: transparent; /* kills the red default circle */
+    accent-color: transparent;
 }
-
 /* Chrome track */
 #line-width-slider input[type="range"]::-webkit-slider-runnable-track {
     background: var(--border-color);
     height: 5px;
     border-radius: 3px;
 }
-
-/* Downward triangle thumb (pointing at the track) */
+/* Downward triangle thumb */
 #line-width-slider input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
@@ -488,19 +521,16 @@ window.LEGEND = `<!--
     box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     transition: background 0.15s, transform 0.12s;
 }
-
 #line-width-slider input[type="range"]::-webkit-slider-thumb:hover {
     background: var(--text-primary);
     transform: scale(1.15);
 }
-
-/* Firefox fallback (same triangle) */
+/* Firefox fallback */
 #line-width-slider input[type="range"]::-moz-range-track {
     background: var(--border-color);
     height: 5px;
     border-radius: 3px;
 }
-
 #line-width-slider input[type="range"]::-moz-range-thumb {
     width: 18px;
     height: 18px;
@@ -511,20 +541,18 @@ window.LEGEND = `<!--
     cursor: ew-resize;
     box-shadow: 0 2px 8px rgba(0,0,0,0.4);
 }
-
 #line-width-slider input[type="range"]::-moz-range-thumb:hover {
     background: var(--text-primary);
 }
-
 #width-value {
     font-family: ui-monospace, monospace;
     color: var(--text-secondary);
-    width: 84px;           /* fixed width — stable forever */
+    width: 84px;
     font-size: 0.7rem;
     text-align: center;
     white-space: nowrap;
     flex-shrink: 0;
-}      
+}
         .status {
             height: 28px;
             background: var(--bg-surface);
@@ -536,7 +564,7 @@ window.LEGEND = `<!--
             padding: 0 16px;
             font-family: ui-monospace, monospace;
         }
-   
+  
         .sidebar-toggle {
             background: none;
             border: none;
@@ -550,7 +578,7 @@ window.LEGEND = `<!--
             transition: color 0.2s;
         }
         .sidebar-toggle:hover { background: var(--border-color); color: var(--text-primary); }
-   
+  
         .editor-wrapper .sidebar-toggle {
             position: absolute;
             left: 6px;
@@ -558,7 +586,7 @@ window.LEGEND = `<!--
             transform: translateY(-50%);
             z-index: 10;
         }
-   
+  
         .context-menu {
             position: fixed;
             background: var(--bg-surface);
@@ -592,7 +620,7 @@ window.LEGEND = `<!--
         }
         #sidebar-resize:hover { background: var(--border-subtle); }
         #sidebar.hidden + #sidebar-resize { display: none; }
-       
+      
         /* Mobile */
         .file-item,
         .folder-header {
@@ -601,7 +629,6 @@ window.LEGEND = `<!--
         #tree-container {
             -webkit-overflow-scrolling: touch;
         }
-
         /* ── Extension tab toggle ── */
         .tab .ext-toggle {
             font-size: 10px;
@@ -618,7 +645,6 @@ window.LEGEND = `<!--
         .tab .ext-toggle:hover { color: var(--text-secondary); border-color: var(--border-subtle); }
         .tab .ext-toggle.active { color: var(--text-secondary); border-color: var(--text-dim); }
         .tab .ext-toggle.inactive { text-decoration: line-through; color: var(--border-subtle); }
-
         /* ── Extension iframe ── */
         .ext-frame {
             position: absolute;
@@ -633,7 +659,14 @@ window.LEGEND = `<!--
             background: var(--bg-editor);
         }
         .ext-frame.hidden { display: none; }
-        
+       
+@media (max-width: 768px) {
+    .folder-header,
+    .file-item {
+        min-height: 44px;
+        padding: 10px 8px 10px 12px;
+    }
+}
     </style>
 </head>
 <body>
@@ -1384,94 +1417,93 @@ class TreeManager {
     getNode(path) { return this.#nodeByPath.get(path); }
     registerNode(path, node) { this.#nodeByPath.set(path, node); }
 
-    #renderTreeItem(node, parentEl, level = 0) {
-        if (node.kind === 'directory') {
-            const folderDiv = document.createElement('div');
-            const header = document.createElement('div');
-            header.className = 'folder-header' + (level === 0 ? ' top-level' : '');
-            header.dataset.path = node.path;
-            header.style.paddingLeft = (level * 14) + 'px';
-            header.tabIndex = 0;
-            const toggle = document.createElement('span');
-            toggle.className = 'toggle';
-            toggle.textContent = this.state.expandedFolders.has(node.path) ? '▼' : '▶';
-            header.append(toggle, document.createTextNode(' ' + node.name + '/'));
-            const childrenDiv = document.createElement('div');
-            childrenDiv.className = 'tree-children';
-            childrenDiv.style.display = this.state.expandedFolders.has(node.path) ? 'block' : 'none';
-            folderDiv.append(header, childrenDiv);
-            parentEl.appendChild(folderDiv);
+#renderTreeItem(node, parentEl, level = 0, isLast = true) {
+    const isDir = node.kind === 'directory';
+    const branch = document.createElement('div');
+    branch.className = `tree-branch ${isLast ? 'last' : ''}`;
+    branch.dataset.path = node.path;
 
-            header.onclick = async (e) => {
-                if (this.longPressTriggered) return;
-                const isExpanded = this.state.expandedFolders.has(node.path);
-                if (!isExpanded) {
-                    await this.fs.loadChildren(node);
-                    childrenDiv.replaceChildren();
-                    node.children.forEach(c => this.#renderTreeItem(c, childrenDiv, level + 1));
-                }
-                if (isExpanded) {
-                    this.state.expandedFolders.delete(node.path);
-                    childrenDiv.style.display = 'none';
-                    toggle.textContent = '▶';
-                } else {
-                    this.state.expandedFolders.add(node.path);
-                    childrenDiv.style.display = 'block';
-                    toggle.textContent = '▼';
-                }
-                this.fs.saveExpandedState();
-                this.state.activeDirectoryPath = node.path;
-                this.updateHeader();
-            };
-            header.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); header.click(); } };
+    const item = document.createElement('div');
+    item.className = isDir
+        ? 'folder-header' + (level === 0 ? ' top-level' : '')
+        : 'file-item';
+		item.dataset.path = node.path;
 
-            header.draggable = true;
-            header.addEventListener('dragstart', e => {
-                e.dataTransfer.setData('application/x-tree-path', node.path);
-                e.dataTransfer.effectAllowed = 'move';
-                header.classList.add('dragging');
-            });
-            header.addEventListener('dragend', () => header.classList.remove('dragging'));
-            header.addEventListener('dragover', e => {
-                if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-                header.classList.add('drop-target');
-            });
-            header.addEventListener('dragleave', () => header.classList.remove('drop-target'));
-            header.addEventListener('drop', e => {
-                e.preventDefault();
-                header.classList.remove('drop-target');
-                const srcPath = e.dataTransfer.getData('application/x-tree-path');
-                if (srcPath && srcPath !== node.path && !node.path.startsWith(srcPath + '/')) {
-                    this.fs.moveEntry(srcPath, node.path);
-                }
-            });
+const nameSpan = document.createElement('span');
+    nameSpan.textContent = node.name + (isDir ? '/' : '');
 
-            if (this.state.expandedFolders.has(node.path) && node.children.length) {
-                node.children.forEach(c => this.#renderTreeItem(c, childrenDiv, level + 1));
+    item.appendChild(nameSpan);
+    branch.appendChild(item);
+    parentEl.appendChild(branch);
+
+    if (isDir) {
+        const childrenDiv = document.createElement('div');
+        childrenDiv.className = 'tree-children';
+        childrenDiv.style.display = this.state.expandedFolders.has(node.path) ? 'block' : 'none';
+        branch.appendChild(childrenDiv);
+
+        item.onclick = async (e) => {
+            if (this.longPressTriggered) return;
+            const wasExpanded = this.state.expandedFolders.has(node.path);
+            if (!wasExpanded) {
+                await this.fs.loadChildren(node);
+                childrenDiv.replaceChildren();
+                const kids = node.children || [];
+                kids.forEach((child, i) => {
+                    this.#renderTreeItem(child, childrenDiv, level + 1, i === kids.length - 1);
+                });
             }
-        } else {
-            const fileDiv = document.createElement('div');
-            fileDiv.className = 'file-item';
-            fileDiv.dataset.path = node.path;
-            fileDiv.style.paddingLeft = (level * 14 + 26) + 'px';
-            fileDiv.textContent = node.name;
-            fileDiv.tabIndex = 0;
-            fileDiv.onclick = () => { if (!this.longPressTriggered) this.fs.openFileFromNode(node); };
-            fileDiv.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); fileDiv.click(); } };
+            if (wasExpanded) {
+                this.state.expandedFolders.delete(node.path);
+                childrenDiv.style.display = 'none';
+            } else {
+                this.state.expandedFolders.add(node.path);
+                childrenDiv.style.display = 'block';
+            }
+            this.fs.saveExpandedState();
+            this.state.activeDirectoryPath = node.path;
+            this.updateHeader();
+        };
+        item.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); item.click(); } };
 
-            fileDiv.draggable = true;
-            fileDiv.addEventListener('dragstart', e => {
-                e.dataTransfer.setData('application/x-tree-path', node.path);
-                e.dataTransfer.effectAllowed = 'move';
-                fileDiv.classList.add('dragging');
+        branch.draggable = true;
+        branch.addEventListener('dragstart', e => {
+            e.dataTransfer.setData('application/x-tree-path', node.path);
+            branch.classList.add('dragging');
+        });
+        branch.addEventListener('dragend', () => branch.classList.remove('dragging'));
+        branch.addEventListener('dragover', e => {
+            if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
+            e.preventDefault();
+            branch.classList.add('drop-target');
+        });
+        branch.addEventListener('dragleave', () => branch.classList.remove('drop-target'));
+        branch.addEventListener('drop', e => {
+            e.preventDefault();
+            branch.classList.remove('drop-target');
+            const srcPath = e.dataTransfer.getData('application/x-tree-path');
+            if (srcPath && srcPath !== node.path && !node.path.startsWith(srcPath + '/')) {
+                this.fs.moveEntry(srcPath, node.path);
+            }
+        });
+
+        if (this.state.expandedFolders.has(node.path) && node.children?.length) {
+            node.children.forEach((child, i) => {
+                this.#renderTreeItem(child, childrenDiv, level + 1, i === node.children.length - 1);
             });
-            fileDiv.addEventListener('dragend', () => fileDiv.classList.remove('dragging'));
-
-            parentEl.appendChild(fileDiv);
         }
+    } else {
+        item.onclick = () => { if (!this.longPressTriggered) this.fs.openFileFromNode(node); };
+        item.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); item.click(); } };
+
+        branch.draggable = true;
+        branch.addEventListener('dragstart', e => {
+            e.dataTransfer.setData('application/x-tree-path', node.path);
+            branch.classList.add('dragging');
+        });
+        branch.addEventListener('dragend', () => branch.classList.remove('dragging'));
     }
+}
 
     render() {
         this.treeContainer.replaceChildren();
@@ -1482,7 +1514,10 @@ class TreeManager {
             this.treeContainer.appendChild(msg);
             return;
         }
-        this.#fileTree.children.forEach(child => this.#renderTreeItem(child, this.treeContainer, 0));
+        const children = this.#fileTree.children || [];
+        children.forEach((child, i) => {
+            this.#renderTreeItem(child, this.treeContainer, 0, i === children.length - 1);
+        });
         this.highlightActive();
     }
 
