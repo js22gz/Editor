@@ -515,11 +515,12 @@ window.LEGEND = `<!--
 #width-value {
     font-family: ui-monospace, monospace;
     color: var(--text-secondary);
-    min-width: 42px;
+    width: 72px;           /* fixed width — stable forever */
     font-size: 0.7rem;
     text-align: right;
-}
-      
+    white-space: nowrap;
+    flex-shrink: 0;
+}      
         .status {
             height: 28px;
             background: var(--bg-surface);
