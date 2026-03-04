@@ -426,25 +426,25 @@ window.LEGEND = `<!--
             white-space: pre;
         }
    
-        #textarea {
-            flex: 1;
-            max-width: 100%;
-            min-width: 0;
-            background: transparent;
-            border: none;
-            outline: none;
-            color: var(--text-primary);
-            font-family: ui-monospace, monospace;
-            font-size: 14px;
-            line-height: 1.6;
-            padding: 12px 16px;
-            resize: none;
-            overflow: auto;
-            white-space: pre;
-            word-wrap: normal;
-            tab-size: 4;
-        }
-       
+#textarea {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-family: ui-monospace, monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 12px 16px;
+    resize: none;
+    overflow: auto;
+    white-space: pre;
+    word-wrap: normal;
+    tab-size: 4;
+}
+      
 /* ── Line width slider – reliable downward triangle thumb (Chrome-first) ── */
 #line-width-slider {
     display: flex;
@@ -2433,16 +2433,20 @@ class UIManager {
         const slider = document.getElementById('width-slider');
         const valueEl = document.getElementById('width-value');
         const MAX_CHARS = 200;
+
         slider.addEventListener('input', e => {
             const v = +e.target.value;
             valueEl.textContent = (v === MAX_CHARS) ? '∞' : `${v} ch`;
-        
+
             if (v === MAX_CHARS) {
                 this.#textarea.style.maxWidth = 'none';
+                this.#textarea.style.minWidth = 'auto';
                 this.#textarea.style.whiteSpace = 'pre';
                 this.#textarea.style.wordWrap = 'normal';
             } else {
-                this.#textarea.style.maxWidth = v + 'ch';
+                const chWidth = v + 'ch';
+                this.#textarea.style.maxWidth = chWidth;
+                this.#textarea.style.minWidth = chWidth;   /* forces the wrap to move at every value */
                 this.#textarea.style.whiteSpace = 'pre-wrap';
                 this.#textarea.style.wordWrap = 'break-word';
             }
