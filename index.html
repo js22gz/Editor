@@ -406,8 +406,10 @@ window.LEGEND = `<!--
             position: relative;
             background: var(--bg-editor);
             overflow: hidden;
+            overflow-x: auto;          
+            align-items: flex-start;
         }
-   
+      
         #gutter {
             width: 60px;
             background: var(--bg-gutter);
@@ -426,6 +428,7 @@ window.LEGEND = `<!--
    
         #textarea {
             flex: 1;
+            min-width: 0;
             background: transparent;
             border: none;
             outline: none;
@@ -2431,18 +2434,21 @@ class UIManager {
         const MAX_CHARS = 200;
         slider.addEventListener('input', e => {
             const v = +e.target.value;
-            valueEl.textContent = (v === MAX_CHARS) ? '∞' : `${v} char/line`;
+            valueEl.textContent = (v === MAX_CHARS) ? '∞' : `${v} ch`;
+        
             if (v === MAX_CHARS) {
                 this.#textarea.style.maxWidth = 'none';
+                this.#textarea.style.minWidth = 'auto';
                 this.#textarea.style.whiteSpace = 'pre';
                 this.#textarea.style.wordWrap = 'normal';
             } else {
                 this.#textarea.style.maxWidth = v + 'ch';
+                this.#textarea.style.minWidth = v + 'ch';   /* NEW: forces exact width */
                 this.#textarea.style.whiteSpace = 'pre-wrap';
                 this.#textarea.style.wordWrap = 'break-word';
             }
         });
-        slider.dispatchEvent(new Event('input'));
+      slider.dispatchEvent(new Event('input'));
     }
 
     bindSettings() {
