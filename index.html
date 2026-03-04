@@ -441,7 +441,7 @@ window.LEGEND = `<!--
             tab-size: 4;
         }
        
-/* ── Line width slider – bulletproof downward triangle thumb (SVG) ── */
+/* ── Line width slider – reliable downward triangle thumb (Chrome-first) ── */
 #line-width-slider {
     display: flex;
     align-items: center;
@@ -454,41 +454,62 @@ window.LEGEND = `<!--
 
 #line-width-slider input[type="range"] {
     flex: 1;
-    height: 4px;
+    height: 5px;
     background: var(--border-color);
-    border-radius: 2px;
-    outline: none;
+    border-radius: 3px;
     -webkit-appearance: none;
     appearance: none;
+    outline: none;
+    accent-color: transparent; /* kills the red default circle */
 }
 
-/* Firefox track fix */
-#line-width-slider input[type="range"]::-moz-range-track {
+/* Chrome track */
+#line-width-slider input[type="range"]::-webkit-slider-runnable-track {
     background: var(--border-color);
-    height: 4px;
-    border-radius: 2px;
+    height: 5px;
+    border-radius: 3px;
 }
 
-/* Triangle thumb (SVG + currentColor so it matches your theme) */
-#line-width-slider input[type="range"]::-webkit-slider-thumb,
-#line-width-slider input[type="range"]::-moz-range-thumb {
+/* Downward triangle thumb (pointing at the track) */
+#line-width-slider input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
     width: 18px;
     height: 18px;
-    margin-top: -7px;
-    color: var(--text-secondary);               /* theme color */
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 18 18'%3E%3Cpolygon points='0,0 18,0 9,18' fill='currentColor' stroke='%2318181b' stroke-width='2'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
-    border: none;
+    background: var(--text-secondary);
+    border: 2px solid var(--bg-surface);
+    margin-top: -6.5px;
+    clip-path: polygon(0% 0%, 100% 0%, 50% 100%);
     cursor: ew-resize;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.35);
-    transition: color 0.15s, transform 0.12s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    transition: background 0.15s, transform 0.12s;
 }
 
-#line-width-slider input[type="range"]::-webkit-slider-thumb:hover,
-#line-width-slider input[type="range"]::-moz-range-thumb:hover {
-    color: var(--text-primary);
+#line-width-slider input[type="range"]::-webkit-slider-thumb:hover {
+    background: var(--text-primary);
     transform: scale(1.15);
+}
+
+/* Firefox fallback (same triangle) */
+#line-width-slider input[type="range"]::-moz-range-track {
+    background: var(--border-color);
+    height: 5px;
+    border-radius: 3px;
+}
+
+#line-width-slider input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: var(--text-secondary);
+    border: 2px solid var(--bg-surface);
+    margin-top: -6.5px;
+    clip-path: polygon(0% 0%, 100% 0%, 50% 100%);
+    cursor: ew-resize;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+#line-width-slider input[type="range"]::-moz-range-thumb:hover {
+    background: var(--text-primary);
 }
 
 #width-value {
