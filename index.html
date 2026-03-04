@@ -399,15 +399,15 @@ window.LEGEND = `<!--
             z-index: 9999;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
         }
-   
+           
         .editor-wrapper {
             flex: 1;
             display: flex;
             position: relative;
             background: var(--bg-editor);
             overflow: hidden;
-            overflow-x: auto;          
-            align-items: flex-start;
+            overflow-x: auto;         
+            overflow-y: hidden;         
         }
       
         #gutter {
@@ -428,6 +428,7 @@ window.LEGEND = `<!--
    
         #textarea {
             flex: 1;
+            max-width: 100%;
             min-width: 0;
             background: transparent;
             border: none;
@@ -2438,12 +2439,10 @@ class UIManager {
         
             if (v === MAX_CHARS) {
                 this.#textarea.style.maxWidth = 'none';
-                this.#textarea.style.minWidth = 'auto';
                 this.#textarea.style.whiteSpace = 'pre';
                 this.#textarea.style.wordWrap = 'normal';
             } else {
                 this.#textarea.style.maxWidth = v + 'ch';
-                this.#textarea.style.minWidth = v + 'ch';   /* NEW: forces exact width */
                 this.#textarea.style.whiteSpace = 'pre-wrap';
                 this.#textarea.style.wordWrap = 'break-word';
             }
