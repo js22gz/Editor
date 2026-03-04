@@ -455,21 +455,18 @@ window.LEGEND = `<!--
             accent-color: var(--text-secondary);
             background: var(--border-color);
         }
-/* Remove default thumb and create custom triangle thumb */
+/* Remove default thumb and create custom upside-down triangle thumb */
 #line-width-slider input[type="range"]::-webkit-slider-thumb,
 #line-width-slider input[type="range"]::-moz-range-thumb {
     -webkit-appearance: none;
     appearance: none;
-    /* Increase size slightly for the triangle geometry */
-    width: 14px; 
-    height: 12px;
-    /* Adjust margin-top to keep the tip of the triangle centered on the 3px track */
-    margin-top: -4.5px;               
+    width: 14px;
+    height: 14px;
+    margin-top: -5.5px; /* center on the 3px track */
     background: var(--text-secondary);
     border: none;
     border-radius: 0;
-    /* The magic: creates an upside-down triangle */
-    clip-path: polygon(0% 0%, 100% 0%, 50% 100%);   
+    clip-path: polygon(0% 0%, 100% 0%, 50% 100%); /* upside-down triangle */
     cursor: ew-resize;
     transition: background 0.15s, transform 0.12s;
 }
@@ -479,7 +476,7 @@ window.LEGEND = `<!--
     background: var(--text-primary);
     transform: scale(1.15);
 }
-
+      
 /* Specific fix for Firefox thumb alignment */
 #line-width-slider input[type="range"]::-moz-range-thumb {
     margin-top: 0; /* Firefox handles track alignment differently than Webkit */
