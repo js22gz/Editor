@@ -928,17 +928,29 @@ class FileSystemManager {
     }
     async mutateAndRebuild() {
         if (!this.state.currentDirHandle) return;
-        const previouslyExpanded = new Set(this.state.expandedFolders);
-        await this.build(this.state.currentDirHandle);
-        for (const path of [...previouslyExpanded].sort((a, b) => a.split('/').length - b.split('/').length)) {
-            const node = this.tree.getNode(path);
-            if (node?.kind === 'directory') {
-                await this.loadChildren(node);
-                this.state.expandedFolders.add(path);
-            }
+        if (this._rebuildInFlight) {
+            this._rebuildQueued = true;
+            return;
         }
-        this.tree.render();
-        this.tree.updateHeader();
+        this._rebuildInFlight = true;
+        try {
+            do {
+                this._rebuildQueued = false;
+                const previouslyExpanded = new Set(this.state.expandedFolders);
+                await this.build(this.state.currentDirHandle);
+                for (const path of [...previouslyExpanded].sort((a, b) => a.split('/').length - b.split('/').length)) {
+                    const node = this.tree.getNode(path);
+                    if (node?.kind === 'directory') {
+                        await this.loadChildren(node);
+                        this.state.expandedFolders.add(path);
+                    }
+                }
+                this.tree.render();
+                this.tree.updateHeader();
+            } while (this._rebuildQueued);
+        } finally {
+            this._rebuildInFlight = false;
+        }
     }
     // ── Expanded tabs persistence ──────────────────────────
     loadExpandedState() {
@@ -1274,16 +1286,24 @@ class FileSystemManager {
             await (await this.pathUtils.resolve(this.state.currentDirHandle, srcNode.path)).parent.removeEntry(srcNode.name, { recursive: true });
         }
     }
+    static #MAX_COPY_DEPTH = 100;
     async #copyDirectory(srcDirHandle, destParent, name) {
-        const newDir = await destParent.getDirectoryHandle(name, { create: true });
+        const stack = [{ src: srcDirHandle, dest: destParent, name, depth: 0 }];
         try {
-            for await (const [entryName, entryHandle] of srcDirHandle.entries()) {
-                if (entryHandle.kind === 'file') {
-                    const file = await entryHandle.getFile();
-                    const newHandle = await newDir.getFileHandle(entryName, { create: true });
-                    await this.#write(newHandle, file);
-                } else {
-                    await this.#copyDirectory(entryHandle, newDir, entryName);
+            while (stack.length > 0) {
+                const { src, dest, name: dirName, depth } = stack.pop();
+                if (depth >= FileSystemManager.#MAX_COPY_DEPTH) {
+                    throw new Error(`Directory nesting too deep (>${FileSystemManager.#MAX_COPY_DEPTH} levels)`);
+                }
+                const newDir = await dest.getDirectoryHandle(dirName, { create: true });
+                for await (const [entryName, entryHandle] of src.entries()) {
+                    if (entryHandle.kind === 'file') {
+                        const file = await entryHandle.getFile();
+                        const newHandle = await newDir.getFileHandle(entryName, { create: true });
+                        await this.#write(newHandle, file);
+                    } else {
+                        stack.push({ src: entryHandle, dest: newDir, name: entryName, depth: depth + 1 });
+                    }
                 }
             }
         } catch (e) {
@@ -1677,14 +1697,13 @@ class TabManager {
                 tab.type = 'text';
                 extToggle.className = 'ext-toggle inactive';
                 if (tab.extFrame) tab.extFrame.classList.add('hidden');
-                // Clear state.currentTabId so switchToTab won't save stale textarea content
-                this.state.currentTabId = null;
+                tab._pendingTypeSwitch = true;
                 this.switchToTab(tab.id);
             } else {
                 if (this.state.currentTabId === tab.id) tab.content = this.textarea.value;
                 tab.type = 'extension';
                 extToggle.className = 'ext-toggle active';
-                this.state.currentTabId = null;
+                tab._pendingTypeSwitch = true;
                 this.switchToTab(tab.id);
             }
         };
@@ -1717,7 +1736,8 @@ class TabManager {
                         }
                     }
                     if (currentTabWasExtension) {
-                        this.state.currentTabId = null;
+                        const curTab = this.state.tabs.find(t => t.id === currentTabId);
+                        if (curTab) curTab._pendingTypeSwitch = true;
                         this.switchToTab(currentTabId);
                     } else {
                         this.fs.saveOpenTabs(this.state.currentTabId);
@@ -1744,7 +1764,7 @@ class TabManager {
                     extToggle.title = 'Toggle extension: ' + newExt.name;
                     extToggle.className = 'ext-toggle active';
                     extToggle.onclick = this.#makeExtToggleHandler(tab, extToggle);
-                    this.state.currentTabId = null;
+                    tab._pendingTypeSwitch = true;
                     this.switchToTab(tab.id);
                 }
             };
@@ -1870,7 +1890,11 @@ class TabManager {
         return tab;
     }
     switchToTab(id) {
-        if (this.state.currentTabId !== null) {
+        const targetTab = this.state.tabs.find(t => t.id === id);
+        const skipSave = targetTab?._pendingTypeSwitch;
+        if (skipSave) delete targetTab._pendingTypeSwitch;
+
+        if (!skipSave && this.state.currentTabId !== null) {
             const cur = this.state.tabs.find(t => t.id === this.state.currentTabId);
             if (cur) {
                 if (cur.type !== 'extension') {
