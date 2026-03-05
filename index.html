@@ -1337,7 +1337,6 @@ class TreeManager {
         this.fs = fs;
         this.longPressTriggered = false;
         this.treeContainer = null;
-        this.activeDirNameEl = null;
         this.rootDirNameEl = null;
         this.sidebarHeaderActionsEl = null;
         this.state.addEventListener('activeFilePathChanged', () => this.highlightActive());
@@ -1475,14 +1474,12 @@ class TreeManager {
     }
     updateHeader() {
         if (!this.#fileTree || !this.state.currentDirHandle) {
-            if (this.activeDirNameEl) this.activeDirNameEl.textContent = '/';
             this.rootDirNameEl.textContent = 'Click to open folder';
             this.sidebarHeaderActionsEl.replaceChildren();
             return;
         }
         const safeName = this.state.currentDirHandle.name;
         this.rootDirNameEl.textContent = safeName;
-        if (this.activeDirNameEl) this.activeDirNameEl.textContent = this.state.activeDirectoryPath ? safeName + '/' + this.state.activeDirectoryPath : safeName;
         this.sidebarHeaderActionsEl.innerHTML =
             '<span class="directory-clear" id="refresh-folder" title="Refresh tree">⟳</span>' +
             '<span class="directory-clear" id="clear-folder">⌫</span>';
@@ -1969,7 +1966,6 @@ class UIManager {
     #gutter = null;
     #tabsContainer = null;
     #treeContainer = null;
-    #activeDirNameEl = null;
     #rootDirNameEl = null;
     #sidebarHeaderActionsEl = null;
     #sidebarEl = null;
@@ -2002,7 +1998,6 @@ class UIManager {
         if (this.#isMobile) this.#sidebarEl.classList.add('hidden');
         this.#statusEl = document.getElementById('status');
         this.#editorStatusEl = document.getElementById('editor-status');
-        this.#activeDirNameEl = document.getElementById('active-dir-name');
         this.#rootDirNameEl = document.getElementById('root-dir-name');
         this.#sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions');
         // Wire DOM refs to dependent classes
@@ -2010,7 +2005,6 @@ class UIManager {
         this.tabs.gutter = this.#gutter;
         this.tabs.tabsContainer = this.#tabsContainer;
         this.tree.treeContainer = this.#treeContainer;
-        this.tree.activeDirNameEl = this.#activeDirNameEl;
         this.tree.rootDirNameEl = this.#rootDirNameEl;
         this.tree.sidebarHeaderActionsEl = this.#sidebarHeaderActionsEl;
         const savedSidebarWidth = localStorage.getItem('sidebarWidth');
