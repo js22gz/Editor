@@ -307,7 +307,7 @@ window.LEGEND = `<!--
     overflow-y: auto;
     padding: 8px 12px 30px 8px;
     font-family: ui-monospace, monospace;
-    font-size: 15px;
+    font-size: 14px;
     line-height: 1.38;
     user-select: none;
 }
@@ -327,6 +327,7 @@ window.LEGEND = `<!--
 .dir-row {
     cursor: pointer;
 }
+
 .prefix {
     color: var(--text-dim);
     font-family: monospace;
@@ -380,20 +381,18 @@ window.LEGEND = `<!--
     top: 1px;
 }
 .file-name { color: var(--text-primary); }
-/* Active + ancestor states (preserved from Editor) */
+
 .tree-row.active,
 .tree-row.active-dir {
     background: var(--bg-active);
-    color: var(--text-strong);
+    color: var(--text-hover);
     font-weight: 500;
 }
-.tree-row.active-ancestor {
-    color: var(--text-hover);
-}
-/* NEW ACTIVE DIRECTORY STYLE: top + bottom accent lines */
+
 .tree-row.active-dir {
     position: relative;
 }
+
 .tree-row.active-dir::before,
 .tree-row.active-dir::after {
     content: "";
