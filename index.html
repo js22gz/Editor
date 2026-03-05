@@ -296,13 +296,6 @@ window.LEGEND = `<!--
         }
         .sidebar-header-row:hover { color: var(--text-primary); }
         .sidebar-header-label { color: var(--text-dim); margin-right: 6px; }
-        #topbar-active-row {
-            color: var(--text-subtle);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        #topbar-active-row:hover { color: var(--text-primary); }
         .directory-clear { cursor: pointer; margin-left: 8px; }
 
 #tree-container {
@@ -1478,14 +1471,14 @@ class TreeManager {
     }
     updateHeader() {
         if (!this.#fileTree || !this.state.currentDirHandle) {
-            this.activeDirNameEl.textContent = '/';
+            if (this.activeDirNameEl) this.activeDirNameEl.textContent = '/';
             this.rootDirNameEl.textContent = 'Click to open folder';
             this.sidebarHeaderActionsEl.replaceChildren();
             return;
         }
         const safeName = this.state.currentDirHandle.name;
         this.rootDirNameEl.textContent = safeName;
-        this.activeDirNameEl.textContent = this.state.activeDirectoryPath ? safeName + '/' + this.state.activeDirectoryPath : safeName;
+        if (this.activeDirNameEl) this.activeDirNameEl.textContent = this.state.activeDirectoryPath ? safeName + '/' + this.state.activeDirectoryPath : safeName;
         this.sidebarHeaderActionsEl.innerHTML =
             '<span class="directory-clear" id="refresh-folder" title="Refresh tree">⟳</span>' +
             '<span class="directory-clear" id="clear-folder">⌫</span>';
@@ -2208,10 +2201,7 @@ class UIManager {
             if (e.target.id === 'refresh-folder' || e.target.id === 'clear-folder') return;
             this.fs.openFolder();
         });
-        document.getElementById('topbar-active-row').addEventListener('click', () => {
-            this.state.activeDirectoryPath = null;
-            this.tree.updateHeader();
-        });
+
         // Sidebar resize
         const sidebarResizeHandle = document.getElementById('sidebar-resize');
         let sidebarResizing = false, sidebarResizeStartX = 0, sidebarResizeStartW = 0;
