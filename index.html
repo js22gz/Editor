@@ -1,13 +1,15 @@
 <script>
 window.WELCOME = `EDITOR
 ══════
-Welcome! EDITOR is a no-dependency, single-file text editor that runs entirely
-in a browser. Your files stay on your device — nothing is uploaded anywhere.
+Welcome! EDITOR is a text editor with some file organizational functionality. 
+The application is contained in a single file .html-file. 
+
+Your files stay on your device — nothing is uploaded anywhere.
 ───────────────────────────────────────────────────────────────────────────────
 GETTING STARTED
 ───────────────────────────────────────────────────────────────────────────────
-  1. Open a folder Right-click the sidebar → Open Folder
-                     (or press ⌘O / Ctrl+O)
+  1. To your left you have the directory tree where you set a root directory. 
+     If no root is set press "ROOT" (or press ⌘O / Ctrl+O)
   2. Browse files Click any file in the sidebar to open it in a new tab.
   3. Edit & save Type freely. Changes are auto-saved after 750 ms of
                      inactivity. Force-save any time with ⌘S / Ctrl+S.
@@ -278,7 +280,7 @@ window.LEGEND = `<!--
         }
         #sidebar-header {
             padding: 0;
-            font-size: 0.7rem;
+            font-size: 0,8rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: var(--text-subtle);
@@ -290,6 +292,7 @@ window.LEGEND = `<!--
             display: flex;
             align-items: center;
             justify-content: space-between;
+			    color: var(--text-strong);
         }
         .sidebar-header-row:hover { color: var(--text-primary); }
         .sidebar-header-label { color: var(--text-dim); margin-right: 6px; }
@@ -372,13 +375,13 @@ window.LEGEND = `<!--
 }
 .file-square {
     display: inline-block;
-    width: 12px;
-    height: 12px;
+    width: 11px;
+    height: 11px;
     border: 1.6px solid var(--text-dim);
     margin-right: 7px;
     flex-shrink: 0;
     position: relative;
-    top: 1px;
+    top: 0px;
 }
 .file-name { color: var(--text-primary); }
 
@@ -683,10 +686,9 @@ window.LEGEND = `<!--
         <aside id="sidebar">
             <div id="sidebar-header">
                 <div id="sidebar-root-row" class="sidebar-header-row" title="Click to open folder">
-                    <span><span class="sidebar-header-label">ROOT:</span> <span id="root-dir-name">Click to open folder</span></span>
+                    <span><span id="root-dir-name">Click to open folder</span></span>
                     <span id="sidebar-header-actions"></span>
                 </div>
-                <div id="topbar-active-row" class="sidebar-header-row" title="Click to reset active directory"><span class="sidebar-header-label">ACTIVE:</span> <span id="active-dir-name">/</span></div>
             </div>
             <div id="tree-container"></div>
         </aside>
