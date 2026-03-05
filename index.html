@@ -204,6 +204,35 @@
     white-space: pre;
     flex-shrink: 0;
     min-width: 26px;
+    position: relative;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    overflow: visible;
+}
+/* ── Tree guide lines (CSS-drawn, gap-free) ── */
+.tree-vline, .tree-tee, .tree-elbow {
+    position: absolute;
+    top: -5px;
+    pointer-events: none;
+}
+.tree-vline, .tree-tee {
+    bottom: -5px;
+    border-left: 1px solid var(--text-dim);
+}
+.tree-tee::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 3ch;
+    border-top: 1px solid var(--text-dim);
+}
+.tree-elbow {
+    bottom: 50%;
+    width: 3ch;
+    border-left: 1px solid var(--text-dim);
+    border-bottom: 1px solid var(--text-dim);
 }
 .name {
     padding-left: 4px;
@@ -513,6 +542,8 @@
                 min-height: 44px;
                 padding: 10px 8px 10px 12px;
             }
+            .tree-vline, .tree-tee, .tree-elbow { top: -10px; }
+            .tree-vline, .tree-tee { bottom: -10px; }
         }
     </style>
 </head>
@@ -1192,7 +1223,7 @@ class TreeManager {
     getNode(path) { return this.#nodeByPath.get(path); }
     registerNode(path, node) { this.#nodeByPath.set(path, node); }
 
-    #renderTree(node, container, prefix = '', isLast = true) {
+    #renderTree(node, container, guides = [], isLast = true) {
         const isDir = node.kind === 'directory';
         const row = document.createElement('div');
         row.className = `tree-row ${isDir ? 'dir-row' : ''}`;
@@ -1200,7 +1231,23 @@ class TreeManager {
 
         const prefixEl = document.createElement('span');
         prefixEl.className = 'prefix';
-        prefixEl.textContent = prefix + (isDir ? (isLast ? '└── ' : '├── ') : '    ');
+        prefixEl.textContent = ' '.repeat((guides.length + 1) * 4);
+        // Draw CSS guide lines for parent levels
+        guides.forEach((hasLine, idx) => {
+            if (hasLine) {
+                const g = document.createElement('span');
+                g.className = 'tree-vline';
+                g.style.left = (idx * 4 + 0.5) + 'ch';
+                prefixEl.appendChild(g);
+            }
+        });
+        // Draw connector for current node (directories only)
+        if (isDir) {
+            const c = document.createElement('span');
+            c.className = isLast ? 'tree-elbow' : 'tree-tee';
+            c.style.left = (guides.length * 4 + 0.5) + 'ch';
+            prefixEl.appendChild(c);
+        }
         row.appendChild(prefixEl);
 
         if (!isDir) {
@@ -1231,7 +1278,7 @@ class TreeManager {
                     const kids = node.children || [];
                     const lastDirIdx = kids.reduce((acc, c, i) => c.kind === 'directory' ? i : acc, -1);
                     kids.forEach((child, i) => {
-                        this.#renderTree(child, childrenDiv, prefix + (isLast ? '    ' : '│   '), lastDirIdx < 0 || i >= lastDirIdx);
+                        this.#renderTree(child, childrenDiv, [...guides, !isLast], lastDirIdx < 0 || i >= lastDirIdx);
                     });
                 }
                 if (wasExpanded) {
@@ -1271,7 +1318,7 @@ class TreeManager {
                 const kids = node.children;
                 const lastDirIdx = kids.reduce((acc, c, i) => c.kind === 'directory' ? i : acc, -1);
                 kids.forEach((child, i) => {
-                    this.#renderTree(child, childrenDiv, prefix + (isLast ? '    ' : '│   '), lastDirIdx < 0 || i >= lastDirIdx);
+                    this.#renderTree(child, childrenDiv, [...guides, !isLast], lastDirIdx < 0 || i >= lastDirIdx);
                 });
             }
         } else {
@@ -1297,7 +1344,7 @@ class TreeManager {
         const children = this.#fileTree.children || [];
         const lastDirIdx = children.reduce((acc, c, i) => c.kind === 'directory' ? i : acc, -1);
         children.forEach((child, i) => {
-            this.#renderTree(child, this.treeContainer, '', lastDirIdx < 0 || i >= lastDirIdx);
+            this.#renderTree(child, this.treeContainer, [], lastDirIdx < 0 || i >= lastDirIdx);
         });
         this.highlightActive();
     }
