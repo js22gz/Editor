@@ -316,7 +316,6 @@ window.LEGEND = `<!--
             padding-left: 27px;
         }
 
-        /* Vertical line (only nested levels) */
 /* Vertical line – all levels (including root) */
 .tree-branch::before {
             content: "";
@@ -330,7 +329,7 @@ window.LEGEND = `<!--
         }
 
         /* Last sibling stops cleanly */
-        .tree-branch:last::before {
+        .tree-branch:last-child::before {
             bottom: 13px;
         }
 
@@ -466,7 +465,6 @@ window.LEGEND = `<!--
             display: flex;
             position: relative;
             background: var(--bg-editor);
-            overflow: hidden;
             overflow-x: auto;
             overflow-y: hidden;
         }
