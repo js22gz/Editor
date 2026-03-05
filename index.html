@@ -773,8 +773,7 @@ class PathUtils {
     }
 }
 // ────────────────────────────────────────────────────────
-// FileSystemManager – refactored (March 2026)
-// Reduced 38%, cleaner architecture, same behavior
+// FileSystemManager 
 // ────────────────────────────────────────────────────────
 class FileSystemManager {
     #TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
@@ -1194,43 +1193,52 @@ class FileSystemManager {
         }
         this.ui.closeContextMenu();
     }
-    // ── Rename ─────────────────────────────────────────────
-    async renameItem() {
-        const target = this.ui.contextMenuTarget;
-        if (!target) return;
-        const newName = await this.ui.showDialog({
-            promptTitle: `Rename ${target.kind}:`,
-            defaultValue: target.name
-        });
-        if (!newName?.trim() || newName === target.name) { this.ui.closeContextMenu(); return; }
-        const trimmed = newName.trim();
-        if (this.#INVALID_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) {
-            this.ui.showToast('Invalid name'); this.ui.closeContextMenu(); return;
-        }
-        try {
-            const oldPath = target.path;
-            const { parent } = await this.pathUtils.resolve(this.state.currentDirHandle, oldPath);
-            await this.#guard(parent);
-            let updatedHandle = target.handle;
-            if (target.kind === 'directory') {
-                if (target.handle.move) await target.handle.move(parent, trimmed);
-                else throw new Error('Folder rename needs latest Chrome/Edge');
-            } else {
-                const content = await (await target.handle.getFile()).text();
-                updatedHandle = await parent.getFileHandle(trimmed, { create: true });
-                await this.#write(updatedHandle, content);
-                await parent.removeEntry(target.name);
-            }
-            const newPath = oldPath.replace(/[^/]+$/, trimmed);
-            this.tabs.updateTabPaths(oldPath, newPath, updatedHandle, trimmed);
-            await this.mutateAndRebuild();
-            this.ui.showToast(`Renamed to ${trimmed}`);
-        } catch {
-            this.ui.showToast('Rename failed');
-        }
-        this.ui.closeContextMenu();
+// ── Rename ─────────────────────────────────────────────
+async renameItem() {
+    const target = this.ui.contextMenuTarget;
+    if (!target) return;
+    const newName = await this.ui.showDialog({
+        promptTitle: `Rename ${target.kind}:`,
+        defaultValue: target.name
+    });
+    if (!newName?.trim() || newName === target.name) { this.ui.closeContextMenu(); return; }
+    const trimmed = newName.trim();
+    if (this.#INVALID_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) {
+        this.ui.showToast('Invalid name'); this.ui.closeContextMenu(); return;
     }
-    // ── Move & Copy ────────────────────────────────────────
+    try {
+        const oldPath = target.path;
+        const { parent } = await this.pathUtils.resolve(this.state.currentDirHandle, oldPath);
+        await this.#guard(parent);
+
+        let updatedHandle = target.handle;
+        if (target.kind === 'directory') {
+            if (target.handle.move) {
+                await target.handle.move(parent, trimmed);
+            } else {
+                throw new Error('Folder rename needs latest Chrome/Edge (directory.move not supported yet)');
+            }
+        } else {
+            const content = await (await target.handle.getFile()).text();
+            updatedHandle = await parent.getFileHandle(trimmed, { create: true });
+            await this.#write(updatedHandle, content);
+            await parent.removeEntry(target.name);
+        }
+
+        const newPath = oldPath.replace(/[^/]+$/, trimmed);
+        this.tabs.updateTabPaths(oldPath, newPath, updatedHandle, trimmed);
+        await this.mutateAndRebuild();
+        this.ui.showToast(`Renamed to ${trimmed}`);
+    } catch (err) {
+        // ← THIS IS THE IMPORTANT CHANGE
+        const msg = err.message.includes('needs latest Chrome/Edge')
+            ? err.message
+            : this.#formatError('Rename', err);
+        this.ui.showToast(msg, 4500);
+    }
+    this.ui.closeContextMenu();
+}
+	// ── Move & Copy ────────────────────────────────────────
     async moveEntry(srcPath, destFolderPath = '') {
         const srcNode = this.tree.getNode(srcPath);
         if (!srcNode) return;
