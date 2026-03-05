@@ -185,7 +185,7 @@
 .tree-row {
     display: flex;
     align-items: center;
-    padding: 5px 8px;
+    padding: 6px 10px;
     border-radius: 3px;
     transition: background 0.1s ease;
     position: relative;
@@ -213,11 +213,11 @@
 /* ── Tree guide lines (CSS-drawn, gap-free) ── */
 .tree-vline, .tree-tee, .tree-elbow {
     position: absolute;
-    top: -5px;
+    top: -6px;
     pointer-events: none;
 }
 .tree-vline, .tree-tee {
-    bottom: -5px;
+    bottom: -6px;
     border-left: 1px solid var(--text-dim);
 }
 .tree-tee::after {
@@ -225,12 +225,12 @@
     position: absolute;
     top: 50%;
     left: 0;
-    width: 3ch;
+    width: 4ch;
     border-top: 1px solid var(--text-dim);
 }
 .tree-elbow {
     bottom: 50%;
-    width: 3ch;
+    width: 4ch;
     border-left: 1px solid var(--text-dim);
     border-bottom: 1px solid var(--text-dim);
 }
@@ -1231,13 +1231,13 @@ class TreeManager {
 
         const prefixEl = document.createElement('span');
         prefixEl.className = 'prefix';
-        prefixEl.textContent = ' '.repeat((guides.length + 1) * 4);
+        prefixEl.textContent = ' '.repeat((guides.length + 1) * 5);
         // Draw CSS guide lines for parent levels
         guides.forEach((hasLine, idx) => {
             if (hasLine) {
                 const g = document.createElement('span');
                 g.className = 'tree-vline';
-                g.style.left = (idx * 4 + 0.5) + 'ch';
+                g.style.left = (idx * 5 + 0.5) + 'ch';
                 prefixEl.appendChild(g);
             }
         });
@@ -1245,7 +1245,7 @@ class TreeManager {
         if (isDir) {
             const c = document.createElement('span');
             c.className = isLast ? 'tree-elbow' : 'tree-tee';
-            c.style.left = (guides.length * 4 + 0.5) + 'ch';
+            c.style.left = (guides.length * 5 + 0.5) + 'ch';
             prefixEl.appendChild(c);
         }
         row.appendChild(prefixEl);
