@@ -1,3 +1,138 @@
+<script>
+window.WELCOME = `EDITOR
+══════
+Welcome! EDITOR is a no-dependency, single-file text editor that runs entirely
+in your browser. Your files stay on your device — nothing is uploaded anywhere.
+───────────────────────────────────────────────────────────────────────────────
+GETTING STARTED
+───────────────────────────────────────────────────────────────────────────────
+  1. Open a folder Right-click the sidebar → Open Folder
+                     (or press ⌘O / Ctrl+O)
+  2. Browse files Click any file in the sidebar to open it in a new tab.
+  3. Edit & save Type freely. Changes are auto-saved after 750 ms of
+                     inactivity. Force-save any time with ⌘S / Ctrl+S.
+  4. New file Right-click the sidebar → New File
+                     (or press ⌘N / Ctrl+N)
+───────────────────────────────────────────────────────────────────────────────
+FEATURES AT A GLANCE
+───────────────────────────────────────────────────────────────────────────────
+  Tabs Open many files at once. Drag tabs to reorder them.
+                    Close the active tab with ⌘W / Ctrl+W.
+  Sidebar Full folder tree with lazy loading. Supports drag & drop
+                    to move files, plus create, rename, copy, and delete.
+  Line width Use the ruler slider (top-right) to set a soft-wrap
+                    column, or push it all the way right for no limit (∞).
+  Offline EDITOR is a Progressive Web App — it works without a
+                    network connection after the first load.
+───────────────────────────────────────────────────────────────────────────────
+KEYBOARD SHORTCUTS
+───────────────────────────────────────────────────────────────────────────────
+  ⌘S / Ctrl+S Save current file
+  ⌘W / Ctrl+W Close current tab
+  ⌘N / Ctrl+N New file
+  ⌘O / Ctrl+O Open folder
+───────────────────────────────────────────────────────────────────────────────
+TIPS
+───────────────────────────────────────────────────────────────────────────────
+  • Right-click the sidebar for context actions (new, rename, copy, delete).
+  • Drag files in the tree to move them between folders.
+  • Long-press on mobile to open the context menu.
+  • Long-press the extension toggle on a tab to uninstall the extension.
+  • Right-click the sidebar → Open legend.txt to read the source map.
+───────────────────────────────────────────────────────────────────────────────
+This tab is read-only. Close it with ⌘W / Ctrl+W whenever you're ready.
+`;
+
+window.LEGEND = `<!--
+  name: EDITOR
+  type: progressive web app
+  description: No-dependency single-file text editor
+  browser compatibility: Chrome & Edge (File System Access API)
+  ═══════════════════════════════════════════════════════════════════════
+  DOCUMENT MAP (updated March 2026):
+  ─────────────────────────────────────────────────────────────────────
+  <html lang="en">
+    ├── <head>
+    │   ├── <meta> charset · viewport · title · manifest · theme-color
+    │   └── <style> (minimal dark theme, fluid layout, CSS variables)
+    └── <body>
+         ├── <header>
+         │   └── #title-area (centered)
+         │       └── #title-label (EDITOR)
+         │
+         ├── <main>
+         │   ├── <aside id="sidebar">
+         │   │   ├── #sidebar-header (ROOT: + ACTIVE: + refresh/clear)
+         │   │   └── #tree-container (lazy TreeManager)
+         │   │
+         │   ├── #sidebar-resize (draggable)
+         │   └── .editor-area
+         │       ├── #tabs (draggable tab strip)
+         │       │   └── #tab-settings-wrap (⛭ button + popover: slider · gutter · font ±)
+         │       ├── #line-width-slider (24–200 ch or ∞)
+         │       ├── .editor-wrapper
+         │       │   ├── button#sidebar-toggle
+         │       │   ├── #gutter (live line numbers)
+         │       │   └── #textarea (core editing surface)
+         │       └── .status (cursor position + file info)
+         │
+         └── <script> (class-based architecture)
+                  │
+                  ├── ReactiveState – Proxy<EventTarget>
+                  │     • currentDirHandle, tabs[], currentTabId,
+                  │       expandedFolders, activeFilePath, activeDirectoryPath,
+                  │       copiedNode
+                  │     • getTab() / getActiveTab()
+                  │     • auto-dispatches <prop>Changed events
+                  │
+                  ├── PathUtils
+                  │     • resolve(base, pathStr)
+                  │
+                  ├── FileSystemManager (FSA + persistence)
+                  │     • IndexedDB (handles + extensions)
+                  │     • Lazy tree (loadChildren + mutateAndRebuild)
+                  │     • Full CRUD + drag & drop (move/copy/rename)
+                  │     • Auto-save (debounce 750 ms) + flush
+                  │     • #newItem() shared helper (newFile / newFolder)
+                  │     • Session restore (pageshow / visibilitychange in bindLifecycle)
+                  │     • #guard() permission helper
+                  │
+                  ├── TreeManager
+                  │     • nodeByPath Map + fileTree root
+                  │     • recursive _renderTreeItem() + lazy loading
+                  │     • Drag & drop + ancestor highlighting
+                  │     • highlightActive() + updateHeader()
+                  │     • registerNode / getNode / clear
+                  │
+                  ├── ExtensionManager
+                  │     • loadAll() / install() / uninstall()
+                  │     • _parseMeta() + getForFile(filename)
+                  │     • renderTab() → sandboxed iframe + postMessage
+                  │     • protocol:
+                  │         editor → ext: {type:'editor:load', content, filename}
+                  │         ext → editor: {type:'extension:save', content}
+                  │         ext → editor: {type:'extension:dirty'}
+                  │
+                  ├── TabManager
+                  │     • static TAB_TYPES (welcome · legend · text · extension)
+                  │     • createNewTab() + switchToTab() + closeTab()
+                  │     • Drag-to-reorder tabs
+                  │     • updateTabPaths() after rename/move
+                  │
+                  ├── UIManager
+                  │     • DOM wiring, context menu, long-press (mobile)
+                  │     • showToast / showDialog / updateLineNumbers
+                  │     • bindKeyboard() · bindTreeEvents() · bindTabEvents()
+                  │       bindSettings() · bindLifecycle()
+                  │     • #revalidatePermission() shared helper
+                  │
+                  └── EditorApp (orchestrator)
+                        • wires all classes together
+                        • launches on window.onload
+
+  copyright © 2026 Jonatan Skäryd. All rights reserved.
+-->`;
+</script>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -167,12 +302,6 @@
         #topbar-active-row:hover { color: var(--text-primary); }
         .directory-clear { cursor: pointer; margin-left: 8px; }
 
-
-
-
-  
-        /* ── FILE TREE – TREE.html style: Unicode connectors (├── └── │), NO GAPS, dark theme ── */
-/* ── FILE TREE – TREE.html style: Unicode connectors (├── └── │), NO GAPS, dark theme ── */
 #tree-container {
     flex: 1;
     overflow-y: auto;
@@ -208,7 +337,7 @@
     align-self: stretch;
     overflow: visible;
 }
-/* ── Tree guide lines (CSS-drawn, gap-free) ── */
+    
 .tree-vline, .tree-tee, .tree-elbow {
     position: absolute;
     top: -6px;
@@ -242,8 +371,8 @@
 }
 .file-square {
     display: inline-block;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     border: 1.6px solid var(--text-dim);
     margin-right: 7px;
     flex-shrink: 0;
