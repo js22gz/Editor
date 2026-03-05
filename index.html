@@ -1293,7 +1293,7 @@ class FileSystemManager {
             while (stack.length > 0) {
                 const { src, dest, name: dirName, depth } = stack.pop();
                 if (depth >= FileSystemManager.#MAX_COPY_DEPTH) {
-                    throw new Error('Directory nesting too deep (>' + FileSystemManager.#MAX_COPY_DEPTH + ' levels)');
+                    throw new Error(`Directory nesting too deep (>${FileSystemManager.#MAX_COPY_DEPTH} levels)`);
                 }
                 const newDir = await dest.getDirectoryHandle(dirName, { create: true });
                 for await (const [entryName, entryHandle] of src.entries()) {
