@@ -9,9 +9,9 @@ Your files stay on your device — nothing is uploaded anywhere.
 GETTING STARTED
 ───────────────────────────────────────────────────────────────────────────────
   1. To your left you have the directory tree where you set a root directory. 
-     If no root is set press "ROOT" (or press ⌘O / Ctrl+O)
-  2. Browse files Click any file in the sidebar to open it in a new tab.
-  3. Edit & save Type freely. Changes are auto-saved after 750 ms of
+     If no root is set: CLICK TO OPEN FOLDER (or press ⌘O / Ctrl+O)
+  2. Browse files. Click any file in the sidebar to open it in a new tab.
+  3. Type freely. Changes are auto-saved after 750 ms of
                      inactivity. Force-save any time with ⌘S / Ctrl+S.
   4. New file Right-click the sidebar → New File
                      (or press ⌘N / Ctrl+N)
@@ -56,20 +56,21 @@ window.LEGEND = `<!--
   <html lang="en">
     ├── <head>
     │   ├── <meta> charset · viewport · title · manifest · theme-color
-    │   └── <style> (minimal dark theme + CSS tree guides + fluid layout)
+    │   └── <style> (minimal dark theme, fluid layout, CSS variables)
     └── <body>
          ├── <header>
-         │   └── #title-area (centered "EDITOR")
+         │   └── #title-area (centered)
+         │       └── #title-label (EDITOR)
          │
          ├── <main>
          │   ├── <aside id="sidebar">
-         │   │   ├── #sidebar-header (root name + refresh/clear)
-         │   │   └── #tree-container (TreeManager – recursive lazy tree)
+         │   │   ├── #sidebar-header (ROOT: + ACTIVE: + refresh/clear)
+         │   │   └── #tree-container (lazy TreeManager)
          │   │
          │   ├── #sidebar-resize (draggable)
          │   └── .editor-area
-         │       ├── #tabs (draggable + per-tab extension toggle)
-         │       │   └── #tab-settings-wrap (⛭ popover: slider/gutter/font)
+         │       ├── #tabs (draggable tab strip)
+         │       │   └── #tab-settings-wrap (⛭ button + popover: slider · gutter · font ±)
          │       ├── #line-width-slider (24–200 ch or ∞)
          │       ├── .editor-wrapper
          │       │   ├── button#sidebar-toggle
@@ -77,51 +78,60 @@ window.LEGEND = `<!--
          │       │   └── #textarea (core editing surface)
          │       └── .status (cursor position + file info)
          │
-         └── <script> (modular class architecture)
+         └── <script> (class-based architecture)
                   │
-                  ├── ReactiveState (Proxy<EventTarget>)
-                  │    • currentDirHandle, tabs[], currentTabId,
-                  │      expandedFolders, activeFilePath, activeDirectoryPath,
-                  │      copiedNode
-                  │    • auto-dispatches *Changed events
+                  ├── ReactiveState – Proxy<EventTarget>
+                  │     • currentDirHandle, tabs[], currentTabId,
+                  │       expandedFolders, activeFilePath, activeDirectoryPath,
+                  │       copiedNode
+                  │     • getTab() / getActiveTab()
+                  │     • auto-dispatches <prop>Changed events
                   │
                   ├── PathUtils
-                  │    • resolve(baseHandle, pathStr)
+                  │     • resolve(base, pathStr)
                   │
-                  ├── FileSystemManager (core logic)
-                  │    • IndexedDB persistence (handles + extensions)
-                  │    • Lazy tree building (build / loadChildren / mutateAndRebuild)
-                  │    • Full CRUD + drag & drop (move/copy/rename)
-                  │    • Auto-save (750 ms debounce) + flush
-                  │    • Session restore + permission revalidation
+                  ├── FileSystemManager (FSA + persistence)
+                  │     • IndexedDB (handles + extensions)
+                  │     • Lazy tree (loadChildren + mutateAndRebuild)
+                  │     • Full CRUD + drag & drop (move/copy/rename)
+                  │     • Auto-save (debounce 750 ms) + flush
+                  │     • #newItem() shared helper (newFile / newFolder)
+                  │     • Session restore (pageshow / visibilitychange in bindLifecycle)
+                  │     • #guard() permission helper
                   │
                   ├── TreeManager
-                  │    • nodeByPath Map + recursive #renderTree()
-                  │    • CSS-based tree guides (vline/tee/elbow)
-                  │    • Drag & drop + long-press context menu
-                  │    • highlightActive() + updateHeader()
+                  │     • nodeByPath Map + fileTree root
+                  │     • recursive _renderTreeItem() + lazy loading
+                  │     • Drag & drop + ancestor highlighting
+                  │     • highlightActive() + updateHeader()
+                  │     • registerNode / getNode / clear
                   │
                   ├── ExtensionManager
-                  │    • install() / uninstall() via IndexedDB
-                  │    • renderTab() → sandboxed iframe + postMessage API
-                  │    • meta parsing (extension-name / extension-types)
+                  │     • loadAll() / install() / uninstall()
+                  │     • _parseMeta() + getForFile(filename)
+                  │     • renderTab() → sandboxed iframe + postMessage
+                  │     • protocol:
+                  │         editor → ext: {type:'editor:load', content, filename}
+                  │         ext → editor: {type:'extension:save', content}
+                  │         ext → editor: {type:'extension:dirty'}
                   │
                   ├── TabManager
-                  │    • TAB_TYPES (welcome · legend · text · extension)
-                  │    • Per-tab extension toggle (text ↔ extension mode)
-                  │    • createNewTab / switchToTab / closeTab
-                  │    • Drag-to-reorder + updateTabPaths() after rename/move
+                  │     • static TAB_TYPES (welcome · legend · text · extension)
+                  │     • createNewTab() + switchToTab() + closeTab()
+                  │     • Drag-to-reorder tabs
+                  │     • updateTabPaths() after rename/move
                   │
                   ├── UIManager
-                  │    • All DOM wiring, toasts, custom dialogs
-                  │    • Context menu + long-press (mobile)
-                  │    • Settings (font, gutter, line width)
-                  │    • bindKeyboard / bindTreeEvents / bindTabEvents
-                  │    • bindLifecycle (pageshow, visibilitychange)
+                  │     • DOM wiring, context menu, long-press (mobile)
+                  │     • showToast / showDialog / updateLineNumbers
+                  │     • bindKeyboard() · bindTreeEvents() · bindTabEvents()
+                  │       bindSettings() · bindLifecycle()
+                  │     • #revalidatePermission() shared helper
                   │
                   └── EditorApp (orchestrator)
-                        • Wires all managers together
-                        • Launches on window.onload
+                        • wires all classes together
+                        • launches on window.onload
+
   copyright © 2026 Jonatan Skäryd. All rights reserved.
 -->`;
 </script>
