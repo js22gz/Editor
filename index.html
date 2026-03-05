@@ -1200,7 +1200,7 @@ class TreeManager {
 
         const prefixEl = document.createElement('span');
         prefixEl.className = 'prefix';
-        prefixEl.textContent = prefix + (isLast ? '└── ' : '├── ');
+        prefixEl.textContent = prefix + (isDir ? (isLast ? '└── ' : '├── ') : '    ');
         row.appendChild(prefixEl);
 
         if (!isDir) {
@@ -1229,8 +1229,9 @@ class TreeManager {
                     await this.fs.loadChildren(node);
                     childrenDiv.replaceChildren();
                     const kids = node.children || [];
+                    const lastDirIdx = kids.reduce((acc, c, i) => c.kind === 'directory' ? i : acc, -1);
                     kids.forEach((child, i) => {
-                        this.#renderTree(child, childrenDiv, prefix + (isLast ? '    ' : '│   '), i === kids.length - 1);
+                        this.#renderTree(child, childrenDiv, prefix + (isLast ? '    ' : '│   '), lastDirIdx < 0 || i >= lastDirIdx);
                     });
                 }
                 if (wasExpanded) {
@@ -1268,8 +1269,9 @@ class TreeManager {
 
             if (this.state.expandedFolders.has(node.path) && node.children?.length) {
                 const kids = node.children;
+                const lastDirIdx = kids.reduce((acc, c, i) => c.kind === 'directory' ? i : acc, -1);
                 kids.forEach((child, i) => {
-                    this.#renderTree(child, childrenDiv, prefix + (isLast ? '    ' : '│   '), i === kids.length - 1);
+                    this.#renderTree(child, childrenDiv, prefix + (isLast ? '    ' : '│   '), lastDirIdx < 0 || i >= lastDirIdx);
                 });
             }
         } else {
@@ -1293,8 +1295,9 @@ class TreeManager {
             return;
         }
         const children = this.#fileTree.children || [];
+        const lastDirIdx = children.reduce((acc, c, i) => c.kind === 'directory' ? i : acc, -1);
         children.forEach((child, i) => {
-            this.#renderTree(child, this.treeContainer, '', i === children.length - 1);
+            this.#renderTree(child, this.treeContainer, '', lastDirIdx < 0 || i >= lastDirIdx);
         });
         this.highlightActive();
     }
