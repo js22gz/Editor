@@ -1,139 +1,3 @@
-<script>
-window.WELCOME = `EDITOR
-══════
-Welcome! EDITOR is a no-dependency, single-file text editor that runs entirely
-in your browser. Your files stay on your device — nothing is uploaded anywhere.
-───────────────────────────────────────────────────────────────────────────────
-GETTING STARTED
-───────────────────────────────────────────────────────────────────────────────
-  1. Open a folder Right-click the sidebar → Open Folder
-                     (or press ⌘O / Ctrl+O)
-  2. Browse files Click any file in the sidebar to open it in a new tab.
-  3. Edit & save Type freely. Changes are auto-saved after 750 ms of
-                     inactivity. Force-save any time with ⌘S / Ctrl+S.
-  4. New file Right-click the sidebar → New File
-                     (or press ⌘N / Ctrl+N)
-───────────────────────────────────────────────────────────────────────────────
-FEATURES AT A GLANCE
-───────────────────────────────────────────────────────────────────────────────
-  Tabs Open many files at once. Drag tabs to reorder them.
-                    Close the active tab with ⌘W / Ctrl+W.
-  Sidebar Full folder tree with lazy loading. Supports drag & drop
-                    to move files, plus create, rename, copy, and delete.
-  Line width Use the ruler slider (top-right) to set a soft-wrap
-                    column, or push it all the way right for no limit (∞).
-  Offline EDITOR is a Progressive Web App — it works without a
-                    network connection after the first load.
-───────────────────────────────────────────────────────────────────────────────
-KEYBOARD SHORTCUTS
-───────────────────────────────────────────────────────────────────────────────
-  ⌘S / Ctrl+S Save current file
-  ⌘W / Ctrl+W Close current tab
-  ⌘N / Ctrl+N New file
-  ⌘O / Ctrl+O Open folder
-───────────────────────────────────────────────────────────────────────────────
-TIPS
-───────────────────────────────────────────────────────────────────────────────
-  • Right-click the sidebar for context actions (new, rename, copy, delete).
-  • Drag files in the tree to move them between folders.
-  • Long-press on mobile to open the context menu.
-  • Long-press the extension toggle on a tab to uninstall the extension.
-  • Right-click the sidebar → Open legend.txt to read the source map.
-───────────────────────────────────────────────────────────────────────────────
-This tab is read-only. Close it with ⌘W / Ctrl+W whenever you're ready.
-`;
-
-window.LEGEND = `<!--
-  name: EDITOR
-  type: progressive web app
-  description: No-dependency single-file text editor
-  browser compatibility: Chrome & Edge (File System Access API)
-  ═══════════════════════════════════════════════════════════════════════
-  DOCUMENT MAP (updated March 2026):
-  ─────────────────────────────────────────────────────────────────────
-  <html lang="en">
-    ├── <head>
-    │   ├── <meta> charset · viewport · title · manifest · theme-color
-    │   └── <style> (minimal dark theme, fluid layout, CSS variables)
-    └── <body>
-         ├── <header>
-         │   └── #title-area (centered)
-         │       └── #title-label (EDITOR)
-         │
-         ├── <main>
-         │   ├── <aside id="sidebar">
-         │   │   ├── #sidebar-header (ROOT: + ACTIVE: + refresh/clear)
-         │   │   └── #tree-container (lazy TreeManager)
-         │   │
-         │   ├── #sidebar-resize (draggable)
-         │   └── .editor-area
-         │       ├── #tabs (draggable tab strip)
-         │       │   └── #tab-settings-wrap (⛭ button + popover: slider · gutter · font ±)
-         │       ├── #line-width-slider (24–200 ch or ∞)
-         │       ├── .editor-wrapper
-         │       │   ├── button#sidebar-toggle
-         │       │   ├── #gutter (live line numbers)
-         │       │   └── #textarea (core editing surface)
-         │       └── .status (cursor position + file info)
-         │
-         └── <script> (class-based architecture)
-                  │
-                  ├── ReactiveState – Proxy<EventTarget>
-                  │     • currentDirHandle, tabs[], currentTabId,
-                  │       expandedFolders, activeFilePath, activeDirectoryPath,
-                  │       copiedNode
-                  │     • getTab() / getActiveTab()
-                  │     • auto-dispatches <prop>Changed events
-                  │
-                  ├── PathUtils
-                  │     • resolve(base, pathStr)
-                  │
-                  ├── FileSystemManager (FSA + persistence)
-                  │     • IndexedDB (handles + extensions)
-                  │     • Lazy tree (loadChildren + mutateAndRebuild)
-                  │     • Full CRUD + drag & drop (move/copy/rename)
-                  │     • Auto-save (debounce 750 ms) + flush
-                  │     • #newItem() shared helper (newFile / newFolder)
-                  │     • Session restore (pageshow / visibilitychange in bindLifecycle)
-                  │     • #guard() permission helper
-                  │
-                  ├── TreeManager
-                  │     • nodeByPath Map + fileTree root
-                  │     • recursive _renderTreeItem() + lazy loading
-                  │     • Drag & drop + ancestor highlighting
-                  │     • highlightActive() + updateHeader()
-                  │     • registerNode / getNode / clear
-                  │
-                  ├── ExtensionManager
-                  │     • loadAll() / install() / uninstall()
-                  │     • _parseMeta() + getForFile(filename)
-                  │     • renderTab() → sandboxed iframe + postMessage
-                  │     • protocol:
-                  │         editor → ext: {type:'editor:load', content, filename}
-                  │         ext → editor: {type:'extension:save', content}
-                  │         ext → editor: {type:'extension:dirty'}
-                  │
-                  ├── TabManager
-                  │     • static TAB_TYPES (welcome · legend · text · extension)
-                  │     • createNewTab() + switchToTab() + closeTab()
-                  │     • Drag-to-reorder tabs
-                  │     • updateTabPaths() after rename/move
-                  │
-                  ├── UIManager
-                  │     • DOM wiring, context menu, long-press (mobile)
-                  │     • showToast / showDialog / updateLineNumbers
-                  │     • bindKeyboard() · bindTreeEvents() · bindTabEvents()
-                  │       bindSettings() · bindLifecycle()
-                  │     • #revalidatePermission() shared helper
-                  │
-                  └── EditorApp (orchestrator)
-                        • wires all classes together
-                        • launches on window.onload
-
-  copyright © 2026 Jonatan Skäryd. All rights reserved.
--->`;
-</script>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -303,123 +167,106 @@ window.LEGEND = `<!--
         #topbar-active-row:hover { color: var(--text-primary); }
         .directory-clear { cursor: pointer; margin-left: 8px; }
 
-        /* ── FILE TREE – Perfect alignment + NO phantom root lines + NEW active style ── */
-        #tree-container {
-            flex: 1;
-            overflow-y: auto;
-            padding: 6px 0 20px;
-            font-size: 15px;
-        }
 
-        .tree-branch {
-            position: relative;
-            padding-left: 27px;
-        }
 
-/* Vertical line – all levels (including root) */
-.tree-branch::before {
-            content: "";
-            position: absolute;
-            left: 12px;
-            top: 0;
-            bottom: 0;
-            width: 2px;
-            background: var(--text-dim);
-            opacity: 0.85;
-        }
 
-        /* Last sibling stops cleanly */
-        .tree-branch:last-child::before {
-            bottom: 13px;
-        }
-
-        /* Horizontal L-hook connector */
-        .tree-branch::after {
-            content: "";
-            position: absolute;
-            left: 12px;
-            top: 17px;
-            width: 13px;
-            height: 2px;
-            background: var(--text-dim);
-            opacity: 0.85;
-        }
-
-        /* Folder & File items – aligned */
-        .folder-header,
-        .file-item {
-            position: relative;
-            padding: 7px 8px 8px 5px;
-            display: flex;
-            align-items: center;
-            gap: 7px;
-            font-family: ui-monospace, monospace;
-            border-radius: 3px;
-            transition: background 0.1s ease;
-            z-index: 2;
-        }
-
-        /* File square */
-        .file-dot {
-            color: var(--text-dim);
-            font-size: 15px;
-            width: 16px;
-            text-align: center;
-            flex-shrink: 0;
-        }
-
-        /* Files: no tree lines + tighter indent */
-        .tree-branch:has(> .file-item) {
-            padding-left: 20px;
-        }
-        .tree-branch:has(> .file-item)::before,
-        .tree-branch:has(> .file-item)::after {
-            display: none !important;
-        }
-
-        /* Hover + Active states */
-        .folder-header:hover, .file-item:hover { 
-            background: var(--bg-item-hover); 
-            color: var(--text-hover); 
-        }
-        .folder-header.active {
-            background: var(--bg-active);
-            color: var(--text-strong);
-            font-weight: 500;
-        }
-        .folder-header.top-level { font-weight: 700; color: var(--text-strong); }
-        .folder-header.active-ancestor { color: var(--text-hover); }
-
-        /* NEW ACTIVE DIRECTORY STYLE: top + bottom accent lines (no vertical bar) */
-        .folder-header.active-dir {
-            position: relative;
-            background: var(--bg-active);
-            color: var(--text-strong);
-            font-weight: 500;
-        }
-        .folder-header.active-dir::before,
-        .folder-header.active-dir::after {
-            content: "";
-            position: absolute;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: var(--text-secondary);
-            z-index: 3;
-        }
-        .folder-header.active-dir::before { top: 0; }
-        .folder-header.active-dir::after { bottom: 0; }
-
-        /* Drag & drop */
-        .folder-header.drop-target,
-        #tree-container.drop-target { 
-            background: var(--border-color); 
-            outline: 1px dashed var(--text-dim); 
-        }
-        .file-item.dragging,
-        .folder-header.dragging { opacity: 0.45; }
-
-        .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  
+        /* ── FILE TREE – TREE.html style: Unicode connectors (├── └── │), NO GAPS, dark theme ── */
+/* ── FILE TREE – TREE.html style: Unicode connectors (├── └── │), NO GAPS, dark theme ── */
+#tree-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px 30px 8px;
+    font-family: ui-monospace, monospace;
+    font-size: 15px;
+    line-height: 1.38;
+    user-select: none;
+}
+.tree-row {
+    display: flex;
+    align-items: center;
+    padding: 5px 8px;
+    border-radius: 3px;
+    transition: background 0.1s ease;
+    position: relative;
+    z-index: 2;
+}
+.tree-row:hover {
+    background: var(--bg-item-hover);
+    color: var(--text-hover);
+}
+.dir-row {
+    cursor: pointer;
+}
+.prefix {
+    color: var(--text-dim);
+    font-family: monospace;
+    white-space: pre;
+    flex-shrink: 0;
+    min-width: 26px;
+}
+.name {
+    padding-left: 4px;
+    color: var(--text-primary);
+}
+.name.dir {
+    color: var(--text-strong);
+    font-weight: 600;
+}
+.file-square {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 1.6px solid var(--text-dim);
+    margin-right: 7px;
+    flex-shrink: 0;
+    position: relative;
+    top: 1px;
+}
+.file-name { color: var(--text-primary); }
+/* Active + ancestor states (preserved from Editor) */
+.tree-row.active,
+.tree-row.active-dir {
+    background: var(--bg-active);
+    color: var(--text-strong);
+    font-weight: 500;
+}
+.tree-row.active-ancestor {
+    color: var(--text-hover);
+}
+/* NEW ACTIVE DIRECTORY STYLE: top + bottom accent lines */
+.tree-row.active-dir {
+    position: relative;
+}
+.tree-row.active-dir::before,
+.tree-row.active-dir::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--text-secondary);
+    z-index: 3;
+}
+.tree-row.active-dir::before { top: 0; }
+.tree-row.active-dir::after { bottom: 0; }
+/* Drag & drop */
+.tree-row.dragging { opacity: 0.45; }
+.tree-row.drop-target,
+#tree-container.drop-target {
+    background: var(--border-color);
+    outline: 1px dashed var(--text-dim);
+}
+.children {
+    display: block;
+}
+  
+  
+  
+  
+  
+  
+  .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
         #tabs {
             display: flex;
             background: var(--bg-surface);
@@ -662,15 +509,12 @@ window.LEGEND = `<!--
         }
         .ext-frame.hidden { display: none; }
         @media (max-width: 768px) {
-            .folder-header,
-            .file-item {
+            .tree-row {
                 min-height: 44px;
                 padding: 10px 8px 10px 12px;
             }
         }
     </style>
-
-
 </head>
 <body>
       <header>
@@ -715,7 +559,7 @@ window.LEGEND = `<!--
             <div class="status"><span id="status"></span><span style="flex:1"></span><span id="editor-status">No file open</span></div>
         </div>
     </main>
-    
+   
 <script>
 'use strict';
 // ────────────────────────────────────────────────────────
@@ -744,14 +588,11 @@ class ReactiveState extends EventTarget {
             }
         });
     }
-
     /** @param {number} id */
     getTab(id) { return this.tabs.find(t => t.id === id); }
-
     /** @returns {object|null} */
     getActiveTab() { return this.currentTabId !== null ? this.getTab(this.currentTabId) : null; }
 }
-
 // ────────────────────────────────────────────────────────
 // PathUtils – file-path helpers
 // ────────────────────────────────────────────────────────
@@ -775,7 +616,6 @@ class PathUtils {
         return { parent, name, path: pathStr };
     }
 }
-
 // ────────────────────────────────────────────────────────
 // FileSystemManager – refactored (March 2026)
 // Reduced 38%, cleaner architecture, same behavior
@@ -784,7 +624,6 @@ class FileSystemManager {
     #TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
     #INVALID_CHARS = /[<>:"|?*\x00-\x1F]/;
     #saveInProgress = false;
-
     /** @param {ReactiveState} state @param {PathUtils} pathUtils */
     constructor(state, pathUtils) {
         this.state = state;
@@ -793,7 +632,6 @@ class FileSystemManager {
         /** @type {TreeManager} */ this.tree = null;
         /** @type {TabManager} */ this.tabs = null;
         /** @type {UIManager} */ this.ui = null;
-
         this.scheduleSave = (() => {
             let timer;
             return () => {
@@ -806,7 +644,6 @@ class FileSystemManager {
             };
         })();
     }
-
     // ── Core helpers ───────────────────────────────────────
     async #guard(handle, action = 'operation') {
         if (!handle) throw new Error('No handle');
@@ -816,20 +653,17 @@ class FileSystemManager {
         if (perm !== 'granted') throw new Error(`${action} permission denied`);
         return handle;
     }
-
     async #write(handle, content) {
         const writable = await handle.createWritable();
         await writable.write(content);
         await writable.close();
     }
-
     #formatError(action, e) {
         if (e.name === 'NotAllowedError') return `${action} failed: permission denied – re-open folder`;
         if (e.name === 'QuotaExceededError') return `${action} failed: not enough disk space`;
         if (e.name === 'NotFoundError') return `${action} failed: file/folder not found`;
         return `${action} failed: ${e.message || e}`;
     }
-
     async #entryExists(dirHandle, name) {
         try {
             await dirHandle.getFileHandle(name);
@@ -841,7 +675,6 @@ class FileSystemManager {
         } catch (e) { if (e.name !== 'NotFoundError') throw e; }
         return false;
     }
-
     // ── DB & persistence ───────────────────────────────────
     async initDB() {
         if (this.db) return;
@@ -856,18 +689,15 @@ class FileSystemManager {
             req.onerror = () => resolve();
         });
     }
-
     async queryPermission(handle) {
         if (!handle) return 'denied';
         try { return await handle.queryPermission({ mode: 'readwrite' }); } catch { return 'denied'; }
     }
-
     async saveFolderHandle(handle) {
         await this.initDB();
         const tx = this.db.transaction('handles', 'readwrite');
         tx.objectStore('handles').put(handle, 'main');
     }
-
     async loadSavedFolder() {
         await this.initDB();
         return new Promise(resolve => {
@@ -876,10 +706,8 @@ class FileSystemManager {
             req.onsuccess = async () => {
                 const handle = req.result;
                 if (!handle) return resolve({ status: 'none' });
-
                 const perm = await this.queryPermission(handle);
                 if (perm === 'granted') return resolve({ status: 'granted', handle });
-
                 try {
                     const granted = await handle.requestPermission({ mode: 'readwrite' });
                     resolve(granted === 'granted' ? { status: 'granted', handle } : { status: 'needs-auth', handle });
@@ -890,7 +718,6 @@ class FileSystemManager {
             req.onerror = () => resolve({ status: 'none' });
         });
     }
-
     async clearSavedFolder() {
         if (this.db) {
             const tx = this.db.transaction('handles', 'readwrite');
@@ -904,11 +731,9 @@ class FileSystemManager {
         this.tree.clear();
         this.tree.updateHeader();
     }
-
     // ── Tree & lazy loading ────────────────────────────────
     async loadChildren(dirNode) {
         if (dirNode.kind !== 'directory' || dirNode.childrenLoaded) return;
-
         dirNode.children = [];
         try {
             const entries = [];
@@ -919,7 +744,6 @@ class FileSystemManager {
             entries.sort(([aName, aH], [bName, bH]) =>
                 (aH.kind !== bH.kind ? (aH.kind === 'directory' ? -1 : 1) : aName.localeCompare(bName, undefined, { numeric: true }))
             );
-
             for (const [name, handle] of entries) {
                 const path = dirNode.path === '/' ? name : `${dirNode.path}/${name}`;
                 const node = handle.kind === 'directory'
@@ -931,7 +755,6 @@ class FileSystemManager {
         } catch {}
         dirNode.childrenLoaded = true;
     }
-
     async build(rootHandle) {
         this.tree.clear();
         const root = {
@@ -947,12 +770,10 @@ class FileSystemManager {
         await this.loadChildren(root);
         return root;
     }
-
     async mutateAndRebuild() {
         if (!this.state.currentDirHandle) return;
         const previouslyExpanded = new Set(this.state.expandedFolders);
         await this.build(this.state.currentDirHandle);
-
         for (const path of [...previouslyExpanded].sort((a, b) => a.split('/').length - b.split('/').length)) {
             const node = this.tree.getNode(path);
             if (node?.kind === 'directory') {
@@ -963,7 +784,6 @@ class FileSystemManager {
         this.tree.render();
         this.tree.updateHeader();
     }
-
     // ── Expanded tabs persistence ──────────────────────────
     loadExpandedState() {
         try {
@@ -971,11 +791,9 @@ class FileSystemManager {
             if (saved) this.state.expandedFolders = new Set(JSON.parse(saved));
         } catch {}
     }
-
     saveExpandedState() {
         try { localStorage.setItem('expandedFolders', JSON.stringify([...this.state.expandedFolders])); } catch {}
     }
-
     saveOpenTabs(currentId) {
         try {
             const data = this.state.tabs
@@ -986,19 +804,16 @@ class FileSystemManager {
             }
         } catch {}
     }
-
     loadOpenTabs() {
         try {
             const saved = localStorage.getItem('openTabs');
             return saved ? JSON.parse(saved) : [];
         } catch { return []; }
     }
-
     // ── Session restore ────────────────────────────────────
     async restoreSession() {
         this.loadExpandedState();
         const saved = await this.loadSavedFolder();
-
         if (saved.status === 'granted') {
             this.state.currentDirHandle = saved.handle;
             await this.build(saved.handle);
@@ -1010,19 +825,16 @@ class FileSystemManager {
         } else if (saved.status === 'needs-auth') {
             this.#handlePendingAuth(saved.handle);
         }
-
         if (!this.state.tabs.length) {
             await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
         }
     }
-
     async #expandSavedFolders() {
         for (const path of [...this.state.expandedFolders].sort((a, b) => a.split('/').length - b.split('/').length)) {
             const node = this.tree.getNode(path);
             if (node?.kind === 'directory') await this.loadChildren(node);
         }
     }
-
     #handlePendingAuth(handle) {
         const pendingTabs = this.loadOpenTabs();
         this.ui.showActionToast('Tap to restore folder access', async () => {
@@ -1037,14 +849,12 @@ class FileSystemManager {
                 await this.#expandSavedFolders();
                 this.tree.render();
                 this.tree.updateHeader();
-
                 // Remove welcome tab before restore
                 const welcomeIdx = this.state.tabs.findIndex(t => t.type === 'welcome');
                 if (welcomeIdx !== -1) {
                     this.state.tabs[welcomeIdx].element.remove();
                     this.state.tabs.splice(welcomeIdx, 1);
                 }
-
                 const restored = await this.tabs.restoreOpenTabs(handle, pendingTabs);
                 if (restored) this.ui.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
                 else if (!this.state.tabs.length) {
@@ -1056,7 +866,6 @@ class FileSystemManager {
             }
         }, 15000);
     }
-
     // ── Open folder/file ───────────────────────────────────
     async openFolder() {
         try {
@@ -1072,7 +881,6 @@ class FileSystemManager {
             if (e.name !== 'AbortError') this.ui.showToast('Open folder cancelled or failed');
         }
     }
-
     async openFile() {
         try {
             const [handle] = await window.showOpenFilePicker();
@@ -1086,7 +894,6 @@ class FileSystemManager {
             if (e.name !== 'AbortError') this.ui.showToast('Open file cancelled or failed');
         }
     }
-
     async openFileFromNode(node) {
         try {
             const file = await node.handle.getFile();
@@ -1102,19 +909,16 @@ class FileSystemManager {
             this.ui.showToast(e.message.includes('permission') ? 'Re-open folder to grant write access' : 'Failed to open file');
         }
     }
-
     // ── Target directory for new items ─────────────────────
     async #getTargetDir() {
         const targetPath = this.ui.contextMenuTarget?.kind === 'directory'
             ? this.ui.contextMenuTarget.path
             : (this.state.activeDirectoryPath || '');
-
         const { parent, name } = await this.pathUtils.resolve(this.state.currentDirHandle, targetPath);
         const dir = targetPath ? await parent.getDirectoryHandle(name) : parent;
         await this.#guard(dir);
         return { dir, targetPath };
     }
-
     // ── New file/folder ────────────────────────────────────
     async #newItem(kind) {
         if (!this.state.currentDirHandle) return this.ui.showToast('Open a folder first');
@@ -1145,10 +949,8 @@ class FileSystemManager {
         }
         this.ui.closeContextMenu();
     }
-
     async newFile() { return this.#newItem('file'); }
     async newFolder() { return this.#newItem('folder'); }
-
     // ── Save ───────────────────────────────────────────────
     async saveTab(tab) {
         if (!tab?.handle || !tab.dirty) return;
@@ -1156,7 +958,6 @@ class FileSystemManager {
             const content = (this.state.currentTabId === tab.id && tab.type !== 'extension')
                 ? this.ui.textarea.value
                 : tab.content;
-
             await this.#write(tab.handle, content);
             tab.content = content;
             tab.dirty = false;
@@ -1167,12 +968,10 @@ class FileSystemManager {
             this.ui.showToast(err.message.includes('permission') ? 'Re-authorize folder' : 'Save failed');
         }
     }
-
     saveCurrentFile() {
         const tab = this.state.getActiveTab();
         if (tab) this.saveTab(tab);
     }
-
     async flushSave() {
         if (this.#saveInProgress) return;
         this.#saveInProgress = true;
@@ -1182,7 +981,6 @@ class FileSystemManager {
             this.#saveInProgress = false;
         }
     }
-
     // ── Delete ─────────────────────────────────────────────
     async deleteFile() {
         const target = this.ui.contextMenuTarget;
@@ -1190,7 +988,6 @@ class FileSystemManager {
         if (!await this.ui.showDialog({ isConfirm: true, confirmMessage: `Delete "${target.name}"?`, danger: true })) {
             this.ui.closeContextMenu(); return;
         }
-
         try {
             for (const tab of this.state.tabs) {
                 if (tab.handle && await this.isSameEntry(tab.handle, target.handle)) {
@@ -1208,18 +1005,14 @@ class FileSystemManager {
         }
         this.ui.closeContextMenu();
     }
-
     async deleteFolder() {
         const target = this.ui.contextMenuTarget;
         if (!target || target.kind !== 'directory') return;
-
         const isNonEmpty = target.children?.length > 0;
         const confirmed = isNonEmpty
             ? (await this.ui.showDialog({ promptTitle: `Type "remove" to delete non-empty folder "${target.name}":` }) || '').trim().toLowerCase() === 'remove'
             : await this.ui.showDialog({ isConfirm: true, confirmMessage: `Delete folder "${target.name}"?`, danger: true });
-
         if (!confirmed) { this.ui.closeContextMenu(); return; }
-
         try {
             const { parent, name } = await this.pathUtils.resolve(this.state.currentDirHandle, target.path);
             await this.#guard(parent);
@@ -1233,28 +1026,23 @@ class FileSystemManager {
         }
         this.ui.closeContextMenu();
     }
-
     // ── Rename ─────────────────────────────────────────────
     async renameItem() {
         const target = this.ui.contextMenuTarget;
         if (!target) return;
-
         const newName = await this.ui.showDialog({
             promptTitle: `Rename ${target.kind}:`,
             defaultValue: target.name
         });
         if (!newName?.trim() || newName === target.name) { this.ui.closeContextMenu(); return; }
-
         const trimmed = newName.trim();
         if (this.#INVALID_CHARS.test(trimmed) || /[\/\\]/.test(trimmed)) {
             this.ui.showToast('Invalid name'); this.ui.closeContextMenu(); return;
         }
-
         try {
             const oldPath = target.path;
             const { parent } = await this.pathUtils.resolve(this.state.currentDirHandle, oldPath);
             await this.#guard(parent);
-
             let updatedHandle = target.handle;
             if (target.kind === 'directory') {
                 if (target.handle.move) await target.handle.move(parent, trimmed);
@@ -1265,7 +1053,6 @@ class FileSystemManager {
                 await this.#write(updatedHandle, content);
                 await parent.removeEntry(target.name);
             }
-
             const newPath = oldPath.replace(/[^/]+$/, trimmed);
             this.tabs.updateTabPaths(oldPath, newPath, updatedHandle, trimmed);
             await this.mutateAndRebuild();
@@ -1275,33 +1062,26 @@ class FileSystemManager {
         }
         this.ui.closeContextMenu();
     }
-
     // ── Move & Copy ────────────────────────────────────────
     async moveEntry(srcPath, destFolderPath = '') {
         const srcNode = this.tree.getNode(srcPath);
         if (!srcNode) return;
-
         if (srcNode.kind === 'directory' && destFolderPath.startsWith(srcPath + '/')) {
             return this.ui.showToast('Cannot move folder into itself');
         }
-
         try {
             const { parent: srcParent } = await this.pathUtils.resolve(this.state.currentDirHandle, srcPath);
             const destNode = this.tree.getNode(destFolderPath || '/');
             if (!destNode) return this.ui.showToast('Destination folder not found');
-
             await this.#guard(srcParent);
             await this.#guard(destNode.handle);
             if (srcNode.kind === 'directory') await this.#guard(srcNode.handle);
-
             if (await this.#entryExists(destNode.handle, srcNode.name)) {
                 return this.ui.showToast(`"${srcNode.name}" already exists in destination`);
             }
-
             await (srcNode.kind === 'directory'
                 ? this.#moveDirectory(srcNode, destNode.handle, destFolderPath)
                 : this.#moveFile(srcNode, srcParent, destNode.handle, destFolderPath));
-
             if (destFolderPath) {
                 this.state.expandedFolders.add(destFolderPath);
                 this.saveExpandedState();
@@ -1313,7 +1093,6 @@ class FileSystemManager {
         }
         this.ui.closeContextMenu();
     }
-
     async #moveFile(srcNode, srcParent, destHandle, destFolderPath) {
         if (srcNode.handle.move) {
             await srcNode.handle.move(destHandle, srcNode.name);
@@ -1326,7 +1105,6 @@ class FileSystemManager {
         const newPath = destFolderPath ? `${destFolderPath}/${srcNode.name}` : srcNode.name;
         this.tabs.updateTabPaths(srcNode.path, newPath, srcNode.handle); // handle updated in place for move
     }
-
     async #moveDirectory(srcNode, destHandle, destFolderPath) {
         let moved = false;
         if (srcNode.handle.move) {
@@ -1340,7 +1118,6 @@ class FileSystemManager {
             await (await this.pathUtils.resolve(this.state.currentDirHandle, srcNode.path)).parent.removeEntry(srcNode.name, { recursive: true });
         }
     }
-
     async #copyDirectory(srcDirHandle, destParent, name) {
         const newDir = await destParent.getDirectoryHandle(name, { create: true });
         try {
@@ -1358,17 +1135,14 @@ class FileSystemManager {
             throw e;
         }
     }
-
     async copyEntry(srcNode, destFolderPath) {
         const destNode = this.tree.getNode(destFolderPath || '/');
         if (!destNode) return this.ui.showToast('Destination folder not found');
-
         try {
             await this.#guard(destNode.handle);
             if (await this.#entryExists(destNode.handle, srcNode.name)) {
                 return this.ui.showToast(`"${srcNode.name}" already exists in destination`);
             }
-
             if (srcNode.kind === 'file') {
                 const file = await srcNode.handle.getFile();
                 const newHandle = await destNode.handle.getFileHandle(srcNode.name, { create: true });
@@ -1376,7 +1150,6 @@ class FileSystemManager {
             } else {
                 await this.#copyDirectory(srcNode.handle, destNode.handle, srcNode.name);
             }
-
             if (destFolderPath) {
                 this.state.expandedFolders.add(destFolderPath);
                 this.saveExpandedState();
@@ -1388,19 +1161,20 @@ class FileSystemManager {
         }
         this.ui.closeContextMenu();
     }
-
     async isSameEntry(h1, h2) {
         if (!h1 || !h2) return false;
         return h1.isSameEntry(h2);
     }
 }
 // ────────────────────────────────────────────────────────
-// TreeManager – file tree data + DOM rendering
+// TreeManager – file tree data + DOM rendering (TREE.html structure + Unicode magic)
+// ────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
+// TreeManager – file tree data + DOM rendering (TREE.html structure + Unicode magic)
 // ────────────────────────────────────────────────────────
 class TreeManager {
     #fileTree = null;
     #nodeByPath = new Map();
-
     /** @param {ReactiveState} state @param {FileSystemManager} fs */
     constructor(state, fs) {
         this.state = state;
@@ -1413,105 +1187,101 @@ class TreeManager {
         this.state.addEventListener('activeFilePathChanged', () => this.highlightActive());
         this.state.addEventListener('activeDirectoryPathChanged', () => this.highlightActive());
     }
-
     get fileTree() { return this.#fileTree; }
     set fileTree(v) { this.#fileTree = v; }
-
     getNode(path) { return this.#nodeByPath.get(path); }
     registerNode(path, node) { this.#nodeByPath.set(path, node); }
 
-#renderTreeItem(node, parentEl, level = 0, isLast = true) {
-    const isDir = node.kind === 'directory';
-    const branch = document.createElement('div');
-    branch.className = `tree-branch ${isLast ? 'last' : ''}`;
-    branch.dataset.path = node.path;
+    #renderTree(node, container, prefix = '', isLast = true) {
+        const isDir = node.kind === 'directory';
+        const row = document.createElement('div');
+        row.className = `tree-row ${isDir ? 'dir-row' : ''}`;
+        row.dataset.path = node.path;
 
-    const item = document.createElement('div');
-    item.className = isDir
-        ? 'folder-header' + (level === 0 ? ' top-level' : '')
-        : 'file-item';
-    item.dataset.path = node.path;
+        const prefixEl = document.createElement('span');
+        prefixEl.className = 'prefix';
+        prefixEl.textContent = prefix + (isLast ? '└── ' : '├── ');
+        row.appendChild(prefixEl);
 
-    // ── File square (real element = no more CSS bugs) ──
-    if (!isDir) {
-        const dot = document.createElement('span');
-        dot.className = 'file-dot';
-        dot.textContent = '▪';
-        item.appendChild(dot);
-    }
+        if (!isDir) {
+            const square = document.createElement('span');
+            square.className = 'file-square';
+            row.appendChild(square);
+        }
 
-    const nameSpan = document.createElement('span');
-    nameSpan.textContent = node.name + (isDir ? '/' : '');
-    item.appendChild(nameSpan);
+        const nameEl = document.createElement('span');
+        nameEl.className = isDir ? 'name dir' : 'name file-name';
+        nameEl.textContent = node.name + (isDir ? '/' : '');
+        row.appendChild(nameEl);
 
-    branch.appendChild(item);
-    parentEl.appendChild(branch);
+        container.appendChild(row);
 
-    if (isDir) {
-        const childrenDiv = document.createElement('div');
-        childrenDiv.className = 'tree-children';
-        childrenDiv.style.display = this.state.expandedFolders.has(node.path) ? 'block' : 'none';
-        branch.appendChild(childrenDiv);
+        if (isDir) {
+            const childrenDiv = document.createElement('div');
+            childrenDiv.className = 'children';
+            childrenDiv.style.display = this.state.expandedFolders.has(node.path) ? 'block' : 'none';
+            container.appendChild(childrenDiv);
 
-        item.onclick = async (e) => {
-            if (this.longPressTriggered) return;
-            const wasExpanded = this.state.expandedFolders.has(node.path);
-            if (!wasExpanded) {
-                await this.fs.loadChildren(node);
-                childrenDiv.replaceChildren();
-                const kids = node.children || [];
+            row.onclick = async (e) => {
+                if (this.longPressTriggered) return;
+                const wasExpanded = this.state.expandedFolders.has(node.path);
+                if (!wasExpanded) {
+                    await this.fs.loadChildren(node);
+                    childrenDiv.replaceChildren();
+                    const kids = node.children || [];
+                    kids.forEach((child, i) => {
+                        this.#renderTree(child, childrenDiv, prefix + (isLast ? '    ' : '│   '), i === kids.length - 1);
+                    });
+                }
+                if (wasExpanded) {
+                    this.state.expandedFolders.delete(node.path);
+                    childrenDiv.style.display = 'none';
+                } else {
+                    this.state.expandedFolders.add(node.path);
+                    childrenDiv.style.display = 'block';
+                }
+                this.fs.saveExpandedState();
+                this.state.activeDirectoryPath = node.path;
+                this.updateHeader();
+            };
+
+            row.draggable = true;
+            row.addEventListener('dragstart', e => {
+                e.dataTransfer.setData('application/x-tree-path', node.path);
+                row.classList.add('dragging');
+            });
+            row.addEventListener('dragend', () => row.classList.remove('dragging'));
+            row.addEventListener('dragover', e => {
+                if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
+                e.preventDefault();
+                row.classList.add('drop-target');
+            });
+            row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
+            row.addEventListener('drop', e => {
+                e.preventDefault();
+                row.classList.remove('drop-target');
+                const srcPath = e.dataTransfer.getData('application/x-tree-path');
+                if (srcPath && srcPath !== node.path && !node.path.startsWith(srcPath + '/')) {
+                    this.fs.moveEntry(srcPath, node.path);
+                }
+            });
+
+            if (this.state.expandedFolders.has(node.path) && node.children?.length) {
+                const kids = node.children;
                 kids.forEach((child, i) => {
-                    this.#renderTreeItem(child, childrenDiv, level + 1, i === kids.length - 1);
+                    this.#renderTree(child, childrenDiv, prefix + (isLast ? '    ' : '│   '), i === kids.length - 1);
                 });
             }
-            if (wasExpanded) {
-                this.state.expandedFolders.delete(node.path);
-                childrenDiv.style.display = 'none';
-            } else {
-                this.state.expandedFolders.add(node.path);
-                childrenDiv.style.display = 'block';
-            }
-            this.fs.saveExpandedState();
-            this.state.activeDirectoryPath = node.path;
-            this.updateHeader();
-        };
-        item.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); item.click(); } };
-        branch.draggable = true;
-        branch.addEventListener('dragstart', e => {
-            e.dataTransfer.setData('application/x-tree-path', node.path);
-            branch.classList.add('dragging');
-        });
-        branch.addEventListener('dragend', () => branch.classList.remove('dragging'));
-        branch.addEventListener('dragover', e => {
-            if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
-            e.preventDefault();
-            branch.classList.add('drop-target');
-        });
-        branch.addEventListener('dragleave', () => branch.classList.remove('drop-target'));
-        branch.addEventListener('drop', e => {
-            e.preventDefault();
-            branch.classList.remove('drop-target');
-            const srcPath = e.dataTransfer.getData('application/x-tree-path');
-            if (srcPath && srcPath !== node.path && !node.path.startsWith(srcPath + '/')) {
-                this.fs.moveEntry(srcPath, node.path);
-            }
-        });
-        if (this.state.expandedFolders.has(node.path) && node.children?.length) {
-            node.children.forEach((child, i) => {
-                this.#renderTreeItem(child, childrenDiv, level + 1, i === node.children.length - 1);
+        } else {
+            row.onclick = () => { if (!this.longPressTriggered) this.fs.openFileFromNode(node); };
+            row.draggable = true;
+            row.addEventListener('dragstart', e => {
+                e.dataTransfer.setData('application/x-tree-path', node.path);
+                row.classList.add('dragging');
             });
+            row.addEventListener('dragend', () => row.classList.remove('dragging'));
         }
-    } else {
-        item.onclick = () => { if (!this.longPressTriggered) this.fs.openFileFromNode(node); };
-        item.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); item.click(); } };
-        branch.draggable = true;
-        branch.addEventListener('dragstart', e => {
-            e.dataTransfer.setData('application/x-tree-path', node.path);
-            branch.classList.add('dragging');
-        });
-        branch.addEventListener('dragend', () => branch.classList.remove('dragging'));
     }
-}
 
     render() {
         this.treeContainer.replaceChildren();
@@ -1524,11 +1294,10 @@ class TreeManager {
         }
         const children = this.#fileTree.children || [];
         children.forEach((child, i) => {
-            this.#renderTreeItem(child, this.treeContainer, 0, i === children.length - 1);
+            this.#renderTree(child, this.treeContainer, '', i === children.length - 1);
         });
         this.highlightActive();
     }
-
     updateHeader() {
         if (!this.#fileTree || !this.state.currentDirHandle) {
             this.activeDirNameEl.textContent = '/';
@@ -1543,51 +1312,35 @@ class TreeManager {
             '<span class="directory-clear" id="refresh-folder" title="Refresh tree">⟳</span>' +
             '<span class="directory-clear" id="clear-folder">⌫</span>';
     }
-
     highlightActive() {
-        this.treeContainer.querySelectorAll('.file-item.active,.folder-header.active,.folder-header.active-dir,.folder-header.active-ancestor').forEach(el => el.classList.remove('active','active-dir','active-ancestor'));
+        this.treeContainer.querySelectorAll('.tree-row.active,.tree-row.active-dir,.tree-row.active-ancestor').forEach(el => el.classList.remove('active','active-dir','active-ancestor'));
         if (this.state.activeFilePath) {
-            const el = this.treeContainer.querySelector(`.file-item[data-path="${CSS.escape(this.state.activeFilePath)}"]`);
+            const el = this.treeContainer.querySelector(`.tree-row[data-path="${CSS.escape(this.state.activeFilePath)}"]`);
             if (el) el.classList.add('active');
-            const parts = this.state.activeFilePath.split('/');
-            for (let i = 1; i < parts.length; i++) {
-                const p = parts.slice(0, i).join('/');
-                const folderEl = this.treeContainer.querySelector(`.folder-header[data-path="${CSS.escape(p)}"]`);
-                if (folderEl) folderEl.classList.add('active');
-            }
         }
         if (this.state.activeDirectoryPath) {
-            const dirEl = this.treeContainer.querySelector(`.folder-header[data-path="${CSS.escape(this.state.activeDirectoryPath)}"]`);
+            const dirEl = this.treeContainer.querySelector(`.tree-row[data-path="${CSS.escape(this.state.activeDirectoryPath)}"]`);
             if (dirEl) dirEl.classList.add('active-dir');
-            const parts = this.state.activeDirectoryPath.split('/');
-            for (let i = 1; i < parts.length; i++) {
-                const p = parts.slice(0, i).join('/');
-                const folderEl = this.treeContainer.querySelector(`.folder-header[data-path="${CSS.escape(p)}"]`);
-                if (folderEl) folderEl.classList.add('active-ancestor');
-            }
         }
     }
-
     clear() {
         this.#fileTree = null;
         this.#nodeByPath.clear();
         this.treeContainer.replaceChildren();
     }
 }
-
-// ────────────────────────────────────────────────────────
+  
+  // ────────────────────────────────────────────────────────
 // ExtensionManager – discover, install & render
 // ────────────────────────────────────────────────────────
 class ExtensionManager {
     extensions = [];
-
     /** @param {ReactiveState} state @param {FileSystemManager} fs */
     constructor(state, fs) {
         this.state = state;
         this.fs = fs;
         /** @type {UIManager} */ this.ui = null;
     }
-
     async loadAll() {
         await this.fs.initDB();
         return new Promise(resolve => {
@@ -1619,7 +1372,6 @@ class ExtensionManager {
             tx.onerror = () => resolve();
         });
     }
-
     async install() {
         try {
             const [fileHandle] = await window.showOpenFilePicker({
@@ -1652,7 +1404,6 @@ class ExtensionManager {
             if (e.name !== 'AbortError') this.ui.showToast('Extension install cancelled or failed');
         }
     }
-
     async uninstall(name) {
         this.extensions = this.extensions.filter(e => e.name !== name);
         await this.fs.initDB();
@@ -1660,7 +1411,6 @@ class ExtensionManager {
         tx.objectStore('extensions').delete(name);
         this.ui.showToast(`Extension "${name}" removed`);
     }
-
     #parseMeta(html) {
         const nameMatch = html.match(/<meta\s+name=["']extension-name["']\s+content=["']([^"']+)["']/i);
         const typesMatch = html.match(/<meta\s+name=["']extension-types["']\s+content=["']([^"']+)["']/i);
@@ -1670,7 +1420,6 @@ class ExtensionManager {
             types: typesMatch[1].split(',').map(t => t.trim().toLowerCase())
         };
     }
-
     getForFile(filename) {
         const lower = filename.toLowerCase();
         for (const ext of this.extensions) {
@@ -1680,11 +1429,9 @@ class ExtensionManager {
         }
         return null;
     }
-
     renderTab(tab) {
         // Cancel stale fallback timers from a previous render
         if (tab._extTimers) tab._extTimers.forEach(t => clearTimeout(t));
-
         // Always recreate the iframe to guarantee a clean reload
         if (tab.extFrame) { tab.extFrame.remove(); tab.extFrame = null; }
         const iframe = document.createElement('iframe');
@@ -1692,9 +1439,7 @@ class ExtensionManager {
         iframe.sandbox = 'allow-scripts';
         document.querySelector('.editor-wrapper').appendChild(iframe);
         tab.extFrame = iframe;
-
         iframe.srcdoc = tab.extension.html;
-
         // Reliable delivery (srcdoc can be async)
         const sendLoadMessage = () => {
             try {
@@ -1705,31 +1450,26 @@ class ExtensionManager {
                 }, '*');
             } catch (e) {}
         };
-
         tab.extFrame.onload = sendLoadMessage;
         tab._extTimers = [
-            setTimeout(sendLoadMessage, 60),   // fallback
-            setTimeout(sendLoadMessage, 180)    // extra safety for CDNs
+            setTimeout(sendLoadMessage, 60), // fallback
+            setTimeout(sendLoadMessage, 180) // extra safety for CDNs
         ];
     }
 }
-
 // ────────────────────────────────────────────────────────
 // TabManager – tab creation, switching & closing
 // ────────────────────────────────────────────────────────
 class TabManager {
     static #TAB_TYPES = {
-        welcome:   { canSave: false, canDirty: false },
-        legend:    { canSave: false, canDirty: false },
-        text:      { canSave: true,  canDirty: true  },
-        extension: { canSave: true,  canDirty: true  }
+        welcome: { canSave: false, canDirty: false },
+        legend: { canSave: false, canDirty: false },
+        text: { canSave: true, canDirty: true },
+        extension: { canSave: true, canDirty: true }
     };
-
     /** Returns true when a tab of the given type can be marked dirty/modified */
     static canTabBeDirty(type) { return TabManager.#TAB_TYPES[type]?.canDirty ?? false; }
-
     #nextTabId = 1;
-
     /** @param {ReactiveState} state @param {FileSystemManager} fs @param {ExtensionManager} extensions */
     constructor(state, fs, extensions) {
         this.state = state;
@@ -1740,11 +1480,9 @@ class TabManager {
         this.gutter = null;
         this.tabsContainer = null;
     }
-
     static #moveArrayItem(arr, fromIdx, toIdx) {
         arr.splice(toIdx, 0, arr.splice(fromIdx, 1)[0]);
     }
-
     #createTab(handle, name, content = '', path = null, type = 'text') {
         const ext = this.extensions.getForFile(name);
         if (ext) type = 'extension';
@@ -1760,7 +1498,6 @@ class TabManager {
             scrollTop: 0,
         };
     }
-
     #makeExtToggleHandler(tab, extToggle) {
         return e => {
             e.stopPropagation();
@@ -1780,7 +1517,6 @@ class TabManager {
             }
         };
     }
-
     #createExtToggle(tab, ext) {
         const extToggle = document.createElement('span');
         if (ext) {
@@ -1843,7 +1579,6 @@ class TabManager {
         }
         return extToggle;
     }
-
     /** Updates tab paths after a file/folder rename or move. */
     updateTabPaths(oldPath, newPath, updatedHandle, newName = null) {
         for (const tab of this.state.tabs) {
@@ -1881,7 +1616,6 @@ class TabManager {
             this.state.activeFilePath = newPath + this.state.activeFilePath.substring(oldPath.length);
         }
     }
-
     handleTabDrop(e, targetTabId) {
         e.preventDefault();
         e.stopPropagation();
@@ -1899,7 +1633,6 @@ class TabManager {
         this.state.tabs.forEach(tab => this.tabsContainer.appendChild(tab.element));
         this.fs.saveOpenTabs(this.state.currentTabId);
     }
-
     async createNewTab(handle, name, content = '', path = null, type = 'text') {
         if (handle) {
             for (const t of this.state.tabs) {
@@ -1964,7 +1697,6 @@ class TabManager {
         this.switchToTab(tab.id);
         return tab;
     }
-
     switchToTab(id) {
         if (this.state.currentTabId !== null) {
             const cur = this.state.tabs.find(t => t.id === this.state.currentTabId);
@@ -2004,7 +1736,6 @@ class TabManager {
         }
         this.fs.saveOpenTabs(id);
     }
-
     async closeTab(id) {
         const idx = this.state.tabs.findIndex(t => t.id === id);
         if (idx === -1) return;
@@ -2027,12 +1758,10 @@ class TabManager {
         }
         this.switchToTab(this.state.tabs[Math.min(idx, this.state.tabs.length - 1)].id);
     }
-
     async restoreOpenTabs(dirHandle, savedTabs) {
         if (!savedTabs) savedTabs = this.fs.loadOpenTabs();
         let restored = 0;
         let activeTabPath = null;
-
         for (const st of savedTabs) {
             try {
                 const parts = st.path.split('/').filter(Boolean);
@@ -2043,24 +1772,20 @@ class TabManager {
                 const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
                 const file = await fileHandle.getFile();
                 const content = await file.text();
-
                 await this.createNewTab(fileHandle, st.name, content, st.path, st.type || 'text');
                 if (st.active) activeTabPath = st.path;
                 restored++;
             } catch { }
         }
-
         if (activeTabPath) {
             const activeTab = this.state.tabs.find(t => t.path === activeTabPath);
             if (activeTab) this.switchToTab(activeTab.id);
         } else if (this.state.tabs.length > 0) {
             this.switchToTab(this.state.tabs[0].id);
         }
-
         return restored;
     }
 }
-
 // ────────────────────────────────────────────────────────
 // UIManager – DOM init, events & rendering
 // ────────────────────────────────────────────────────────
@@ -2079,7 +1804,6 @@ class UIManager {
     #contextMenuTarget = null;
     #isMobile = false;
     #lastLineCount = 1;
-
     /** @param {ReactiveState} state @param {TabManager} tabs @param {TreeManager} tree @param {FileSystemManager} fs @param {ExtensionManager} extensions */
     constructor(state, tabs, tree, fs, extensions) {
         this.state = state;
@@ -2089,13 +1813,11 @@ class UIManager {
         this.extensions = extensions;
         this.#isMobile = window.innerWidth <= 768;
     }
-
     get contextMenuTarget() { return this.#contextMenuTarget; }
     get isMobile() { return this.#isMobile; }
     get sidebarEl() { return this.#sidebarEl; }
     get textarea() { return this.#textarea; }
     get editorStatusEl() { return this.#editorStatusEl; }
-
     async init() {
         this.#textarea = document.getElementById('textarea');
         this.#gutter = document.getElementById('gutter');
@@ -2108,7 +1830,6 @@ class UIManager {
         this.#activeDirNameEl = document.getElementById('active-dir-name');
         this.#rootDirNameEl = document.getElementById('root-dir-name');
         this.#sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions');
-
         // Wire DOM refs to dependent classes
         this.tabs.textarea = this.#textarea;
         this.tabs.gutter = this.#gutter;
@@ -2117,12 +1838,9 @@ class UIManager {
         this.tree.activeDirNameEl = this.#activeDirNameEl;
         this.tree.rootDirNameEl = this.#rootDirNameEl;
         this.tree.sidebarHeaderActionsEl = this.#sidebarHeaderActionsEl;
-
         const savedSidebarWidth = localStorage.getItem('sidebarWidth');
         if (savedSidebarWidth && !this.#sidebarEl.classList.contains('hidden')) this.#sidebarEl.style.width = savedSidebarWidth;
-
         this.bindEvents();
-
         // Restore settings
         const savedFontSize = parseInt(localStorage.getItem('editorFontSize'));
         if (savedFontSize) {
@@ -2141,7 +1859,6 @@ class UIManager {
         await this.extensions.loadAll();
         await this.fs.restoreSession();
     }
-
     showToast(message, duration = 2800) {
         const t = document.createElement('div');
         t.className = 'toast';
@@ -2149,7 +1866,6 @@ class UIManager {
         document.body.appendChild(t);
         setTimeout(() => t.remove(), duration);
     }
-
     showActionToast(message, callback, duration = 8000) {
         const t = document.createElement('div');
         t.className = 'toast';
@@ -2159,7 +1875,6 @@ class UIManager {
         t.addEventListener('click', () => { clearTimeout(timer); t.remove(); callback(); });
         document.body.appendChild(t);
     }
-
     showDialog({promptTitle, defaultValue = '', isConfirm = false, confirmMessage = '', danger = false} = {}) {
         return new Promise(resolve => {
             const modal = document.createElement('div');
@@ -2191,7 +1906,6 @@ class UIManager {
             modal.onclick = e => { if (e.target === modal) cancel(); };
         });
     }
-
     toggleSidebar() {
         const isCurrentlyHidden = this.#sidebarEl.classList.contains('hidden');
         if (isCurrentlyHidden) {
@@ -2205,7 +1919,6 @@ class UIManager {
         const btn = document.getElementById('sidebar-toggle');
         btn.textContent = this.#sidebarEl.classList.contains('hidden') ? '›' : '‹';
     }
-
     showContextMenu(e, node) {
         e.preventDefault();
         this.closeContextMenu();
@@ -2263,7 +1976,6 @@ class UIManager {
         if (rect.right > window.innerWidth) this.#contextMenu.style.left = (window.innerWidth - rect.width - 8) + 'px';
         if (rect.bottom > window.innerHeight) this.#contextMenu.style.top = (window.innerHeight - rect.height - 8) + 'px';
     }
-
     closeContextMenu() {
         if (this.#contextMenu) {
             this.#contextMenu.remove();
@@ -2271,7 +1983,6 @@ class UIManager {
             this.#contextMenuTarget = null;
         }
     }
-
     /** @param {boolean} [force] - when true, always rerender even if line count unchanged */
     updateLineNumbers(force = false) {
         const lineCount = (this.#textarea.value.match(/\n/g) || []).length + 1;
@@ -2279,7 +1990,6 @@ class UIManager {
         this.#lastLineCount = lineCount;
         this.#gutter.textContent = Array.from({length: lineCount}, (_, i) => i + 1).join('\n');
     }
-
     updateEditorStatus(tab) {
         const modified = tab.dirty ? ' • Modified' : '';
         if (tab.type === 'extension') {
@@ -2294,7 +2004,6 @@ class UIManager {
         }
         this.#editorStatusEl.textContent = tab.name + modified;
     }
-
     bindKeyboard() {
         document.addEventListener('keydown', e => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
@@ -2315,7 +2024,6 @@ class UIManager {
             }
         });
     }
-
     bindTreeEvents() {
         document.getElementById('sidebar-toggle').addEventListener('click', () => this.toggleSidebar());
         document.getElementById('sidebar-root-row').addEventListener('click', e => {
@@ -2353,7 +2061,7 @@ class UIManager {
         });
         this.#treeContainer.addEventListener('dragover', e => {
             if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
-            if (e.target.closest('.folder-header')) return;
+            if (e.target.closest('.tree-row')) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
             this.#treeContainer.classList.add('drop-target');
@@ -2361,7 +2069,7 @@ class UIManager {
         this.#treeContainer.addEventListener('dragleave', () => this.#treeContainer.classList.remove('drop-target'));
         this.#treeContainer.addEventListener('drop', e => {
             this.#treeContainer.classList.remove('drop-target');
-            if (e.target.closest('.folder-header')) return;
+            if (e.target.closest('.tree-row')) return;
             e.preventDefault();
             const srcPath = e.dataTransfer.getData('application/x-tree-path');
             if (srcPath) this.fs.moveEntry(srcPath, '');
@@ -2376,13 +2084,9 @@ class UIManager {
             if (!e.target.closest('.context-menu')) this.closeContextMenu();
         });
         this.#treeContainer.addEventListener('contextmenu', e => {
-            const folder = e.target.closest('.folder-header');
-            const file = e.target.closest('.file-item');
-            if (folder) {
-                const node = this.tree.getNode(folder.dataset.path);
-                if (node) this.showContextMenu(e, node);
-            } else if (file) {
-                const node = this.tree.getNode(file.dataset.path);
+            const row = e.target.closest('.tree-row');
+            if (row && row.dataset.path) {
+                const node = this.tree.getNode(row.dataset.path);
                 if (node) this.showContextMenu(e, node);
             } else {
                 this.showContextMenu(e, null);
@@ -2397,14 +2101,10 @@ class UIManager {
             const target = e.target;
             longPressTimer = setTimeout(() => {
                 this.tree.longPressTriggered = true;
-                const folder = target.closest('.folder-header');
-                const file = target.closest('.file-item');
                 const fakeEvent = { preventDefault() {}, clientX: touch.clientX, clientY: touch.clientY };
-                if (folder) {
-                    const node = this.tree.getNode(folder.dataset.path);
-                    if (node) this.showContextMenu(fakeEvent, node);
-                } else if (file) {
-                    const node = this.tree.getNode(file.dataset.path);
+                const row = target.closest('.tree-row');
+                if (row && row.dataset.path) {
+                    const node = this.tree.getNode(row.dataset.path);
                     if (node) this.showContextMenu(fakeEvent, node);
                 } else {
                     this.showContextMenu(fakeEvent, null);
@@ -2419,7 +2119,7 @@ class UIManager {
             }
             if (!touchMoved) {
                 const target = e.target;
-                const el = target.closest('.folder-header') || target.closest('.file-item');
+                const el = target.closest('.tree-row');
                 if (el) {
                     e.preventDefault();
                     el.click();
@@ -2428,7 +2128,6 @@ class UIManager {
         });
         this.#treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); touchMoved = true; }, { passive: true });
     }
-
     bindTabEvents() {
         // Allow dropping a tab past the last tab (append to end)
         this.#tabsContainer.addEventListener('dragover', e => {
@@ -2476,11 +2175,9 @@ class UIManager {
         const slider = document.getElementById('width-slider');
         const valueEl = document.getElementById('width-value');
         const MAX_CHARS = 200;
-
         slider.addEventListener('input', e => {
             const v = +e.target.value;
             valueEl.textContent = (v === MAX_CHARS) ? '∞' : `${v} ch`;
-
             if (v === MAX_CHARS) {
                 this.#textarea.style.maxWidth = 'none';
                 this.#textarea.style.minWidth = 'auto';
@@ -2489,14 +2186,13 @@ class UIManager {
             } else {
                 const chWidth = v + 'ch';
                 this.#textarea.style.maxWidth = chWidth;
-                this.#textarea.style.minWidth = chWidth;   /* forces the wrap to move at every value */
+                this.#textarea.style.minWidth = chWidth; /* forces the wrap to move at every value */
                 this.#textarea.style.whiteSpace = 'pre-wrap';
                 this.#textarea.style.wordWrap = 'break-word';
             }
         });
       slider.dispatchEvent(new Event('input'));
     }
-
     bindSettings() {
         // Settings popover toggle
         const settingsBtn = document.getElementById('tab-settings-btn');
@@ -2564,7 +2260,6 @@ class UIManager {
             localStorage.setItem('editorFontSize', DEFAULT_FONT_SIZE);
         });
     }
-
     async #revalidatePermission() {
         if (!this.state.currentDirHandle) {
             await this.fs.restoreSession();
@@ -2577,7 +2272,6 @@ class UIManager {
             });
         }
     }
-
     bindLifecycle() {
         // Restore session when page returns from bfcache (back/forward nav or wake from sleep)
         window.addEventListener('pageshow', async (e) => {
@@ -2623,7 +2317,6 @@ class UIManager {
             }
         });
     }
-
     bindEvents() {
         this.bindKeyboard();
         this.bindTreeEvents();
@@ -2632,19 +2325,18 @@ class UIManager {
         this.bindLifecycle();
     }
 }
-
 // ────────────────────────────────────────────────────────
 // EditorApp – orchestrator
 // ────────────────────────────────────────────────────────
 class EditorApp {
     constructor() {
-        this.state      = new ReactiveState();
-        this.pathUtils  = new PathUtils();
-        this.fs         = new FileSystemManager(this.state, this.pathUtils);
-        this.tree       = new TreeManager(this.state, this.fs);
+        this.state = new ReactiveState();
+        this.pathUtils = new PathUtils();
+        this.fs = new FileSystemManager(this.state, this.pathUtils);
+        this.tree = new TreeManager(this.state, this.fs);
         this.extensions = new ExtensionManager(this.state, this.fs);
-        this.tabs       = new TabManager(this.state, this.fs, this.extensions);
-        this.ui         = new UIManager(this.state, this.tabs, this.tree, this.fs, this.extensions);
+        this.tabs = new TabManager(this.state, this.fs, this.extensions);
+        this.ui = new UIManager(this.state, this.tabs, this.tree, this.fs, this.extensions);
         // Resolve cross-references
         this.fs.tree = this.tree;
         this.fs.tabs = this.tabs;
@@ -2652,17 +2344,14 @@ class EditorApp {
         this.extensions.ui = this.ui;
         this.tabs.ui = this.ui;
     }
-
     async init() { await this.ui.init(); }
 }
-
 // Service Worker
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 // Launch
 window.onload = async () => { window.editorApp = new EditorApp(); await window.editorApp.init(); };
-
 </script>
 </body>
 </html>
