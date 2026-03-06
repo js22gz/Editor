@@ -524,6 +524,24 @@ class ReactiveState extends EventTarget {
             }
         });
     }
+    /**
+     * Mutate an array or Set property and still trigger the change event.
+     * Usage: `state.mutate('tabs', arr => arr.push(newTab));`
+     * @param {string} prop  - property name on the state
+     * @param {Function} fn  - callback that receives the current value to mutate
+     */
+    mutate(prop, fn) {
+        fn(this[prop]);
+        this.dispatchEvent(new CustomEvent(prop + 'Changed'));
+    }
+    /**
+     * Fire the change event for a property without modifying it.
+     * Useful after external code has already updated the value in place.
+     * @param {string} prop - property name on the state
+     */
+    notify(prop) {
+        this.dispatchEvent(new CustomEvent(prop + 'Changed'));
+    }
     /** @param {number} id */
     getTab(id) { return this.tabs.find(t => t.id === id); }
     /** @returns {object|null} */
@@ -807,7 +825,7 @@ class FileSystemManager {
                 else if (!this.state.tabs.length) {
                     await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
                 }
-                this.ui.showToast('Folder access restored ✓', 1800);
+                this.ui.showToast('Folder access restored ✓');
             } catch {
                 this.ui.showToast('Failed to restore access');
             }
@@ -1008,13 +1026,11 @@ async renameItem() {
         const newPath = oldPath.replace(/[^/]+$/, trimmed);
         this.tabs.updateTabPaths(oldPath, newPath, updatedHandle, trimmed);
         await this.mutateAndRebuild();
+        // Notify tab-related listeners of possible path changes
+        this.state.notify('tabs');
         this.ui.showToast(`Renamed to ${trimmed}`);
     } catch (err) {
-        // ← THIS IS THE IMPORTANT CHANGE
-        const msg = err.message.includes('needs latest Chrome/Edge')
-            ? err.message
-            : this.#formatError('Rename', err);
-        this.ui.showToast(msg, 4500);
+        this.ui.showToast(this.#formatError('Rename', err), 4000);
     }
     this.ui.closeContextMenu();
 }
@@ -1043,6 +1059,8 @@ async renameItem() {
                 this.saveExpandedState();
             }
             await this.mutateAndRebuild();
+            // Notify tab-related listeners of possible path changes
+            this.state.notify('tabs');
             this.ui.showToast(`Moved "${srcNode.name}"`);
         } catch (e) {
             this.ui.showToast(this.#formatError('Move', e), 4000);
@@ -1119,6 +1137,8 @@ async renameItem() {
                 this.saveExpandedState();
             }
             await this.mutateAndRebuild();
+            // Notify tab-related listeners of possible path changes
+            this.state.notify('tabs');
             this.ui.showToast(`Copied "${srcNode.name}"`);
         } catch (e) {
             this.ui.showToast(this.#formatError('Copy', e), 4000);
@@ -1130,9 +1150,6 @@ async renameItem() {
         return h1.isSameEntry(h2);
     }
 }
-// ────────────────────────────────────────────────────────
-// TreeManager – file tree data + DOM rendering (TREE.html structure + Unicode magic)
-// ────────────────────────────────────────────────────────
 // ────────────────────────────────────────────────────────
 // TreeManager – file tree data + DOM rendering (TREE.html structure + Unicode magic)
 // ────────────────────────────────────────────────────────
@@ -1161,6 +1178,14 @@ class TreeManager {
         row.className = `tree-row ${isDir ? 'dir-row' : ''}`;
         row.dataset.path = node.path;
 
+        // Tree guide lines
+        // ─────────────────────────────────────────────────
+        // `guides` is a boolean array — one entry per ancestor level.
+        // true = that ancestor still has siblings below, so draw a vertical line.
+        // false = ancestor was the last child, so leave the column blank.
+        // The prefix span is position:relative with whitespace for width;
+        // child spans (.tree-vline / .tree-tee / .tree-elbow) are absolutely
+        // positioned at the correct `ch` offset to draw the connectors.
         const prefixEl = document.createElement('span');
         prefixEl.className = 'prefix';
         prefixEl.textContent = ' '.repeat((guides.length + 1) * 5);
@@ -1214,10 +1239,10 @@ class TreeManager {
                     });
                 }
                 if (wasExpanded) {
-                    this.state.expandedFolders.delete(node.path);
+                    this.state.mutate('expandedFolders', s => s.delete(node.path));
                     childrenDiv.style.display = 'none';
                 } else {
-                    this.state.expandedFolders.add(node.path);
+                    this.state.mutate('expandedFolders', s => s.add(node.path));
                     childrenDiv.style.display = 'block';
                 }
                 this.fs.saveExpandedState();
@@ -1623,7 +1648,7 @@ class TabManager {
             }
         }
         const tab = this.#createTab(handle, name, content, path, type);
-        this.state.tabs.push(tab);
+        this.state.mutate('tabs', arr => arr.push(tab));
         const tabEl = document.createElement('div');
         tabEl.className = 'tab';
         tabEl.dataset.id = tab.id;
@@ -1787,6 +1812,7 @@ class UIManager {
     #contextMenuTarget = null;
     #isMobile = false;
     #lastLineCount = 1;
+    #lineNumberRafId = null;
     /** @param {ReactiveState} state @param {TabManager} tabs @param {TreeManager} tree @param {FileSystemManager} fs @param {ExtensionManager} extensions */
     constructor(state, tabs, tree, fs, extensions) {
         this.state = state;
@@ -1966,10 +1992,24 @@ class UIManager {
     }
     /** @param {boolean} [force] - when true, always rerender even if line count unchanged */
     updateLineNumbers(force = false) {
-        const lineCount = (this.#textarea.value.match(/\n/g) || []).length + 1;
-        if (!force && lineCount === this.#lastLineCount) return;
-        this.#lastLineCount = lineCount;
-        this.#gutter.textContent = Array.from({length: lineCount}, (_, i) => i + 1).join('\n');
+        if (force) {
+            // Synchronous update when explicitly forced (e.g. tab switch)
+            cancelAnimationFrame(this.#lineNumberRafId);
+            this.#lineNumberRafId = null;
+            const lineCount = (this.#textarea.value.match(/\n/g) || []).length + 1;
+            this.#lastLineCount = lineCount;
+            this.#gutter.textContent = Array.from({length: lineCount}, (_, i) => i + 1).join('\n');
+            return;
+        }
+        // Batch rapid keystroke updates into a single animation frame
+        if (this.#lineNumberRafId) return;
+        this.#lineNumberRafId = requestAnimationFrame(() => {
+            this.#lineNumberRafId = null;
+            const lineCount = (this.#textarea.value.match(/\n/g) || []).length + 1;
+            if (lineCount === this.#lastLineCount) return;
+            this.#lastLineCount = lineCount;
+            this.#gutter.textContent = Array.from({length: lineCount}, (_, i) => i + 1).join('\n');
+        });
     }
     updateEditorStatus(tab) {
         const modified = tab.dirty ? ' • Modified' : '';
