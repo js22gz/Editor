@@ -524,27 +524,15 @@ class ReactiveState extends EventTarget {
             }
         });
     }
-    /**
-     * Mutate an array or Set property and still trigger the change event.
-     * Usage: `state.mutate('tabs', arr => arr.push(newTab));`
-     * @param {string} prop  - property name on the state
-     * @param {Function} fn  - callback that receives the current value to mutate
-     */
+
     mutate(prop, fn) {
         fn(this[prop]);
         this.dispatchEvent(new CustomEvent(prop + 'Changed'));
     }
-    /**
-     * Fire the change event for a property without modifying it.
-     * Useful after external code has already updated the value in place.
-     * @param {string} prop - property name on the state
-     */
-    notify(prop) {
+        notify(prop) {
         this.dispatchEvent(new CustomEvent(prop + 'Changed'));
     }
-    /** @param {number} id */
     getTab(id) { return this.tabs.find(t => t.id === id); }
-    /** @returns {object|null} */
     getActiveTab() { return this.currentTabId !== null ? this.getTab(this.currentTabId) : null; }
 }
 // ────────────────────────────────────────────────────────
@@ -1823,7 +1811,7 @@ class UIManager {
     #isMobile = false;
     #lastLineCount = 1;
     #lineNumberRafId = null;
-    /** @param {ReactiveState} state @param {TabManager} tabs @param {TreeManager} tree @param {FileSystemManager} fs @param {ExtensionManager} extensions */
+	    /** @param {ReactiveState} state @param {TabManager} tabs @param {TreeManager} tree @param {FileSystemManager} fs @param {ExtensionManager} extensions */
     constructor(state, tabs, tree, fs, extensions) {
         this.state = state;
         this.tabs = tabs;
