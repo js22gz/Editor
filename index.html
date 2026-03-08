@@ -357,32 +357,86 @@ header:fullscreen { display: none; }
 .settings-btn:hover { background: var(--border-color); color: var(--text-primary); }
 .settings-btn.active { background: var(--bg-active); color: var(--text-strong); border-color: var(--border-subtle); }
 
-/* Range slider styling */
-#line-width-slider input[type="range"] {
-  flex: 1; height: 5px; background: var(--border-color); border-radius: 3px;
-  -webkit-appearance: none; appearance: none; outline: none; accent-color: transparent;
-}
-#line-width-slider input[type="range"]::-webkit-slider-runnable-track,
-#line-width-slider input[type="range"]::-moz-range-track {
-  background: var(--border-color); height: 5px; border-radius: 3px;
-}
-#line-width-slider input[type="range"]::-webkit-slider-thumb,
-#line-width-slider input[type="range"]::-moz-range-thumb {
-  -webkit-appearance: none; appearance: none; width: 18px; height: 18px;
-  background: var(--text-secondary); border: 2px solid var(--bg-surface);
-  margin-top: -6.5px; clip-path: polygon(0% 0%, 100% 0%, 50% 100%);
-  cursor: ew-resize; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-  transition: background 0.15s, transform 0.12s;
-}
-#line-width-slider input[type="range"]::-webkit-slider-thumb:hover,
-#line-width-slider input[type="range"]::-moz-range-thumb:hover {
-  background: var(--text-primary); transform: scale(1.15);
-}
-#width-value {
-  font-family: ui-monospace, monospace; color: var(--text-secondary);
-  width: 84px; font-size: 0.7rem; text-align: center; white-space: nowrap; flex-shrink: 0;
+/* ── Line width slider – reliable downward triangle thumb (Chrome-first) ── */
+#line-width-slider {
+    display: flex;
+    align-items: center;
+    height: 16px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 8px 0 26px;
+    gap: 5px;
 }
 
+#line-width-slider input[type="range"] {
+    flex: 1;
+    height: 5px;
+    background: var(--border-color);
+    border-radius: 3px;
+    -webkit-appearance: none;
+    appearance: none;
+    outline: none;
+    accent-color: transparent; /* kills the red default circle */
+}
+
+/* Chrome track */
+#line-width-slider input[type="range"]::-webkit-slider-runnable-track {
+    background: var(--border-color);
+    height: 5px;
+    border-radius: 3px;
+}
+
+/* Downward triangle thumb (pointing at the track) */
+#line-width-slider input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--text-secondary);
+    border: 2px solid var(--bg-surface);
+    margin-top: -6.5px;
+    clip-path: polygon(0% 0%, 100% 0%, 50% 100%);
+    cursor: ew-resize;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    transition: background 0.15s, transform 0.12s;
+}
+
+#line-width-slider input[type="range"]::-webkit-slider-thumb:hover {
+    background: var(--text-primary);
+    transform: scale(1.15);
+}
+
+/* Firefox fallback (same triangle) */
+#line-width-slider input[type="range"]::-moz-range-track {
+    background: var(--border-color);
+    height: 5px;
+    border-radius: 3px;
+}
+
+#line-width-slider input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: var(--text-secondary);
+    border: 2px solid var(--bg-surface);
+    margin-top: -6.5px;
+    clip-path: polygon(0% 0%, 100% 0%, 50% 100%);
+    cursor: ew-resize;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+#line-width-slider input[type="range"]::-moz-range-thumb:hover {
+    background: var(--text-primary);
+}
+
+#width-value {
+    font-family: ui-monospace, monospace;
+    color: var(--text-secondary);
+    width: 84px;           /* fixed width — stable forever */
+    font-size: 0.7rem;
+    text-align: center;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
 /* ────────────────────────────────────────────────────────
    8. STATUS & OVERLAYS
 ──────────────────────────────────────────────────────── */
