@@ -297,6 +297,7 @@ header:fullscreen { display: none; }
 .tab .ext-toggle:hover { color: var(--text-secondary); border-color: var(--border-subtle); }
 .tab .ext-toggle.active { color: var(--text-secondary); border-color: var(--text-dim); }
 .tab .ext-toggle.inactive { text-decoration: line-through; color: var(--border-subtle); }
+#tabs.hide-ext .ext-toggle { display: none; }
 
 /* ────────────────────────────────────────────────────────
    6. EDITOR CORE
@@ -525,12 +526,13 @@ header:fullscreen { display: none; }
         </aside>
         <div id="sidebar-resize"></div>
         <div class="editor-area">
-            <div id="tabs">
+            <div id="tabs" class="hide-ext">
                 <div id="tab-settings-wrap">
                     <button id="tab-settings-btn" title="Toggle settings">⛭</button>
                     <div id="tab-settings-popover" class="hidden">
                         <button class="settings-btn active" id="settings-toggle-slider" title="Toggle width slider">⇔</button>
                         <button class="settings-btn active" id="settings-toggle-gutter" title="Toggle gutter">#</button>
+                        <button class="settings-btn" id="settings-toggle-ext" title="Toggle extension indicator">--ext--</button>
                         <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
                         <button class="settings-btn" id="settings-font-reset" title="Reset font size" aria-label="Reset font size">ø</button>
                         <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
@@ -1914,6 +1916,11 @@ class UIManager {
             this.#gutter.classList.add('hidden');
             document.getElementById('settings-toggle-gutter').classList.remove('active');
         }
+        if (localStorage.getItem('extToggleVisible') === 'true') {
+            this.#tabsContainer.classList.remove('hide-ext');
+            document.getElementById('settings-toggle-ext').classList.add('active');
+            document.getElementById('settings-toggle-ext').textContent = 'ext';
+        }
         await this.fs.initDB();
         await this.extensions.loadAll();
         await this.fs.restoreSession();
@@ -2303,6 +2310,13 @@ class UIManager {
             const nowHidden = this.#gutter.classList.toggle('hidden');
             document.getElementById('settings-toggle-gutter').classList.toggle('active', !nowHidden);
             localStorage.setItem('gutterVisible', !nowHidden);
+        });
+        // Toggle ext-toggle visibility
+        document.getElementById('settings-toggle-ext').addEventListener('click', e => {
+            const nowHidden = this.#tabsContainer.classList.toggle('hide-ext');
+            e.currentTarget.classList.toggle('active', !nowHidden);
+            e.currentTarget.textContent = nowHidden ? '--ext--' : 'ext';
+            localStorage.setItem('extToggleVisible', !nowHidden);
         });
         // Font size
         const MIN_FONT = 10, MAX_FONT = 24, DEFAULT_FONT_SIZE = 14;
