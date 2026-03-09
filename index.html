@@ -2133,6 +2133,9 @@ class UIManager {
             document.body.style.userSelect = '';
             localStorage.setItem('sidebarWidth', this.#sidebarEl.offsetWidth + 'px');
         });
+        this.#treeContainer.addEventListener('click', e => {
+            if (!e.target.closest('.tree-row')) this.state.activeDirectoryPath = null;
+        });
         this.#treeContainer.addEventListener('dragover', e => {
             if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
             if (e.target.closest('.tree-row')) return;
