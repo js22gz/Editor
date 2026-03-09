@@ -1743,12 +1743,8 @@ class TabManager {
                 tabEl.title = tab.name;
                 return;
             }
-            const prefix = this.state.activeDirectoryPath ? this.state.activeDirectoryPath + '/' : null;
-            if (prefix && tab.path.startsWith(prefix)) {
-                tabEl.title = tab.path.slice(prefix.length);
-            } else {
-                tabEl.title = tab.path;
-            }
+            const lastSlash = tab.path.lastIndexOf('/');
+            tabEl.title = lastSlash > 0 ? tab.path.slice(0, lastSlash) : '/';
         });
         tabEl.addEventListener('drop', e => this.handleTabDrop(e, tab.id));
         this.tabsContainer.appendChild(tabEl);
