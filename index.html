@@ -356,8 +356,6 @@ header:fullscreen { display: none; }
 }
 .settings-btn:hover { background: var(--border-color); color: var(--text-primary); }
 .settings-btn.active { background: var(--bg-active); color: var(--text-strong); border-color: var(--border-subtle); }
-#settings-toggle-ext:not(.active) { text-decoration: line-through; }
-#tabs.hide-ext .tab-ext { display: none; }
 
 /* ── Line width slider – reliable downward triangle thumb (Chrome-first) ── */
 #line-width-slider {
@@ -533,7 +531,6 @@ header:fullscreen { display: none; }
                     <div id="tab-settings-popover" class="hidden">
                         <button class="settings-btn active" id="settings-toggle-slider" title="Toggle width slider">⇔</button>
                         <button class="settings-btn active" id="settings-toggle-gutter" title="Toggle gutter">#</button>
-                        <button class="settings-btn" id="settings-toggle-ext" title="Toggle file extensions in tab headers">--ext--</button>
                         <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
                         <button class="settings-btn" id="settings-font-reset" title="Reset font size" aria-label="Reset font size">ø</button>
                         <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
@@ -1710,13 +1707,7 @@ class TabManager {
         tabEl.draggable = true;
         const tabName = document.createElement('span');
         tabName.className = 'tab-name';
-        const dotIdx = name.lastIndexOf('.');
-        const baseName = dotIdx > 0 ? name.slice(0, dotIdx) : name;
-        const extText = dotIdx > 0 ? name.slice(dotIdx) : '';
-        tabName.textContent = baseName;
-        const tabExt = document.createElement('span');
-        tabExt.className = 'tab-ext';
-        tabExt.textContent = extText;
+        tabName.textContent = name;
         const dirtyInd = document.createElement('span');
         dirtyInd.className = 'dirty-indicator';
         dirtyInd.style.display = 'none';
@@ -1726,12 +1717,12 @@ class TabManager {
         closeBtn.textContent = '×';
         if (tab.type === 'extension') {
             const extToggle = this.#createExtToggle(tab, tab.extension);
-            tabEl.append(extToggle, tabName, tabExt, dirtyInd, closeBtn);
+            tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
         } else if (tab.type === 'text') {
             const extToggle = this.#createExtToggle(tab, null);
-            tabEl.append(extToggle, tabName, tabExt, dirtyInd, closeBtn);
+            tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
         } else {
-            tabEl.append(tabName, tabExt, dirtyInd, closeBtn);
+            tabEl.append(tabName, dirtyInd, closeBtn);
         }
         tabEl.onclick = () => this.switchToTab(tab.id);
         closeBtn.onclick = e => { e.stopPropagation(); this.closeTab(tab.id); };
@@ -1922,11 +1913,6 @@ class UIManager {
         if (localStorage.getItem('gutterVisible') === 'false') {
             this.#gutter.classList.add('hidden');
             document.getElementById('settings-toggle-gutter').classList.remove('active');
-        }
-        if (localStorage.getItem('extVisible') !== 'true') {
-            this.#tabsContainer.classList.add('hide-ext');
-        } else {
-            document.getElementById('settings-toggle-ext').classList.add('active');
         }
         await this.fs.initDB();
         await this.extensions.loadAll();
@@ -2317,12 +2303,6 @@ class UIManager {
             const nowHidden = this.#gutter.classList.toggle('hidden');
             document.getElementById('settings-toggle-gutter').classList.toggle('active', !nowHidden);
             localStorage.setItem('gutterVisible', !nowHidden);
-        });
-        // Toggle file extensions in tab headers
-        document.getElementById('settings-toggle-ext').addEventListener('click', e => {
-            const nowHidden = this.#tabsContainer.classList.toggle('hide-ext');
-            e.currentTarget.classList.toggle('active', !nowHidden);
-            localStorage.setItem('extVisible', !nowHidden);
         });
         // Font size
         const MIN_FONT = 10, MAX_FONT = 24, DEFAULT_FONT_SIZE = 14;
