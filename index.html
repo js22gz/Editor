@@ -2076,8 +2076,8 @@ class UIManager {
             const lines = before.split('\n');
             const line = lines.length;
             const col = lines[lines.length - 1].length + 1;
-            const text = this.#textarea.value;
-            const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+            const trimmed = this.#textarea.value.trim();
+            const words = trimmed ? trimmed.split(/\s+/).length : 0;
             this.#statusEl.textContent = `Ln ${line}, Col ${col} | ${words} word${words !== 1 ? 's' : ''} | ${this.state.tabs.length} tab${this.state.tabs.length !== 1 ? 's' : ''}`;
         }
         this.#editorStatusEl.textContent = tab.name + modified;
