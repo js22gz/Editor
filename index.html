@@ -284,7 +284,7 @@ header:fullscreen { display: none; }
 .tab.active { background: var(--bg-base); border-bottom: 2px solid var(--text-secondary); }
 .tab .close { margin-left: 12px; opacity: 0.6; font-size: 15px; }
 .tab .close:hover { opacity: 1; color: var(--text-primary); }
-.tab .dirty-indicator { color: var(--text-secondary); font-size: 10px; margin-left: 2px; }
+.tab .dirty-indicator { color: var(--text-secondary); font-size: 10px; margin-left: 2px; visibility: hidden; }
 .tab.drag-over { border-left: 2px solid var(--text-secondary); }
 .tab[draggable] { cursor: grab; }
 .tab[draggable]:active { cursor: grabbing; }
@@ -980,7 +980,7 @@ class FileSystemManager {
             await this.#write(tab.handle, content);
             tab.content = content;
             tab.dirty = false;
-            if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = 'none';
+            if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'hidden';
             this.ui.updateEditorStatus(tab);
             this.ui.showToast('Saved', 1200);
         } catch (err) {
@@ -1712,7 +1712,6 @@ class TabManager {
         tabName.textContent = name;
         const dirtyInd = document.createElement('span');
         dirtyInd.className = 'dirty-indicator';
-        dirtyInd.style.display = 'none';
         dirtyInd.textContent = ' *';
         const closeBtn = document.createElement('span');
         closeBtn.className = 'close';
@@ -2077,7 +2076,9 @@ class UIManager {
             const lines = before.split('\n');
             const line = lines.length;
             const col = lines[lines.length - 1].length + 1;
-            this.#statusEl.textContent = `Ln ${line}, Col ${col} | ${this.state.tabs.length} tab${this.state.tabs.length !== 1 ? 's' : ''}`;
+            const text = this.#textarea.value;
+            const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+            this.#statusEl.textContent = `Ln ${line}, Col ${col} | ${words} word${words !== 1 ? 's' : ''} | ${this.state.tabs.length} tab${this.state.tabs.length !== 1 ? 's' : ''}`;
         }
         this.#editorStatusEl.textContent = tab.name + modified;
     }
@@ -2231,7 +2232,7 @@ class UIManager {
                 if (tab) {
                     if (TabManager.canTabBeDirty(tab.type)) {
                         tab.dirty = true;
-                        if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
+                        if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'visible';
                         this.fs.scheduleSave();
                     }
                     this.updateEditorStatus(tab);
@@ -2381,7 +2382,7 @@ class UIManager {
             if (e.data.type === 'extension:save') {
                 tab.content = e.data.content;
                 tab.dirty = true;
-                if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
+                if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'visible';
                 if (tab.id === this.state.currentTabId) {
                     this.fs.scheduleSave();
                 } else {
@@ -2389,7 +2390,7 @@ class UIManager {
                 }
             } else if (e.data.type === 'extension:dirty') {
                 tab.dirty = true;
-                if (tab.element) tab.element.querySelector('.dirty-indicator').style.display = '';
+                if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'visible';
             }
         });
         window.addEventListener('beforeunload', e => {
