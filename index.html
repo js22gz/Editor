@@ -942,7 +942,10 @@ class FileSystemManager {
     async #newItem(kind) {
         if (!this.state.currentDirHandle) return this.ui.showToast('Open a folder first');
         const isFile = kind === 'file';
-        const name = await this.ui.showDialog({ promptTitle: isFile ? 'New file name:' : 'New folder name:' });
+        const activePath = this.state.activeDirectoryPath || '';
+        const rootName = this.state.currentDirHandle.name;
+        const displayPath = '/' + rootName + (activePath ? '/' + activePath : '') + '/';
+        const name = await this.ui.showDialog({ promptTitle: isFile ? 'New file name:' : 'New folder name:', subtitle: displayPath });
         if (!name?.trim()) return;
         const trimmed = name.trim();
         if (this.#INVALID_CHARS.test(trimmed) || /[\/\\]/.test(trimmed))
@@ -1873,6 +1876,10 @@ class UIManager {
     }
     get contextMenuTarget() { return this.#contextMenuTarget; }
     get isMobile() { return this.#isMobile; }
+    #parentDirPath(node) {
+        if (node.kind === 'directory') return node.path;
+        return node.path.includes('/') ? node.path.substring(0, node.path.lastIndexOf('/')) : null;
+    }
     get sidebarEl() { return this.#sidebarEl; }
     get textarea() { return this.#textarea; }
     get editorStatusEl() { return this.#editorStatusEl; }
@@ -1936,19 +1943,22 @@ class UIManager {
         t.addEventListener('click', () => { clearTimeout(timer); t.remove(); callback(); });
         document.body.appendChild(t);
     }
-    showDialog({promptTitle, defaultValue = '', isConfirm = false, confirmMessage = '', danger = false} = {}) {
+    showDialog({promptTitle, subtitle = '', defaultValue = '', isConfirm = false, confirmMessage = '', danger = false} = {}) {
         return new Promise(resolve => {
             const modal = document.createElement('div');
             modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10001;';
             const okBg = danger ? '#ef4444' : '#a1a1aa', okFg = danger ? '#fff' : '#09090b';
             modal.innerHTML = `<div style="background:#18181b;padding:24px;border-radius:8px;min-width:320px;border:1px solid #27272a;">` +
                 `<div style="margin-bottom:12px;font-size:14px;"></div>` +
+                `<div style="margin-bottom:12px;font-size:12px;color:#71717a;word-break:break-all;"></div>` +
                 (!isConfirm ? `<input type="text" style="width:100%;padding:10px;background:#27272a;border:1px solid #3f3f46;color:#e4e4e7;border-radius:4px;font-size:16px;">` : '') +
                 `<div style="display:flex;gap:8px;margin-top:16px;">` +
                 `<button style="flex:1;min-height:44px;background:${okBg};color:${okFg};border:none;border-radius:4px;">${isConfirm ? 'Confirm' : 'OK'}</button>` +
                 `<button style="flex:1;min-height:44px;background:#27272a;color:#e4e4e7;border:none;border-radius:4px;">Cancel</button></div></div>`;
             // textContent assignment keeps user-supplied strings free of HTML injection
             modal.firstElementChild.firstElementChild.textContent = isConfirm ? confirmMessage : promptTitle;
+            const subtitleEl = modal.firstElementChild.children[1];
+            if (subtitle) { subtitleEl.textContent = subtitle; } else { subtitleEl.style.display = 'none'; }
             const input = modal.querySelector('input');
             const [okBtn, cancelBtn] = modal.querySelectorAll('button');
             if (input) input.value = defaultValue;
@@ -2165,8 +2175,12 @@ class UIManager {
             const row = e.target.closest('.tree-row');
             if (row && row.dataset.path) {
                 const node = this.tree.getNode(row.dataset.path);
-                if (node) this.showContextMenu(e, node);
+                if (node) {
+                    this.state.activeDirectoryPath = this.#parentDirPath(node);
+                    this.showContextMenu(e, node);
+                }
             } else {
+                this.state.activeDirectoryPath = null;
                 this.showContextMenu(e, null);
             }
         });
@@ -2183,8 +2197,12 @@ class UIManager {
                 const row = target.closest('.tree-row');
                 if (row && row.dataset.path) {
                     const node = this.tree.getNode(row.dataset.path);
-                    if (node) this.showContextMenu(fakeEvent, node);
+                    if (node) {
+                        this.state.activeDirectoryPath = this.#parentDirPath(node);
+                        this.showContextMenu(fakeEvent, node);
+                    }
                 } else {
+                    this.state.activeDirectoryPath = null;
                     this.showContextMenu(fakeEvent, null);
                 }
             }, 600);
