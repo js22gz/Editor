@@ -769,6 +769,19 @@ class FileSystemManager {
     }
     async mutateAndRebuild() {
         if (!this.state.currentDirHandle) return;
+        const perm = await this.queryPermission(this.state.currentDirHandle);
+        if (perm !== 'granted') {
+            try {
+                const result = await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' });
+                if (result !== 'granted') {
+                    this.ui.showToast('Re-open folder to grant access', 4000);
+                    return;
+                }
+            } catch {
+                this.ui.showToast('Re-open folder to grant access', 4000);
+                return;
+            }
+        }
         if (this._rebuildInFlight) {
             this._rebuildQueued = true;
             return;
@@ -2369,11 +2382,20 @@ class UIManager {
             return;
         }
         const perm = await this.fs.queryPermission(this.state.currentDirHandle);
-        if (perm !== 'granted') {
-            this.showActionToast('Tap to restore folder access', async () => {
-                try { await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' }); } catch { }
-            });
-        }
+        if (perm === 'granted') return;
+        this.showActionToast('Tap to restore folder access', async () => {
+            try {
+                const result = await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' });
+                if (result === 'granted') {
+                    await this.fs.mutateAndRebuild();
+                    this.showToast('Folder access restored ✓');
+                } else {
+                    this.showToast('Access was not granted');
+                }
+            } catch {
+                this.showToast('Failed to restore access');
+            }
+        });
     }
     bindLifecycle() {
         // Restore session when page returns from bfcache (back/forward nav or wake from sleep)
