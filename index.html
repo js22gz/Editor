@@ -2397,20 +2397,34 @@ class UIManager {
             }
         });
     }
-    bindLifecycle() {
-        // Restore session when page returns from bfcache (back/forward nav or wake from sleep)
-        window.addEventListener('pageshow', async (e) => {
-            if (e.persisted) await this.#revalidatePermission();
-        });
-        // Save + re-validate when page visibility changes (lock-screen / tab switch)
-        document.addEventListener('visibilitychange', async () => {
-            if (document.visibilityState !== 'visible') {
-                if (this.state.currentDirHandle) this.fs.saveOpenTabs(this.state.currentTabId);
-                return;
-            }
-            await this.#revalidatePermission();
-        });
-        window.addEventListener('resize', () => {
+bindLifecycle() {
+    // Restore session when page returns from bfcache (back/forward nav or wake from sleep)
+    window.addEventListener('pageshow', async (e) => {
+        await this.#revalidatePermission();
+        if (this.state.currentDirHandle) {
+            // Small settle delay after wake — Chrome OS timing quirk
+            setTimeout(() => {
+                this.fs.mutateAndRebuild().catch(console.warn);
+                this.tree.highlightActive();
+            }, 200);
+        }
+    });
+
+    // Save + re-validate when page visibility changes (lock-screen / tab switch / wake)
+    document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState !== 'visible') {
+            if (this.state.currentDirHandle) this.fs.saveOpenTabs(this.state.currentTabId);
+            return;
+        }
+        await this.#revalidatePermission();
+        if (this.state.currentDirHandle) {
+            setTimeout(() => {
+                this.fs.mutateAndRebuild().catch(console.warn);
+                this.tree.highlightActive();
+            }, 200);
+        }
+    });
+	window.addEventListener('resize', () => {
             const wasMobile = this.#isMobile;
             this.#isMobile = window.innerWidth <= 768;
             if (this.#isMobile && !wasMobile) this.#sidebarEl.classList.add('hidden');
