@@ -62,7 +62,7 @@ window.LEGEND = `<!--
                   ├── TreeManager
                   │     • nodeByPath Map + fileTree root
                   │     • recursive _renderTreeItem() + lazy loading
-                  │     • Drag & drop + ancestor highlighting
+                  │     • Drag & drop 
                   │     • highlightActive() + updateHeader()
                   │     • registerNode / getNode / clear
                   │
@@ -279,12 +279,6 @@ header:fullscreen { display: none; }
 /* ────────────────────────────────────────────────────────
    7. RULER + SETTINGS
 ──────────────────────────────────────────────────────── */
-#line-width-slider {
-  display: flex; align-items: center; height: 16px; background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-color); padding: 0 8px 0 26px; gap: 5px;
-}
-#line-width-slider.hidden { display: none; }
-
 #tab-settings-wrap { position: relative; flex-shrink: 0; }
 #tab-settings-btn {
   width: 60px; height: 100%; background: none; border: none;
@@ -322,7 +316,7 @@ header:fullscreen { display: none; }
     padding: 0 8px 0 26px;
     gap: 5px;
 }
-
+#line-width-slider.hidden { display: none; }
 #line-width-slider input[type="range"] {
     flex: 1;
     height: 5px;
