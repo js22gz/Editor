@@ -145,13 +145,6 @@ main { flex: 1; display: flex; overflow: hidden; }
 
 .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
-/* Fullscreen support (hides header + tabs + ruler) */
-body.fullscreen header,
-body.fullscreen #tabs,
-body.fullscreen #line-width-slider {
-  display: none;
-}
-
 /* ────────────────────────────────────────────────────────
    3. HEADER
 ──────────────────────────────────────────────────────── */
@@ -1371,7 +1364,7 @@ class TreeManager {
             '<span class="directory-clear" id="clear-folder">⌫</span>';
     }
     highlightActive() {
-        this.treeContainer.querySelectorAll('.tree-row.active,.tree-row.active-dir,.tree-row.active-ancestor').forEach(el => el.classList.remove('active','active-dir','active-ancestor'));
+        this.treeContainer.querySelectorAll('.tree-row.active,.tree-row.active-dir').forEach(el => el.classList.remove('active','active-dir'));
         if (this.state.activeFilePath) {
             const el = this.treeContainer.querySelector(`.tree-row[data-path="${CSS.escape(this.state.activeFilePath)}"]`);
             if (el) el.classList.add('active');
@@ -1552,7 +1545,6 @@ class TabManager {
             dirty: false,
             element: null,
             extFrame: null,
-            blobUrl: null,
             scrollTop: 0,
         };
     }
