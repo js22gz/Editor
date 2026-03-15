@@ -622,6 +622,7 @@ class FileSystemManager {
     #TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
     #INVALID_CHARS = /[<>:"|?*\x00-\x1F]/;
     #saveInProgress = false;
+    #restoring = false;
     /** @param {ReactiveState} state @param {PathUtils} pathUtils */
     constructor(state, pathUtils) {
         this.state = state;
@@ -835,21 +836,28 @@ class FileSystemManager {
     }
     // ── Session restore ────────────────────────────────────
     async restoreSession() {
-        this.loadExpandedState();
-        const saved = await this.loadSavedFolder();
-        if (saved.status === 'granted') {
-            this.state.currentDirHandle = saved.handle;
-            await this.build(saved.handle);
-            await this.#expandSavedFolders();
-            this.tree.render();
-            this.tree.updateHeader();
-            const restored = await this.tabs.restoreOpenTabs(saved.handle);
-            if (restored) this.ui.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-        } else if (saved.status === 'needs-auth') {
-            this.#handlePendingAuth(saved.handle);
-        }
-        if (!this.state.tabs.length) {
-            await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
+        if (this.#restoring) return;
+        this.#restoring = true;
+        try {
+            this.loadExpandedState();
+            const saved = await this.loadSavedFolder();
+            if (saved.status === 'granted') {
+                this.state.currentDirHandle = saved.handle;
+                await this.build(saved.handle);
+                await this.#expandSavedFolders();
+                this.tree.render();
+                this.tree.updateHeader();
+                const restored = await this.tabs.restoreOpenTabs(saved.handle);
+                if (restored) this.ui.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+            } else if (saved.status === 'needs-auth') {
+                this.#handlePendingAuth(saved.handle);
+                return;
+            }
+            if (!this.state.tabs.length) {
+                await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
+            }
+        } finally {
+            this.#restoring = false;
         }
     }
     async #expandSavedFolders() {
@@ -2399,6 +2407,7 @@ class UIManager {
 bindLifecycle() {
     // Restore session when page returns from bfcache (back/forward nav or wake from sleep)
     window.addEventListener('pageshow', async (e) => {
+        if (!e.persisted) return;
         await this.#revalidatePermission();
         if (this.state.currentDirHandle) {
             // Small settle delay after wake — Chrome OS timing quirk
