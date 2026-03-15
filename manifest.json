@@ -1,7 +1,6 @@
 {
   "name": "Editor",
   "short_name": "Editor",
-  "version": "1.0.0",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#09090b",
