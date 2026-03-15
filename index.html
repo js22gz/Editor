@@ -877,6 +877,12 @@ class FileSystemManager {
     const [handle] = await window.showOpenFilePicker();
     const file = await handle.getFile();
     const content = await file.text(); // will throw or freeze on huge files
+    for (const t of this.state.tabs) {
+      if (t.handle && await this.isSameEntry(t.handle, handle)) {
+        this.tabs.switchToTab(t.id);
+        return;
+      }
+    }
     await this.tabs.createNewTab(handle, file.name, content);
   } catch (e) {
     if (e.name !== 'AbortError') this.ui.showToast('File too large or unreadable as text');
