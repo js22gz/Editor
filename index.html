@@ -580,7 +580,6 @@ class PathUtils {
 // FileSystemManager 
 // ────────────────────────────────────────────────────────
 class FileSystemManager {
-    #TEXT_FILE_EXTENSIONS = /\.(txt|md|js|ts|html|css|json|py|go|rs|jsx|tsx|vue|xml|yaml|yml|toml|sh|bash|sql)$/i;
     #INVALID_CHARS = /[<>:"|?*\x00-\x1F]/;
     #saveInProgress = false;
     #restoring = false;
@@ -877,9 +876,6 @@ class FileSystemManager {
         try {
             const [handle] = await window.showOpenFilePicker();
             const file = await handle.getFile();
-            if (!file.type.startsWith('text/') && !this.#TEXT_FILE_EXTENSIONS.test(file.name)) {
-                if (!await this.ui.showDialog({ isConfirm: true, confirmMessage: 'Binary file detected. Open anyway?' })) return;
-            }
             const content = await file.text();
             await this.tabs.createNewTab(handle, file.name, content);
         } catch (e) {
@@ -889,9 +885,6 @@ class FileSystemManager {
     async openFileFromNode(node) {
         try {
             const file = await node.handle.getFile();
-            if (!file.type.startsWith('text/') && !this.#TEXT_FILE_EXTENSIONS.test(file.name)) {
-                if (!await this.ui.showDialog({ isConfirm: true, confirmMessage: 'Binary file detected. Open anyway?' })) return;
-            }
             const content = await file.text();
             await this.tabs.createNewTab(node.handle, node.name, content, node.path);
             if (this.ui.isMobile && !this.ui.sidebarEl.classList.contains('hidden')) {
