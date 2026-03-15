@@ -1,7 +1,10 @@
+
 <script>
 window.WELCOME = `EDITOR
 ══════
+
 This is a text editor for the web browser.
+
 `;
 
 window.LEGEND = `<!--
@@ -955,6 +958,20 @@ class FileSystemManager {
     }
     async newFile() { return this.#newItem('file'); }
     async newFolder() { return this.#newItem('folder'); }
+    async createUntitledFile() {
+        if (!this.state.currentDirHandle) return null;
+        const root = this.state.currentDirHandle;
+        let name = 'new.txt';
+        let counter = 0;
+        while (await this.#entryExists(root, name)) {
+            counter++;
+            name = `new_${counter}.txt`;
+        }
+        const handle = await root.getFileHandle(name, { create: true });
+        await this.#write(handle, '');
+        await this.mutateAndRebuild();
+        return this.tabs.createNewTab(handle, name, '', name);
+    }
     // ── Save ───────────────────────────────────────────────
     async saveTab(tab) {
         if (!tab?.handle || !tab.dirty) return;
@@ -1847,6 +1864,7 @@ class UIManager {
     #isMobile = false;
     #lastLineCount = 1;
     #lineNumberRafId = null;
+    #creatingUntitled = false;
 	    /** @param {ReactiveState} state @param {TabManager} tabs @param {TreeManager} tree @param {FileSystemManager} fs @param {ExtensionManager} extensions */
     constructor(state, tabs, tree, fs, extensions) {
         this.state = state;
@@ -2236,6 +2254,24 @@ class UIManager {
                     }
                     this.updateEditorStatus(tab);
                 }
+            } else if (this.state.currentDirHandle && this.#textarea.value && !this.#creatingUntitled) {
+                this.#creatingUntitled = true;
+                const typed = this.#textarea.value;
+                const cursor = this.#textarea.selectionStart;
+                this.fs.createUntitledFile().then(tab => {
+                    this.#creatingUntitled = false;
+                    if (tab) {
+                        this.#textarea.value = typed;
+                        tab.content = typed;
+                        tab.dirty = true;
+                        const ind = tab.element?.querySelector('.dirty-indicator');
+                        if (ind) ind.style.visibility = 'visible';
+                        this.#textarea.selectionStart = this.#textarea.selectionEnd = cursor;
+                        this.fs.scheduleSave();
+                        this.updateEditorStatus(tab);
+                        this.updateLineNumbers();
+                    }
+                }).catch(() => { this.#creatingUntitled = false; });
             }
         });
         this.#textarea.addEventListener('scroll', () => this.#gutter.scrollTop = this.#textarea.scrollTop);
@@ -2444,7 +2480,6 @@ class EditorApp {
         this.extensions = new ExtensionManager(this.state, this.fs);
         this.tabs = new TabManager(this.state, this.fs, this.extensions);
         this.ui = new UIManager(this.state, this.tabs, this.tree, this.fs, this.extensions);
-        // Resolve cross-references
         this.fs.tree = this.tree;
         this.fs.tabs = this.tabs;
         this.fs.ui = this.ui;
@@ -2457,7 +2492,7 @@ class EditorApp {
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-// Launch
+
 window.onload = async () => { window.editorApp = new EditorApp(); await window.editorApp.init(); };
 </script>
 </body>
