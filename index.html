@@ -2265,6 +2265,9 @@ class UIManager {
                 }).catch(() => { this.#creatingUntitled = false; });
             }
         });
+        this.#textarea.addEventListener('paste', () => {
+            setTimeout(() => this.updateLineNumbers(), 0);
+        });
         this.#textarea.addEventListener('scroll', () => this.#gutter.scrollTop = this.#textarea.scrollTop);
         this.#textarea.addEventListener('keydown', e => {
             if (e.key === 'Tab') {
