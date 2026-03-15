@@ -357,6 +357,7 @@ header:fullscreen { display: none; }
 }
 .settings-btn:hover { background: var(--border-color); color: var(--text-primary); }
 .settings-btn.active { background: var(--bg-active); color: var(--text-strong); border-color: var(--border-subtle); }
+#settings-toggle-ext:not(.active) { text-decoration: line-through; }
 
 /* ── Line width slider – reliable downward triangle thumb (Chrome-first) ── */
 #line-width-slider {
@@ -532,7 +533,7 @@ header:fullscreen { display: none; }
                     <div id="tab-settings-popover" class="hidden">
                         <button class="settings-btn active" id="settings-toggle-slider" title="Toggle width slider">⇔</button>
                         <button class="settings-btn active" id="settings-toggle-gutter" title="Toggle gutter">#</button>
-                        <button class="settings-btn" id="settings-toggle-ext" title="Toggle extension indicator">--ext--</button>
+                        <button class="settings-btn" id="settings-toggle-ext" title="Toggle extension indicator">ext</button>
                         <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
                         <button class="settings-btn" id="settings-font-reset" title="Reset font size" aria-label="Reset font size">ø</button>
                         <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
@@ -1934,7 +1935,6 @@ class UIManager {
         if (localStorage.getItem('extToggleVisible') === 'true') {
             this.#tabsContainer.classList.remove('hide-ext');
             document.getElementById('settings-toggle-ext').classList.add('active');
-            document.getElementById('settings-toggle-ext').textContent = 'ext';
         }
         await this.fs.initDB();
         await this.extensions.loadAll();
@@ -2346,7 +2346,6 @@ class UIManager {
         document.getElementById('settings-toggle-ext').addEventListener('click', e => {
             const nowHidden = this.#tabsContainer.classList.toggle('hide-ext');
             e.currentTarget.classList.toggle('active', !nowHidden);
-            e.currentTarget.textContent = nowHidden ? '--ext--' : 'ext';
             localStorage.setItem('extToggleVisible', !nowHidden);
         });
         // Font size
