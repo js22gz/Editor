@@ -2399,7 +2399,7 @@ class UIManager {
         if (this.state.currentDirHandle) {
             this.fs.saveOpenTabs(this.state.currentTabId);
         }
-        this.fs.flushSave().catch(() => {});
+        this.fs.flushSave().catch(e => console.warn('Flush during snapshot failed', e));
     }
     // Rebuild tree and restore any missing tabs after wake
     async #wakeRebuild() {
@@ -2425,7 +2425,7 @@ class UIManager {
                     this.#textarea.value = content;
                     this.updateLineNumbers(true);
                 }
-            } catch {}
+            } catch (e) { console.warn('Refresh active tab on wake failed', e); }
         }
     }
     // Centralized wake handler — guards against concurrent calls
