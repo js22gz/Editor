@@ -1848,6 +1848,7 @@ class UIManager {
     #lastLineCount = 1;
     #lineNumberRafId = null;
     #creatingUntitled = false;
+    #wakeRestoring = false;
 	    /** @param {ReactiveState} state @param {TabManager} tabs @param {TreeManager} tree @param {FileSystemManager} fs @param {ExtensionManager} extensions */
     constructor(state, tabs, tree, fs, extensions) {
         this.state = state;
@@ -2365,18 +2366,19 @@ class UIManager {
             localStorage.setItem('editorFontSize', DEFAULT_FONT_SIZE);
         });
     }
+    // Returns true if permission is already granted, false if user action is needed
     async #revalidatePermission() {
         if (!this.state.currentDirHandle) {
             await this.fs.restoreSession();
-            return;
+            return !!this.state.currentDirHandle;
         }
         const perm = await this.fs.queryPermission(this.state.currentDirHandle);
-        if (perm === 'granted') return;
+        if (perm === 'granted') return true;
         this.showActionToast('Tap to restore folder access', async () => {
             try {
                 const result = await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' });
                 if (result === 'granted') {
-                    await this.fs.mutateAndRebuild();
+                    await this.#wakeRebuild();
                     this.showToast('Folder access restored ✓');
                 } else {
                     this.showToast('Access was not granted');
@@ -2385,36 +2387,90 @@ class UIManager {
                 this.showToast('Failed to restore access');
             }
         });
+        return false;
     }
-bindLifecycle() {
-    // Restore session when page returns from bfcache (back/forward nav or wake from sleep)
-    window.addEventListener('pageshow', async (e) => {
-        if (!e.persisted) return;
-        await this.#revalidatePermission();
-        if (this.state.currentDirHandle) {
-            // Small settle delay after wake — Chrome OS timing quirk
-            setTimeout(() => {
-                this.fs.mutateAndRebuild().catch(console.warn);
-                this.tree.highlightActive();
-            }, 200);
+    // Capture in-memory state to localStorage before the browser suspends the page
+    #snapshotState() {
+        const activeTab = this.state.getActiveTab();
+        if (activeTab && activeTab.type !== 'extension' && this.#textarea) {
+            activeTab.content = this.#textarea.value;
+            activeTab.scrollTop = this.#textarea.scrollTop;
         }
-    });
-
-    // Save + re-validate when page visibility changes (lock-screen / tab switch / wake)
-    document.addEventListener('visibilitychange', async () => {
-        if (document.visibilityState !== 'visible') {
-            if (this.state.currentDirHandle) this.fs.saveOpenTabs(this.state.currentTabId);
+        if (this.state.currentDirHandle) {
+            this.fs.saveOpenTabs(this.state.currentTabId);
+        }
+        this.fs.flushSave().catch(() => {});
+    }
+    // Rebuild tree and restore any missing tabs after wake
+    async #wakeRebuild() {
+        await this.fs.mutateAndRebuild();
+        this.tree.highlightActive();
+        // If tabs disappeared (page discarded mid-session), restore from localStorage
+        if (!this.state.tabs.length && this.state.currentDirHandle) {
+            const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
+            if (restored) this.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+            if (!this.state.tabs.length) {
+                await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
+            }
             return;
         }
-        await this.#revalidatePermission();
-        if (this.state.currentDirHandle) {
-            setTimeout(() => {
-                this.fs.mutateAndRebuild().catch(console.warn);
-                this.tree.highlightActive();
-            }, 200);
+        // Refresh active non-dirty tab content from disk
+        const activeTab = this.state.getActiveTab();
+        if (activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty) {
+            try {
+                const file = await activeTab.handle.getFile();
+                const content = await file.text();
+                activeTab.content = content;
+                if (this.state.currentTabId === activeTab.id && this.#textarea) {
+                    this.#textarea.value = content;
+                    this.updateLineNumbers(true);
+                }
+            } catch {}
         }
-    });
-	window.addEventListener('resize', () => {
+    }
+    // Centralized wake handler — guards against concurrent calls
+    async #wakeRestore() {
+        if (this.#wakeRestoring) return;
+        this.#wakeRestoring = true;
+        try {
+            const permOk = await this.#revalidatePermission();
+            if (permOk && this.state.currentDirHandle) {
+                // Small settle delay — some platforms need a moment after wake
+                await new Promise(r => setTimeout(r, 200));
+                await this.#wakeRebuild();
+            }
+        } catch (e) {
+            console.warn('Wake restore failed', e);
+        } finally {
+            this.#wakeRestoring = false;
+        }
+    }
+    bindLifecycle() {
+        // Restore session when page returns from bfcache (back/forward nav)
+        window.addEventListener('pageshow', async (e) => {
+            if (!e.persisted) return;
+            await this.#wakeRestore();
+        });
+
+        // Save state eagerly when browser freezes the page (sleep, tab discard)
+        document.addEventListener('freeze', () => {
+            this.#snapshotState();
+        });
+
+        // Full restore when browser resumes a frozen page
+        document.addEventListener('resume', () => {
+            this.#wakeRestore();
+        });
+
+        // Save + re-validate when page visibility changes (lock-screen / tab switch / wake)
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState !== 'visible') {
+                this.#snapshotState();
+                return;
+            }
+            await this.#wakeRestore();
+        });
+        window.addEventListener('resize', () => {
             const wasMobile = this.#isMobile;
             this.#isMobile = window.innerWidth <= 768;
             if (this.#isMobile && !wasMobile) this.#sidebarEl.classList.add('hidden');
@@ -2438,9 +2494,8 @@ bindLifecycle() {
             }
         });
         window.addEventListener('beforeunload', e => {
-            if (this.state.currentDirHandle) this.fs.saveOpenTabs(this.state.currentTabId);
+            this.#snapshotState();
             if (this.state.tabs.some(t => t.dirty)) {
-                this.fs.flushSave();
                 e.preventDefault();
                 return e.returnValue = 'Unsaved changes will be lost';
             }
