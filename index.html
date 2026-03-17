@@ -569,6 +569,7 @@ class FileSystemManager {
     #INVALID_CHARS = /[<>:"|?*\x00-\x1F]/;
     #saveInProgress = false;
     #restoring = false;
+    #restoreStartedAt = 0;
     /** @param {ReactiveState} state @param {PathUtils} pathUtils */
     constructor(state, pathUtils) {
         this.state = state;
@@ -782,8 +783,9 @@ class FileSystemManager {
     }
     // ── Session restore ────────────────────────────────────
     async restoreSession() {
-        if (this.#restoring) return;
+        if (this.#restoring && Date.now() - this.#restoreStartedAt < 15000) return;
         this.#restoring = true;
+        this.#restoreStartedAt = Date.now();
         try {
             this.loadExpandedState();
             const saved = await this.loadSavedFolder();
@@ -1849,6 +1851,8 @@ class UIManager {
     #lineNumberRafId = null;
     #creatingUntitled = false;
     #wakeRestoring = false;
+    #lastHiddenAt = 0;
+    #wakeRetryTimer = null;
 	    /** @param {ReactiveState} state @param {TabManager} tabs @param {TreeManager} tree @param {FileSystemManager} fs @param {ExtensionManager} extensions */
     constructor(state, tabs, tree, fs, extensions) {
         this.state = state;
@@ -2372,7 +2376,12 @@ class UIManager {
             await this.fs.restoreSession();
             return !!this.state.currentDirHandle;
         }
-        const perm = await this.fs.queryPermission(this.state.currentDirHandle);
+        let perm = await this.fs.queryPermission(this.state.currentDirHandle);
+        if (perm === 'granted') return true;
+        // Retry once after a short delay — permissions can be transiently
+        // unavailable right after waking from sleep / power-saver mode
+        await new Promise(r => setTimeout(r, 1500));
+        perm = await this.fs.queryPermission(this.state.currentDirHandle);
         if (perm === 'granted') return true;
         this.showActionToast('Tap to restore folder access', async () => {
             try {
@@ -2439,11 +2448,37 @@ class UIManager {
                 await new Promise(r => setTimeout(r, 200));
                 await this.#wakeRebuild();
             }
+            // Verify visual state — ensure textarea shows active tab content
+            const activeTab = this.state.getActiveTab();
+            if (activeTab && activeTab.type !== 'extension' && this.#textarea) {
+                if (this.#textarea.value !== (activeTab.content || '')) {
+                    this.#textarea.value = activeTab.content || '';
+                    this.updateLineNumbers(true);
+                }
+            }
         } catch (e) {
             console.warn('Wake restore failed', e);
         } finally {
             this.#wakeRestoring = false;
+            this.#lastHiddenAt = 0;
         }
+        // Fallback: if app is in a broken state (no tabs but saved data exists),
+        // schedule a deferred restoreSession() to recover
+        this.#scheduleWakeRetry();
+    }
+    #scheduleWakeRetry() {
+        clearTimeout(this.#wakeRetryTimer);
+        if (this.state.tabs.length) return;
+        const hasSavedTabs = this.fs.loadOpenTabs().length > 0;
+        if (!hasSavedTabs) return;
+        this.#wakeRetryTimer = setTimeout(async () => {
+            if (this.state.tabs.length) return;
+            try {
+                await this.fs.restoreSession();
+            } catch (e) {
+                console.warn('Wake retry restoreSession failed', e);
+            }
+        }, 3000);
     }
     bindLifecycle() {
         // Restore session when page returns from bfcache (back/forward nav)
@@ -2454,6 +2489,7 @@ class UIManager {
 
         // Save state eagerly when browser freezes the page (sleep, tab discard)
         document.addEventListener('freeze', () => {
+            this.#lastHiddenAt = Date.now();
             this.#snapshotState();
         });
 
@@ -2465,10 +2501,21 @@ class UIManager {
         // Save + re-validate when page visibility changes (lock-screen / tab switch / wake)
         document.addEventListener('visibilitychange', async () => {
             if (document.visibilityState !== 'visible') {
+                this.#lastHiddenAt = Date.now();
                 this.#snapshotState();
                 return;
             }
             await this.#wakeRestore();
+        });
+
+        // Fallback wake detection — some platforms do not fire visibilitychange
+        // reliably after sleep / power-saver mode.  Only act when enough time
+        // has elapsed since the page was last hidden (avoids duplicate work on
+        // quick alt-tab / tab-switches).
+        window.addEventListener('focus', () => {
+            if (this.#lastHiddenAt && Date.now() - this.#lastHiddenAt > 5000) {
+                this.#wakeRestore();
+            }
         });
         window.addEventListener('resize', () => {
             const wasMobile = this.#isMobile;
