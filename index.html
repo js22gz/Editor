@@ -1913,6 +1913,13 @@ class UIManager {
         await this.fs.initDB();
         await this.extensions.loadAll();
         await this.fs.restoreSession();
+		// ── Extra cold-start recovery (after deep sleep)
+		setTimeout(async () => {
+		    if (!this.state.currentDirHandle) {
+		        console.log('[EDITOR] Still empty after onload → forcing wake restore');
+		        await this.#wakeRestore();
+		    }
+		}, 800);
     }
     showToast(message, duration = 2800) {
         const t = document.createElement('div');
@@ -2438,34 +2445,46 @@ class UIManager {
         }
     }
     // Centralized wake handler — guards against concurrent calls
-    async #wakeRestore() {
-        if (this.#wakeRestoring) return;
-        this.#wakeRestoring = true;
-        try {
-            const permOk = await this.#revalidatePermission();
-            if (permOk && this.state.currentDirHandle) {
-                // Small settle delay — some platforms need a moment after wake
-                await new Promise(r => setTimeout(r, 200));
-                await this.#wakeRebuild();
-            }
-            // Verify visual state — ensure textarea shows active tab content
-            const activeTab = this.state.getActiveTab();
-            if (activeTab && activeTab.type !== 'extension' && this.#textarea) {
-                if (this.#textarea.value !== (activeTab.content || '')) {
-                    this.#textarea.value = activeTab.content || '';
+async #wakeRestore() {
+    if (this.#wakeRestoring) return;
+    this.#wakeRestoring = true;
+    try {
+        console.log('[EDITOR WAKE] Starting full recovery...');
+
+        const hadHandleBefore = !!this.state.currentDirHandle;
+        const permOk = await this.#revalidatePermission();
+
+        if (permOk && this.state.currentDirHandle) {
+            await new Promise(r => setTimeout(r, 400)); // let FS handles settle after sleep
+            await this.fs.mutateAndRebuild();
+            this.tree.render();
+            this.tree.updateHeader();
+            this.tree.highlightActive();
+        } else if (!hadHandleBefore) {
+            // Cold start / deep sleep – force full session restore (this fixes empty state)
+            console.log('[EDITOR WAKE] No folder loaded → forcing restoreSession()');
+            await this.fs.restoreSession();
+        }
+
+        // Refresh active non-dirty tab content from disk
+        const activeTab = this.state.getActiveTab();
+        if (activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty && this.#textarea) {
+            try {
+                const file = await activeTab.handle.getFile();
+                const content = await file.text();
+                activeTab.content = content;
+                if (this.state.currentTabId === activeTab.id) {
+                    this.#textarea.value = content;
                     this.updateLineNumbers(true);
                 }
-            }
-        } catch (e) {
-            console.warn('Wake restore failed', e);
-        } finally {
-            this.#wakeRestoring = false;
-            this.#lastHiddenAt = 0;
+            } catch (e) { console.warn('Wake tab refresh failed', e); }
         }
-        // Fallback: if app is in a broken state (no tabs but saved data exists),
-        // schedule a deferred restoreSession() to recover
-        this.#scheduleWakeRetry();
+    } finally {
+        this.#wakeRestoring = false;
+        this.#lastHiddenAt = 0;
     }
+}
+	
     #scheduleWakeRetry() {
         clearTimeout(this.#wakeRetryTimer);
         if (this.state.tabs.length) return;
@@ -2480,75 +2499,55 @@ class UIManager {
             }
         }, 3000);
     }
-    bindLifecycle() {
-        // Restore session when page returns from bfcache (back/forward nav)
-        window.addEventListener('pageshow', async (e) => {
-            if (!e.persisted) return;
-            await this.#wakeRestore();
-        });
 
-        // Save state eagerly when browser freezes the page (sleep, tab discard)
-        document.addEventListener('freeze', () => {
+	bindLifecycle() {
+    // bfcache restore
+    window.addEventListener('pageshow', async (e) => {
+        if (e.persisted) await this.#wakeRestore();
+    });
+
+    document.addEventListener('freeze', () => {
+        this.#lastHiddenAt = Date.now();
+        this.#snapshotState();
+    });
+
+    document.addEventListener('resume', () => this.#wakeRestore());
+
+    // visibility + minimize/maximize
+    document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible') {
+            console.log('[EDITOR WAKE] visibilitychange → visible');
+            await this.#wakeRestore();
+        } else {
             this.#lastHiddenAt = Date.now();
             this.#snapshotState();
-        });
+        }
+    });
 
-        // Full restore when browser resumes a frozen page
-        document.addEventListener('resume', () => {
-            this.#wakeRestore();
-        });
+    // ←←← CRITICAL for both shallow minimize AND deep sleep
+    window.addEventListener('blur', () => {
+        this.#lastHiddenAt = Date.now();
+        this.#snapshotState();
+    });
 
-        // Save + re-validate when page visibility changes (lock-screen / tab switch / wake)
-        document.addEventListener('visibilitychange', async () => {
-            if (document.visibilityState !== 'visible') {
-                this.#lastHiddenAt = Date.now();
-                this.#snapshotState();
-                return;
-            }
+    window.addEventListener('focus', async () => {
+        const timeAway = this.#lastHiddenAt ? Date.now() - this.#lastHiddenAt : 0;
+        // 700 ms or no folder loaded = treat as wake
+        if (timeAway > 700 || !this.state.currentDirHandle) {
+            console.log(`[EDITOR WAKE] Focus after ${timeAway}ms (cold start detected)`);
             await this.#wakeRestore();
-        });
+        }
+    });
 
-        // Fallback wake detection — some platforms do not fire visibilitychange
-        // reliably after sleep / power-saver mode.  Only act when enough time
-        // has elapsed since the page was last hidden (avoids duplicate work on
-        // quick alt-tab / tab-switches).
-        window.addEventListener('focus', () => {
-            if (this.#lastHiddenAt && Date.now() - this.#lastHiddenAt > 5000) {
-                this.#wakeRestore();
-            }
-        });
-        window.addEventListener('resize', () => {
-            const wasMobile = this.#isMobile;
-            this.#isMobile = window.innerWidth <= 768;
-            if (this.#isMobile && !wasMobile) this.#sidebarEl.classList.add('hidden');
-        });
-        window.addEventListener('message', e => {
-            if (!e.data || typeof e.data !== 'object') return;
-            const tab = this.state.tabs.find(t => t.type === 'extension' && t.extFrame && t.extFrame.contentWindow === e.source);
-            if (!tab) return;
-            if (e.data.type === 'extension:save') {
-                tab.content = e.data.content;
-                tab.dirty = true;
-                if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'visible';
-                if (tab.id === this.state.currentTabId) {
-                    this.fs.scheduleSave();
-                } else {
-                    this.fs.saveTab(tab);
-                }
-            } else if (e.data.type === 'extension:dirty') {
-                tab.dirty = true;
-                if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'visible';
-            }
-        });
-        window.addEventListener('beforeunload', e => {
-            this.#snapshotState();
-            if (this.state.tabs.some(t => t.dirty)) {
-                e.preventDefault();
-                return e.returnValue = 'Unsaved changes will be lost';
-            }
-        });
-    }
-    bindEvents() {
+    window.addEventListener('beforeunload', e => {
+        this.#snapshotState();
+        if (this.state.tabs.some(t => t.dirty)) {
+            e.preventDefault();
+            return e.returnValue = 'Unsaved changes will be lost';
+        }
+    });
+}
+	    bindEvents() {
         this.bindKeyboard();
         this.bindTreeEvents();
         this.bindTabEvents();
