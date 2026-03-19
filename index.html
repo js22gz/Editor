@@ -453,7 +453,58 @@ header:fullscreen { display: none; }
   .tree-row { min-height: 44px; padding: 10px 8px 10px 12px; }
   .tree-vline, .tree-tee, .tree-elbow { top: -10px; }
   .tree-vline, .tree-tee { bottom: -10px; }
+  #gutter { width: 36px; }
 }
+
+/* ────────────────────────────────────────────────────────
+   11. CREATE-ITEM DIALOG
+──────────────────────────────────────────────────────── */
+#create-item-dialog-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+  display: flex; align-items: center; justify-content: center; z-index: 10001;
+}
+#create-item-dialog {
+  background: #18181b; border: 1px solid #27272a; border-radius: 8px;
+  min-width: 320px; overflow: hidden;
+}
+#create-item-dialog > * {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; text-align: center; padding: 12px 16px; box-sizing: border-box;
+}
+#create-item-dialog .cid-title {
+  font-size: 1rem; font-weight: 600; color: var(--text-strong);
+  border-bottom: 1px solid #27272a;
+}
+#create-item-dialog .cid-type {
+  gap: 0; padding: 0; border-bottom: 1px solid #27272a;
+}
+.cid-type-btn {
+  flex: 1; padding: 10px; background: none; border: none; cursor: pointer;
+  font-size: 13px; color: var(--text-secondary); transition: background 0.15s, color 0.15s;
+}
+.cid-type-btn + .cid-type-btn { border-left: 1px solid #27272a; }
+.cid-type-btn.active { background: var(--bg-active); color: var(--text-strong); }
+.cid-type-btn:hover:not(.active) { background: var(--bg-hover); color: var(--text-primary); }
+#create-item-dialog .cid-name { border-bottom: 1px solid #27272a; }
+#create-item-name {
+  width: 100%; padding: 10px; background: #27272a; border: 1px solid #3f3f46;
+  color: #e4e4e7; border-radius: 4px; font-size: 14px; box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+}
+#create-item-dialog .cid-actions { gap: 0; padding: 0; }
+.cid-action-btn {
+  flex: 1; padding: 12px; background: none; border: none; cursor: pointer;
+  font-size: 13px; color: var(--text-secondary); transition: background 0.15s, color 0.15s;
+}
+.cid-action-btn + .cid-action-btn { border-left: 1px solid #27272a; }
+.cid-action-btn.ok { color: var(--text-strong); }
+.cid-action-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+#sidebar-add-btn {
+  background: none; border: none; cursor: pointer; color: var(--text-secondary);
+  font-size: 16px; line-height: 1; padding: 2px 4px; border-radius: 3px;
+  transition: color 0.15s; margin-left: 4px;
+}
+#sidebar-add-btn:hover { color: var(--text-primary); }
 </style>
 </head>
 <body>
@@ -467,7 +518,10 @@ header:fullscreen { display: none; }
             <div id="sidebar-header">
                 <div id="sidebar-root-row" class="sidebar-header-row" title="Click to open folder">
                     <span><span id="root-dir-name">Click to open folder</span></span>
-                    <span id="sidebar-header-actions"></span>
+                    <span style="display:flex;align-items:center;gap:0;">
+                        <button id="sidebar-add-btn" title="Create file or folder">+</button>
+                        <span id="sidebar-header-actions"></span>
+                    </span>
                 </div>
             </div>
             <div id="tree-container"></div>
@@ -910,15 +964,20 @@ async openFileFromNode(node) {
         return { dir, targetPath };
     }
     // ── New file/folder ────────────────────────────────────
-    async #newItem(kind) {
+    async #newItem(kind, suppliedName) {
         if (!this.state.currentDirHandle) return this.ui.showToast('Open a folder first');
         const isFile = kind === 'file';
-        const activePath = this.state.activeDirectoryPath || '';
-        const rootName = this.state.currentDirHandle.name;
-        const displayPath = '/' + rootName + (activePath ? '/' + activePath : '') + '/';
-        const name = await this.ui.showDialog({ promptTitle: isFile ? 'New file name:' : 'New folder name:', subtitle: displayPath });
-        if (!name?.trim()) return;
-        const trimmed = name.trim();
+        let trimmed;
+        if (suppliedName) {
+            trimmed = suppliedName.trim();
+        } else {
+            const activePath = this.state.activeDirectoryPath || '';
+            const rootName = this.state.currentDirHandle.name;
+            const displayPath = '/' + rootName + (activePath ? '/' + activePath : '') + '/';
+            const name = await this.ui.showDialog({ promptTitle: isFile ? 'New file name:' : 'New folder name:', subtitle: displayPath });
+            if (!name?.trim()) return;
+            trimmed = name.trim();
+        }
         if (this.#INVALID_CHARS.test(trimmed) || /[\/\\]/.test(trimmed))
             return this.ui.showToast(isFile ? 'Invalid filename' : 'Invalid folder name');
         const { dir, targetPath } = await this.#getTargetDir();
@@ -942,8 +1001,8 @@ async openFileFromNode(node) {
         }
         this.ui.closeContextMenu();
     }
-    async newFile() { return this.#newItem('file'); }
-    async newFolder() { return this.#newItem('folder'); }
+    async newFile(name) { return this.#newItem('file', name); }
+    async newFolder(name) { return this.#newItem('folder', name); }
     async createUntitledFile() {
         if (!this.state.currentDirHandle) return null;
         const root = this.state.currentDirHandle;
@@ -2084,7 +2143,51 @@ class UIManager {
             const words = trimmed ? trimmed.split(/\s+/).length : 0;
             this.#statusEl.textContent = `Ln ${line}, Col ${col} | ${words} word${words !== 1 ? 's' : ''} | ${this.state.tabs.length} tab${this.state.tabs.length !== 1 ? 's' : ''}`;
         }
-        this.#editorStatusEl.textContent = tab.name + modified;
+        this.#editorStatusEl.textContent = tab.dirty ? '• Modified' : '';
+    }
+    #showCreateItemDialog() {
+        if (!this.state.currentDirHandle) return this.showToast('Open a folder first');
+        return new Promise(resolve => {
+            const overlay = document.createElement('div');
+            overlay.id = 'create-item-dialog-overlay';
+            overlay.innerHTML =
+                `<div id="create-item-dialog">` +
+                `<div class="cid-title"><h3 style="margin:0;font-size:1rem;">Create</h3></div>` +
+                `<div class="cid-type">` +
+                `<button class="cid-type-btn" data-kind="file">file</button>` +
+                `<button class="cid-type-btn" data-kind="directory">directory</button>` +
+                `</div>` +
+                `<div class="cid-name"><textarea id="create-item-name" rows="2" placeholder="Name…" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea></div>` +
+                `<div class="cid-actions">` +
+                `<button class="cid-action-btn ok" id="cid-ok">ok</button>` +
+                `<button class="cid-action-btn" id="cid-cancel">cancel</button>` +
+                `</div></div>`;
+            document.body.appendChild(overlay);
+            let selectedKind = null;
+            const typeButtons = overlay.querySelectorAll('.cid-type-btn');
+            typeButtons.forEach(btn => btn.addEventListener('click', () => {
+                typeButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedKind = btn.dataset.kind;
+                overlay.querySelector('#create-item-name').focus();
+            }));
+            const nameInput = overlay.querySelector('#create-item-name');
+            const close = (result) => { overlay.remove(); resolve(result); };
+            overlay.querySelector('#cid-ok').addEventListener('click', async () => {
+                if (!selectedKind) return this.showToast('Select file or directory first');
+                const name = nameInput.value.trim();
+                if (!name) return this.showToast('Enter a name');
+                close(null);
+                if (selectedKind === 'file') await this.fs.newFile(name);
+                else await this.fs.newFolder(name);
+            });
+            overlay.querySelector('#cid-cancel').addEventListener('click', () => close(null));
+            overlay.addEventListener('click', e => { if (e.target === overlay) close(null); });
+            nameInput.addEventListener('keydown', e => {
+                if (e.key === 'Enter') overlay.querySelector('#cid-ok').click();
+                if (e.key === 'Escape') close(null);
+            });
+        });
     }
     bindKeyboard() {
         document.addEventListener('keydown', e => {
@@ -2109,8 +2212,12 @@ class UIManager {
     bindTreeEvents() {
         document.getElementById('sidebar-toggle').addEventListener('click', () => this.toggleSidebar());
         document.getElementById('sidebar-root-row').addEventListener('click', e => {
-            if (e.target.id === 'refresh-folder' || e.target.id === 'clear-folder') return;
+            if (e.target.id === 'refresh-folder' || e.target.id === 'clear-folder' || e.target.id === 'sidebar-add-btn') return;
             this.fs.openFolder();
+        });
+        document.getElementById('sidebar-add-btn').addEventListener('click', e => {
+            e.stopPropagation();
+            this.#showCreateItemDialog();
         });
 
         // Sidebar resize
@@ -2285,11 +2392,22 @@ class UIManager {
         });
         const slider = document.getElementById('width-slider');
         const valueEl = document.getElementById('width-value');
-        const MAX_CHARS = 200;
+        const MIN_CHARS = 24, MAX_CHARS = 200, MOBILE_SLIDER_MAX = 100;
+        /* On mobile, map slider 0-100 through a quadratic curve so the narrow
+           end of the range gets more travel and the slider feels responsive
+           across its full width instead of only moving something at the far edge. */
+        const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+        const sliderToChars = v => {
+            if (!isMobile()) return v;
+            /* quadratic: 0→24ch, 50→68ch, 100→200ch(∞) */
+            return Math.round(MIN_CHARS + (MAX_CHARS - MIN_CHARS) * Math.pow(v / MOBILE_SLIDER_MAX, 2));
+        };
+        if (isMobile()) { slider.min = 0; slider.max = MOBILE_SLIDER_MAX; slider.value = MOBILE_SLIDER_MAX; }
         slider.addEventListener('input', e => {
-            const v = +e.target.value;
-            valueEl.textContent = (v === MAX_CHARS) ? '∞' : `${v} ch`;
-            if (v === MAX_CHARS) {
+            const v = sliderToChars(+e.target.value);
+            const atMax = isMobile() ? +e.target.value === MOBILE_SLIDER_MAX : +e.target.value === MAX_CHARS;
+            valueEl.textContent = atMax ? '∞' : `${v} ch`;
+            if (atMax) {
                 this.#textarea.style.maxWidth = 'none';
                 this.#textarea.style.minWidth = 'auto';
                 this.#textarea.style.whiteSpace = 'pre';
