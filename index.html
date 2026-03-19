@@ -172,17 +172,23 @@ header:fullscreen { display: none; }
 #sidebar {
   width: 280px; background: var(--bg-sidebar); border-right: 1px solid var(--border-color);
   display: flex; flex-direction: column; flex-shrink: 0;
-  transition: width 0.2s, opacity 0.2s; overflow: hidden;
+  transition: width 0.2s, opacity 0.2s; overflow: hidden; position: relative;
 }
 #sidebar.hidden { width: 0; border-right: none; opacity: 0; pointer-events: none; }
+#sidebar-right {
+  width: 280px; background: var(--bg-sidebar); border-right: 1px solid var(--border-color);
+  display: flex; flex-direction: column; flex-shrink: 0;
+  transition: width 0.2s, opacity 0.2s; overflow: hidden;
+}
+#sidebar-right.hidden { width: 0; border-right: none; opacity: 0; pointer-events: none; display: none; }
 
-#sidebar-header { padding: 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-subtle); border-bottom: 1px solid var(--border-color); }
+#sidebar-header, #sidebar-header-right { padding: 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-subtle); border-bottom: 1px solid var(--border-color); }
 .sidebar-header-row { padding: 8px 16px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; color: var(--text-strong); }
 .sidebar-header-row:hover { color: var(--text-primary); }
 .sidebar-header-label { color: var(--text-dim); margin-right: 6px; }
 .directory-clear { cursor: pointer; margin-left: 8px; }
 
-#tree-container {
+#tree-container, #tree-container-right {
   flex: 1; overflow-y: auto; padding: 8px 12px 30px 8px;
   font-family: ui-monospace, monospace; font-size: 14px; line-height: 1.38; user-select: none;
 }
@@ -220,7 +226,7 @@ header:fullscreen { display: none; }
 
 /* Drag & drop */
 .tree-row.dragging { opacity: 0.45; }
-.tree-row.drop-target, #tree-container.drop-target { background: var(--border-color); outline: 1px dashed var(--text-dim); }
+.tree-row.drop-target, #tree-container.drop-target, #tree-container-right.drop-target { background: var(--border-color); outline: 1px dashed var(--text-dim); }
 .children { display: block; }
 
 /* ────────────────────────────────────────────────────────
@@ -433,6 +439,20 @@ header:fullscreen { display: none; }
 }
 #sidebar-resize:hover { background: var(--border-subtle); }
 #sidebar.hidden + #sidebar-resize { display: none; }
+#sidebar-right-resize {
+  width: 5px; cursor: col-resize; background: transparent; flex-shrink: 0;
+}
+#sidebar-right-resize:hover { background: var(--border-subtle); }
+#sidebar-right.hidden ~ #sidebar-right-resize { display: none; }
+.sidebar-dupe-toggle {
+  position: absolute; bottom: 8px; right: 8px;
+  background: none; border: 1px solid var(--border-color);
+  color: var(--text-dim); font-size: 16px; line-height: 1;
+  cursor: pointer; padding: 2px 6px; border-radius: 4px;
+  transition: color 0.2s, background 0.2s; z-index: 4;
+}
+.sidebar-dupe-toggle:hover { background: var(--border-color); color: var(--text-primary); }
+.sidebar-dupe-toggle.active { color: var(--text-secondary); background: var(--border-color); }
 
 .ext-frame {
   position: absolute; top: 0; left: 0; right: 0; bottom: 0;
@@ -525,8 +545,21 @@ header:fullscreen { display: none; }
                 </div>
             </div>
             <div id="tree-container"></div>
+            <button id="sidebar-dupe-toggle" class="sidebar-dupe-toggle" title="Duplicate sidebar">⎘</button>
         </aside>
         <div id="sidebar-resize"></div>
+        <aside id="sidebar-right" class="hidden">
+            <div id="sidebar-header-right">
+                <div class="sidebar-header-row">
+                    <span><span id="root-dir-name-right"></span></span>
+                    <span style="display:flex;align-items:center;gap:0;">
+                        <span id="sidebar-header-actions-right"></span>
+                    </span>
+                </div>
+            </div>
+            <div id="tree-container-right"></div>
+        </aside>
+        <div id="sidebar-right-resize"></div>
         <div class="editor-area">
             <div id="tabs" class="hide-ext">
                 <div id="tab-settings-wrap">
@@ -1251,26 +1284,25 @@ async renameItem() {
     }
 }
 // ────────────────────────────────────────────────────────
-// TreeManager – file tree data + DOM rendering (TREE.html structure + Unicode magic)
+// DirectoryTreeView – reusable view for a directory tree pane
 // ────────────────────────────────────────────────────────
-class TreeManager {
-    #fileTree = null;
-    #nodeByPath = new Map();
-    /** @param {ReactiveState} state @param {FileSystemManager} fs */
-    constructor(state, fs) {
+class DirectoryTreeView {
+    #activeDirectoryPath = null;
+    /** @param {string} containerId @param {ReactiveState} state @param {FileSystemManager} fs @param {string} paneName */
+    constructor(containerId, state, fs, paneName = 'left') {
+        this.container = document.getElementById(containerId);
         this.state = state;
         this.fs = fs;
+        this.paneName = paneName;
         this.longPressTriggered = false;
-        this.treeContainer = null;
         this.rootDirNameEl = null;
         this.sidebarHeaderActionsEl = null;
+        this.treeManager = null; // set when added to TreeManager
         this.state.addEventListener('activeFilePathChanged', () => this.highlightActive());
-        this.state.addEventListener('activeDirectoryPathChanged', () => this.highlightActive());
     }
-    get fileTree() { return this.#fileTree; }
-    set fileTree(v) { this.#fileTree = v; }
-    getNode(path) { return this.#nodeByPath.get(path); }
-    registerNode(path, node) { this.#nodeByPath.set(path, node); }
+
+    get activeDirectoryPath() { return this.#activeDirectoryPath; }
+    set activeDirectoryPath(v) { this.#activeDirectoryPath = v; this.highlightActive(); }
 
     #renderTree(node, container, guides = [], isLast = true) {
         const isDir = node.kind === 'directory';
@@ -1278,18 +1310,9 @@ class TreeManager {
         row.className = `tree-row ${isDir ? 'dir-row' : ''}`;
         row.dataset.path = node.path;
 
-        // Tree guide lines
-        // ─────────────────────────────────────────────────
-        // `guides` is a boolean array — one entry per ancestor level.
-        // true = that ancestor still has siblings below, so draw a vertical line.
-        // false = ancestor was the last child, so leave the column blank.
-        // The prefix span is position:relative with whitespace for width;
-        // child spans (.tree-vline / .tree-tee / .tree-elbow) are absolutely
-        // positioned at the correct `ch` offset to draw the connectors.
         const prefixEl = document.createElement('span');
         prefixEl.className = 'prefix';
         prefixEl.textContent = ' '.repeat((guides.length + 1) * 5);
-        // Draw CSS guide lines for parent levels
         guides.forEach((hasLine, idx) => {
             if (hasLine) {
                 const g = document.createElement('span');
@@ -1298,7 +1321,6 @@ class TreeManager {
                 prefixEl.appendChild(g);
             }
         });
-        // Draw connector for current node (directories only)
         if (isDir) {
             const c = document.createElement('span');
             c.className = isLast ? 'tree-elbow' : 'tree-tee';
@@ -1346,6 +1368,7 @@ class TreeManager {
                     childrenDiv.style.display = 'block';
                 }
                 this.fs.saveExpandedState();
+                this.activeDirectoryPath = node.path;
                 this.state.activeDirectoryPath = node.path;
                 this.updateHeader();
             };
@@ -1390,48 +1413,172 @@ class TreeManager {
     }
 
     render() {
-        this.treeContainer.replaceChildren();
-        if (!this.#fileTree) {
+        this.container.replaceChildren();
+        const fileTree = this.treeManager ? this.treeManager.fileTree : null;
+        if (!fileTree) {
             const msg = document.createElement('div');
             msg.style.cssText = 'padding:20px;color:#52525b;text-align:center;font-size:12px';
             msg.textContent = 'No folder open';
-            this.treeContainer.appendChild(msg);
+            this.container.appendChild(msg);
             return;
         }
-        const children = this.#fileTree.children || [];
+        const children = fileTree.children || [];
         const lastDirIdx = children.reduce((acc, c, i) => c.kind === 'directory' ? i : acc, -1);
         children.forEach((child, i) => {
-            this.#renderTree(child, this.treeContainer, [], lastDirIdx < 0 || i >= lastDirIdx);
+            this.#renderTree(child, this.container, [], lastDirIdx < 0 || i >= lastDirIdx);
         });
         this.highlightActive();
     }
     updateHeader() {
-        if (!this.#fileTree || !this.state.currentDirHandle) {
-            this.rootDirNameEl.textContent = 'Click to open folder';
-            this.sidebarHeaderActionsEl.replaceChildren();
+        if (!this.rootDirNameEl) return;
+        const fileTree = this.treeManager ? this.treeManager.fileTree : null;
+        if (!fileTree || !this.state.currentDirHandle) {
+            this.rootDirNameEl.textContent = this.paneName === 'left' ? 'Click to open folder' : '';
+            if (this.sidebarHeaderActionsEl) this.sidebarHeaderActionsEl.replaceChildren();
             return;
         }
-        const safeName = this.state.currentDirHandle.name;
-        this.rootDirNameEl.textContent = safeName;
-        this.sidebarHeaderActionsEl.innerHTML =
-            '<span class="directory-clear" id="refresh-folder" title="Refresh tree">⟳</span>' +
-            '<span class="directory-clear" id="clear-folder">⌫</span>';
+        this.rootDirNameEl.textContent = this.state.currentDirHandle.name;
+        if (this.sidebarHeaderActionsEl) {
+            this.sidebarHeaderActionsEl.innerHTML =
+                '<span class="directory-clear" data-action="refresh-folder" title="Refresh tree">⟳</span>' +
+                '<span class="directory-clear" data-action="clear-folder">⌫</span>';
+        }
     }
     highlightActive() {
-        this.treeContainer.querySelectorAll('.tree-row.active,.tree-row.active-dir').forEach(el => el.classList.remove('active','active-dir'));
+        if (!this.container) return;
+        this.container.querySelectorAll('.tree-row.active,.tree-row.active-dir').forEach(el => el.classList.remove('active','active-dir'));
         if (this.state.activeFilePath) {
-            const el = this.treeContainer.querySelector(`.tree-row[data-path="${CSS.escape(this.state.activeFilePath)}"]`);
+            const el = this.container.querySelector(`.tree-row[data-path="${CSS.escape(this.state.activeFilePath)}"]`);
             if (el) el.classList.add('active');
         }
-        if (this.state.activeDirectoryPath) {
-            const dirEl = this.treeContainer.querySelector(`.tree-row[data-path="${CSS.escape(this.state.activeDirectoryPath)}"]`);
+        if (this.#activeDirectoryPath) {
+            const dirEl = this.container.querySelector(`.tree-row[data-path="${CSS.escape(this.#activeDirectoryPath)}"]`);
             if (dirEl) dirEl.classList.add('active-dir');
         }
     }
     clear() {
+        if (this.container) this.container.replaceChildren();
+    }
+
+    bindContainerEvents(callbacks) {
+        const { showContextMenu, parentDirPath } = callbacks;
+        this.container.addEventListener('click', e => {
+            if (!e.target.closest('.tree-row')) {
+                this.activeDirectoryPath = null;
+                this.state.activeDirectoryPath = null;
+            }
+        });
+        this.container.addEventListener('dragover', e => {
+            if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
+            if (e.target.closest('.tree-row')) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            this.container.classList.add('drop-target');
+        });
+        this.container.addEventListener('dragleave', () => this.container.classList.remove('drop-target'));
+        this.container.addEventListener('drop', e => {
+            this.container.classList.remove('drop-target');
+            if (e.target.closest('.tree-row')) return;
+            e.preventDefault();
+            const srcPath = e.dataTransfer.getData('application/x-tree-path');
+            if (srcPath) this.fs.moveEntry(srcPath, '');
+        });
+        this.container.addEventListener('contextmenu', e => {
+            const row = e.target.closest('.tree-row');
+            if (row && row.dataset.path) {
+                const node = this.treeManager.getNode(row.dataset.path);
+                if (node) {
+                    const dirPath = parentDirPath(node);
+                    this.activeDirectoryPath = dirPath;
+                    this.state.activeDirectoryPath = dirPath;
+                    showContextMenu(e, node);
+                }
+            } else {
+                this.activeDirectoryPath = null;
+                this.state.activeDirectoryPath = null;
+                showContextMenu(e, null);
+            }
+        });
+        let longPressTimer = null;
+        let touchMoved = false;
+        this.container.addEventListener('touchstart', e => {
+            this.longPressTriggered = false;
+            touchMoved = false;
+            const touch = e.touches[0];
+            const target = e.target;
+            longPressTimer = setTimeout(() => {
+                this.longPressTriggered = true;
+                const fakeEvent = { preventDefault() {}, clientX: touch.clientX, clientY: touch.clientY };
+                const row = target.closest('.tree-row');
+                if (row && row.dataset.path) {
+                    const node = this.treeManager.getNode(row.dataset.path);
+                    if (node) {
+                        const dirPath = parentDirPath(node);
+                        this.activeDirectoryPath = dirPath;
+                        this.state.activeDirectoryPath = dirPath;
+                        showContextMenu(fakeEvent, node);
+                    }
+                } else {
+                    this.activeDirectoryPath = null;
+                    this.state.activeDirectoryPath = null;
+                    showContextMenu(fakeEvent, null);
+                }
+            }, 600);
+        }, { passive: true });
+        this.container.addEventListener('touchend', e => {
+            clearTimeout(longPressTimer);
+            if (this.longPressTriggered) {
+                e.preventDefault();
+                return;
+            }
+            if (!touchMoved) {
+                const target = e.target;
+                const el = target.closest('.tree-row');
+                if (el) {
+                    e.preventDefault();
+                    el.click();
+                }
+            }
+        });
+        this.container.addEventListener('touchmove', () => { clearTimeout(longPressTimer); touchMoved = true; }, { passive: true });
+    }
+}
+// ────────────────────────────────────────────────────────
+// TreeManager – file tree data layer + view orchestrator
+// ────────────────────────────────────────────────────────
+class TreeManager {
+    #fileTree = null;
+    #nodeByPath = new Map();
+    #views = [];
+    /** @param {ReactiveState} state @param {FileSystemManager} fs */
+    constructor(state, fs) {
+        this.state = state;
+        this.fs = fs;
+    }
+    get fileTree() { return this.#fileTree; }
+    set fileTree(v) { this.#fileTree = v; }
+    getNode(path) { return this.#nodeByPath.get(path); }
+    registerNode(path, node) { this.#nodeByPath.set(path, node); }
+
+    addView(view) {
+        view.treeManager = this;
+        this.#views.push(view);
+        return view;
+    }
+    removeView(view) {
+        const idx = this.#views.indexOf(view);
+        if (idx >= 0) this.#views.splice(idx, 1);
+    }
+    get views() { return this.#views; }
+    get primaryView() { return this.#views[0] || null; }
+
+    render() { this.#views.forEach(v => v.render()); }
+    updateHeader() { this.#views.forEach(v => v.updateHeader()); }
+    highlightActive() { this.#views.forEach(v => v.highlightActive()); }
+    clear() {
         this.#fileTree = null;
         this.#nodeByPath.clear();
-        this.treeContainer.replaceChildren();
+        this.#views.forEach(v => v.clear());
     }
 }
   
@@ -1911,6 +2058,8 @@ class UIManager {
     #wakeRestoring = false;
     #lastHiddenAt = 0;
     #wakeRetryTimer = null;
+    #leftView = null;
+    #rightView = null;
 	    /** @param {ReactiveState} state @param {TabManager} tabs @param {TreeManager} tree @param {FileSystemManager} fs @param {ExtensionManager} extensions */
     constructor(state, tabs, tree, fs, extensions) {
         this.state = state;
@@ -1944,9 +2093,11 @@ class UIManager {
         this.tabs.textarea = this.#textarea;
         this.tabs.gutter = this.#gutter;
         this.tabs.tabsContainer = this.#tabsContainer;
-        this.tree.treeContainer = this.#treeContainer;
-        this.tree.rootDirNameEl = this.#rootDirNameEl;
-        this.tree.sidebarHeaderActionsEl = this.#sidebarHeaderActionsEl;
+        // Create the primary (left) DirectoryTreeView
+        this.#leftView = new DirectoryTreeView('tree-container', this.state, this.fs, 'left');
+        this.#leftView.rootDirNameEl = this.#rootDirNameEl;
+        this.#leftView.sidebarHeaderActionsEl = this.#sidebarHeaderActionsEl;
+        this.tree.addView(this.#leftView);
         const savedSidebarWidth = localStorage.getItem('sidebarWidth');
         if (savedSidebarWidth && !this.#sidebarEl.classList.contains('hidden')) this.#sidebarEl.style.width = savedSidebarWidth;
         this.bindEvents();
@@ -2208,16 +2359,47 @@ class UIManager {
             }
         });
     }
+    #bindViewEvents(view) {
+        view.bindContainerEvents({
+            showContextMenu: (e, node) => this.showContextMenu(e, node),
+            parentDirPath: (node) => this.#parentDirPath(node),
+        });
+    }
+    toggleDuplicateSidebar() {
+        const rightSidebar = document.getElementById('sidebar-right');
+        const rightResize = document.getElementById('sidebar-right-resize');
+        const toggle = document.getElementById('sidebar-dupe-toggle');
+        const isHidden = rightSidebar.classList.contains('hidden');
+        if (isHidden) {
+            rightSidebar.classList.remove('hidden');
+            rightSidebar.style.display = '';
+            rightResize.style.display = '';
+            toggle.classList.add('active');
+            if (!this.#rightView) {
+                this.#rightView = new DirectoryTreeView('tree-container-right', this.state, this.fs, 'right');
+                this.#rightView.rootDirNameEl = document.getElementById('root-dir-name-right');
+                this.#rightView.sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions-right');
+                this.tree.addView(this.#rightView);
+                this.#bindViewEvents(this.#rightView);
+            }
+            this.#rightView.render();
+            this.#rightView.updateHeader();
+        } else {
+            rightSidebar.classList.add('hidden');
+            toggle.classList.remove('active');
+        }
+    }
     bindTreeEvents() {
         document.getElementById('sidebar-toggle').addEventListener('click', () => this.toggleSidebar());
         document.getElementById('sidebar-root-row').addEventListener('click', e => {
-            if (e.target.id === 'refresh-folder' || e.target.id === 'clear-folder' || e.target.id === 'sidebar-add-btn') return;
+            if (e.target.dataset.action === 'refresh-folder' || e.target.dataset.action === 'clear-folder' || e.target.id === 'sidebar-add-btn') return;
             this.fs.openFolder();
         });
         document.getElementById('sidebar-add-btn').addEventListener('click', e => {
             e.stopPropagation();
             this.#showCreateItemDialog();
         });
+        document.getElementById('sidebar-dupe-toggle').addEventListener('click', () => this.toggleDuplicateSidebar());
 
         // Sidebar resize
         const sidebarResizeHandle = document.getElementById('sidebar-resize');
@@ -2244,85 +2426,17 @@ class UIManager {
             document.body.style.userSelect = '';
             localStorage.setItem('sidebarWidth', this.#sidebarEl.offsetWidth + 'px');
         });
-        this.#treeContainer.addEventListener('click', e => {
-            if (!e.target.closest('.tree-row')) this.state.activeDirectoryPath = null;
-        });
-        this.#treeContainer.addEventListener('dragover', e => {
-            if (!e.dataTransfer.types.includes('application/x-tree-path')) return;
-            if (e.target.closest('.tree-row')) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            this.#treeContainer.classList.add('drop-target');
-        });
-        this.#treeContainer.addEventListener('dragleave', () => this.#treeContainer.classList.remove('drop-target'));
-        this.#treeContainer.addEventListener('drop', e => {
-            this.#treeContainer.classList.remove('drop-target');
-            if (e.target.closest('.tree-row')) return;
-            e.preventDefault();
-            const srcPath = e.dataTransfer.getData('application/x-tree-path');
-            if (srcPath) this.fs.moveEntry(srcPath, '');
-        });
+        // Bind container events via DirectoryTreeView
+        this.#bindViewEvents(this.#leftView);
         document.addEventListener('click', e => {
-            if (e.target.id === 'clear-folder') { e.stopPropagation(); this.fs.clearSavedFolder(); return; }
-            if (e.target.id === 'refresh-folder') {
+            if (e.target.dataset.action === 'clear-folder') { e.stopPropagation(); this.fs.clearSavedFolder(); return; }
+            if (e.target.dataset.action === 'refresh-folder') {
                 e.stopPropagation();
                 if (this.state.currentDirHandle) this.fs.mutateAndRebuild();
                 return;
             }
             if (!e.target.closest('.context-menu')) this.closeContextMenu();
         });
-        this.#treeContainer.addEventListener('contextmenu', e => {
-            const row = e.target.closest('.tree-row');
-            if (row && row.dataset.path) {
-                const node = this.tree.getNode(row.dataset.path);
-                if (node) {
-                    this.state.activeDirectoryPath = this.#parentDirPath(node);
-                    this.showContextMenu(e, node);
-                }
-            } else {
-                this.state.activeDirectoryPath = null;
-                this.showContextMenu(e, null);
-            }
-        });
-        let longPressTimer = null;
-        let touchMoved = false;
-        this.#treeContainer.addEventListener('touchstart', e => {
-            this.tree.longPressTriggered = false;
-            touchMoved = false;
-            const touch = e.touches[0];
-            const target = e.target;
-            longPressTimer = setTimeout(() => {
-                this.tree.longPressTriggered = true;
-                const fakeEvent = { preventDefault() {}, clientX: touch.clientX, clientY: touch.clientY };
-                const row = target.closest('.tree-row');
-                if (row && row.dataset.path) {
-                    const node = this.tree.getNode(row.dataset.path);
-                    if (node) {
-                        this.state.activeDirectoryPath = this.#parentDirPath(node);
-                        this.showContextMenu(fakeEvent, node);
-                    }
-                } else {
-                    this.state.activeDirectoryPath = null;
-                    this.showContextMenu(fakeEvent, null);
-                }
-            }, 600);
-        }, { passive: true });
-        this.#treeContainer.addEventListener('touchend', e => {
-            clearTimeout(longPressTimer);
-            if (this.tree.longPressTriggered) {
-                e.preventDefault();
-                return;
-            }
-            if (!touchMoved) {
-                const target = e.target;
-                const el = target.closest('.tree-row');
-                if (el) {
-                    e.preventDefault();
-                    el.click();
-                }
-            }
-        });
-        this.#treeContainer.addEventListener('touchmove', () => { clearTimeout(longPressTimer); touchMoved = true; }, { passive: true });
     }
     bindTabEvents() {
         // Allow dropping a tab past the last tab (append to end)
