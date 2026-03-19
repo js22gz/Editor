@@ -1029,7 +1029,6 @@ async openFileFromNode(node) {
             tab.dirty = false;
             if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'hidden';
             this.ui.updateEditorStatus(tab);
-            this.ui.showToast('Saved', 1200);
         } catch (err) {
             this.ui.showToast(err.message.includes('permission') ? 'Re-authorize folder' : 'Save failed');
         }
