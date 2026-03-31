@@ -654,6 +654,7 @@ class PathUtils {
 // ────────────────────────────────────────────────────────
 class FileSystemManager {
     #INVALID_CHARS = /[<>:"|?*\x00-\x1F]/;
+    #MAX_FILE_SIZE = 3 * 1024 * 1024; // 3 MB
     #saveInProgress = false;
     #restoring = false;
     #restoreStartedAt = 0;
@@ -676,6 +677,13 @@ class FileSystemManager {
                 }, 750);
             };
         })();
+    }
+    get maxFileSize() { return this.#MAX_FILE_SIZE; }
+    /** Prompt the user before opening a file exceeding #MAX_FILE_SIZE. Returns true if the file is small enough or the user chose to proceed. */
+    async #confirmLargeFile(file) {
+        if (file.size <= this.#MAX_FILE_SIZE) return true;
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+        return this.ui.showDialog({ isConfirm: true, confirmMessage: `This file is ${sizeMB} MB. Files over 3 MB may slow down or freeze the editor. Open anyway?`, danger: true });
     }
     // ── Core helpers ───────────────────────────────────────
     async #guard(handle, action = 'operation') {
@@ -951,7 +959,8 @@ class FileSystemManager {
   try {
     const [handle] = await window.showOpenFilePicker();
     const file = await handle.getFile();
-    const content = await file.text(); // will throw or freeze on huge files
+    if (!await this.#confirmLargeFile(file)) return;
+    const content = await file.text();
     for (const t of this.state.tabs) {
       if (t.handle && await this.isSameEntry(t.handle, handle)) {
         this.tabs.switchToTab(t.id);
@@ -967,6 +976,7 @@ class FileSystemManager {
 async openFileFromNode(node) {
   try {
     const file = await node.handle.getFile();
+    if (!await this.#confirmLargeFile(file)) return;
     const content = await file.text();
     await this.tabs.createNewTab(node.handle, node.name, content, node.path);
     if (this.ui.isMobile && !this.ui.sidebarEl.classList.contains('hidden')) {
@@ -2019,6 +2029,8 @@ class TabManager {
                 }
                 const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
                 const file = await fileHandle.getFile();
+                // Skip oversized files silently during restoration to avoid multiple prompts on startup
+                if (file.size > this.fs.maxFileSize) { continue; }
                 const content = await file.text();
                 await this.createNewTab(fileHandle, st.name, content, st.path, st.type || 'text');
                 if (st.active) activeTabPath = st.path;
