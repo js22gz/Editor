@@ -865,7 +865,9 @@ class FileSystemManager {
             const data = this.state.tabs
                 .filter(t => t.path)
                 .map(t => ({ path: t.path, name: t.name, type: t.type, active: t.id === currentId }));
-            if (data.length || this.state.currentDirHandle) {
+            // Only persist when there are real file-backed tabs to save.
+            // Clearing is handled explicitly by closeTab → localStorage.removeItem.
+            if (data.length) {
                 localStorage.setItem('openTabs', JSON.stringify(data));
             }
         } catch {}
@@ -882,6 +884,13 @@ class FileSystemManager {
         this.#restoring = true;
         this.#restoreStartedAt = Date.now();
         try {
+            // After a page discard (common on ChromeOS deep-sleep / lid-down),
+            // file-system handles may not be usable immediately.  A short pause
+            // lets the OS and browser settle before we touch them.
+            if (document.wasDiscarded) {
+                console.log('[EDITOR] Page was discarded — delaying restore for FS readiness');
+                await new Promise(r => setTimeout(r, 600));
+            }
             this.loadExpandedState();
             const saved = await this.loadSavedFolder();
             if (saved.status === 'granted') {
@@ -2016,8 +2025,7 @@ class TabManager {
         }
         this.switchToTab(this.state.tabs[Math.min(idx, this.state.tabs.length - 1)].id);
     }
-    async restoreOpenTabs(dirHandle, savedTabs) {
-        if (!savedTabs) savedTabs = this.fs.loadOpenTabs();
+    async #tryOpenSavedTabs(dirHandle, savedTabs, label) {
         let restored = 0;
         let activeTabPath = null;
         for (const st of savedTabs) {
@@ -2029,13 +2037,26 @@ class TabManager {
                 }
                 const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
                 const file = await fileHandle.getFile();
-                // Skip oversized files silently during restoration to avoid multiple prompts on startup
                 if (file.size > this.fs.maxFileSize) { continue; }
                 const content = await file.text();
                 await this.createNewTab(fileHandle, st.name, content, st.path, st.type || 'text');
                 if (st.active) activeTabPath = st.path;
                 restored++;
-            } catch { }
+            } catch (e) {
+                console.warn(`[EDITOR] Tab restore ${label} failed for "${st.path}":`, e.name || e);
+            }
+        }
+        return { restored, activeTabPath };
+    }
+    async restoreOpenTabs(dirHandle, savedTabs) {
+        if (!savedTabs) savedTabs = this.fs.loadOpenTabs();
+        if (!savedTabs.length) return 0;
+        let { restored, activeTabPath } = await this.#tryOpenSavedTabs(dirHandle, savedTabs, '');
+        // If ALL tabs failed (common after deep sleep when FS hasn't settled), retry once
+        if (restored === 0 && savedTabs.length > 0) {
+            console.log(`[EDITOR] All ${savedTabs.length} tab(s) failed — retrying after delay…`);
+            await new Promise(r => setTimeout(r, 1500));
+            ({ restored, activeTabPath } = await this.#tryOpenSavedTabs(dirHandle, savedTabs, 'retry'));
         }
         if (activeTabPath) {
             const activeTab = this.state.tabs.find(t => t.path === activeTabPath);
@@ -2701,6 +2722,14 @@ async #wakeRestore() {
             this.tree.render();
             this.tree.updateHeader();
             this.tree.highlightActive();
+            // If tabs disappeared (e.g. page discarded mid-session), restore from localStorage
+            if (!this.state.tabs.length) {
+                const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
+                if (restored) this.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+                if (!this.state.tabs.length) {
+                    await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
+                }
+            }
         } else if (!hadHandleBefore) {
             // Cold start / deep sleep – force full session restore (this fixes empty state)
             console.log('[EDITOR WAKE] No folder loaded → forcing restoreSession()');
@@ -2742,9 +2771,12 @@ async #wakeRestore() {
     }
 
 	bindLifecycle() {
-    // bfcache restore
+    // bfcache restore OR page-discard reload
     window.addEventListener('pageshow', async (e) => {
-        if (e.persisted) await this.#wakeRestore();
+        if (e.persisted || document.wasDiscarded) {
+            console.log(`[EDITOR WAKE] pageshow → persisted=${e.persisted} wasDiscarded=${document.wasDiscarded}`);
+            await this.#wakeRestore();
+        }
     });
 
     document.addEventListener('freeze', () => {
