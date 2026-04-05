@@ -2025,12 +2025,9 @@ class TabManager {
         }
         this.switchToTab(this.state.tabs[Math.min(idx, this.state.tabs.length - 1)].id);
     }
-    async restoreOpenTabs(dirHandle, savedTabs) {
-        if (!savedTabs) savedTabs = this.fs.loadOpenTabs();
-        if (!savedTabs.length) return 0;
+    async #tryOpenSavedTabs(dirHandle, savedTabs, label) {
         let restored = 0;
         let activeTabPath = null;
-        let failures = 0;
         for (const st of savedTabs) {
             try {
                 const parts = st.path.split('/').filter(Boolean);
@@ -2040,39 +2037,26 @@ class TabManager {
                 }
                 const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
                 const file = await fileHandle.getFile();
-                // Skip oversized files silently during restoration to avoid multiple prompts on startup
                 if (file.size > this.fs.maxFileSize) { continue; }
                 const content = await file.text();
                 await this.createNewTab(fileHandle, st.name, content, st.path, st.type || 'text');
                 if (st.active) activeTabPath = st.path;
                 restored++;
             } catch (e) {
-                failures++;
-                console.warn(`[EDITOR] Tab restore failed for "${st.path}":`, e.name || e);
+                console.warn(`[EDITOR] Tab restore ${label} failed for "${st.path}":`, e.name || e);
             }
         }
+        return { restored, activeTabPath };
+    }
+    async restoreOpenTabs(dirHandle, savedTabs) {
+        if (!savedTabs) savedTabs = this.fs.loadOpenTabs();
+        if (!savedTabs.length) return 0;
+        let { restored, activeTabPath } = await this.#tryOpenSavedTabs(dirHandle, savedTabs, '');
         // If ALL tabs failed (common after deep sleep when FS hasn't settled), retry once
-        if (restored === 0 && failures > 0) {
-            console.log(`[EDITOR] All ${failures} tab(s) failed — retrying after delay…`);
+        if (restored === 0 && savedTabs.length > 0) {
+            console.log(`[EDITOR] All ${savedTabs.length} tab(s) failed — retrying after delay…`);
             await new Promise(r => setTimeout(r, 1500));
-            for (const st of savedTabs) {
-                try {
-                    const parts = st.path.split('/').filter(Boolean);
-                    let handle = dirHandle;
-                    for (let i = 0; i < parts.length - 1; i++) {
-                        handle = await handle.getDirectoryHandle(parts[i]);
-                    }
-                    const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
-                    const file = await fileHandle.getFile();
-                    if (file.size > this.fs.maxFileSize) { continue; }
-                    const content = await file.text();
-                    await this.createNewTab(fileHandle, st.name, content, st.path, st.type || 'text');
-                    if (st.active) activeTabPath = st.path;
-                    restored++;
-                } catch (e) {
-                    console.warn(`[EDITOR] Tab restore retry failed for "${st.path}":`, e.name || e);
-                }
-            }
+            ({ restored, activeTabPath } = await this.#tryOpenSavedTabs(dirHandle, savedTabs, 'retry'));
         }
         if (activeTabPath) {
             const activeTab = this.state.tabs.find(t => t.path === activeTabPath);
