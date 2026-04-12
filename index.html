@@ -2820,13 +2820,39 @@ async #wakeRestore() {
         }
     });
 }
-	    bindEvents() {
-        this.bindKeyboard();
-        this.bindTreeEvents();
-        this.bindTabEvents();
-        this.bindSettings();
-        this.bindLifecycle();
-    }
+bindEvents() {
+    this.bindKeyboard();
+    this.bindTreeEvents();
+    this.bindTabEvents();
+    this.bindSettings();
+    this.bindLifecycle();
+
+    // ── EXTENSION → EDITOR COMMUNICATION ──
+    // Receives 'extension:dirty' and 'extension:save' from sandboxed iframes
+    window.addEventListener('message', async e => {
+        if (!e.data || typeof e.data !== 'object') return;
+
+        const activeTab = this.state.getActiveTab();
+        if (!activeTab || activeTab.type !== 'extension') return;
+
+        if (e.data.type === 'extension:dirty') {
+            if (TabManager.canTabBeDirty(activeTab.type)) {
+                activeTab.dirty = true;
+                if (activeTab.element) {
+                    const ind = activeTab.element.querySelector('.dirty-indicator');
+                    if (ind) ind.style.visibility = 'visible';
+                }
+                this.fs.scheduleSave();
+                this.updateEditorStatus(activeTab);
+            }
+        }
+        else if (e.data.type === 'extension:save') {
+            activeTab.content = e.data.content || '';
+            activeTab.dirty = true;
+            await this.fs.saveTab(activeTab);
+            this.updateEditorStatus(activeTab);
+        }
+    });
 }
 // ────────────────────────────────────────────────────────
 // EditorApp – orchestrator
