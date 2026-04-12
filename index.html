@@ -2827,8 +2827,6 @@ bindEvents() {
     this.bindSettings();
     this.bindLifecycle();
 
-    // ── EXTENSION → EDITOR COMMUNICATION ──
-    // Receives 'extension:dirty' and 'extension:save' from sandboxed iframes
     window.addEventListener('message', async e => {
         if (!e.data || typeof e.data !== 'object') return;
 
@@ -2854,6 +2852,7 @@ bindEvents() {
         }
     });
 }
+	
 // ────────────────────────────────────────────────────────
 // EditorApp – orchestrator
 // ────────────────────────────────────────────────────────
