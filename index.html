@@ -2055,24 +2055,50 @@ class TabManager {
         }
         return { restored, activeTabPath };
     }
-    async restoreOpenTabs(dirHandle, savedTabs) {
-        if (!savedTabs) savedTabs = this.fs.loadOpenTabs();
-        if (!savedTabs.length) return 0;
-        let { restored, activeTabPath } = await this.#tryOpenSavedTabs(dirHandle, savedTabs, '');
-        // If ALL tabs failed (common after deep sleep when FS hasn't settled), retry once
-        if (restored === 0 && savedTabs.length > 0) {
-            console.log(`[EDITOR] All ${savedTabs.length} tab(s) failed — retrying after delay…`);
-            await new Promise(r => setTimeout(r, 1500));
-            ({ restored, activeTabPath } = await this.#tryOpenSavedTabs(dirHandle, savedTabs, 'retry'));
-        }
-        if (activeTabPath) {
-            const activeTab = this.state.tabs.find(t => t.path === activeTabPath);
-            if (activeTab) this.switchToTab(activeTab.id);
-        } else if (this.state.tabs.length > 0) {
-            this.switchToTab(this.state.tabs[0].id);
-        }
-        return restored;
-    }
+	async restoreOpenTabs(dirHandle, savedTabs) {
+	  if (!savedTabs) savedTabs = this.fs.loadOpenTabs();
+	  if (!savedTabs.length) return 0;
+	
+	  let { restored, activeTabPath } = await this.#tryOpenSavedTabs(dirHandle, savedTabs, '');
+	
+	  // First retry — longer delay for ChromeOS lid close
+	  if (restored === 0 && savedTabs.length > 0) {
+	    console.log(`[EDITOR] All ${savedTabs.length} tab(s) failed — retrying after 2800ms…`);
+	    await new Promise(r => setTimeout(r, 2800));
+	    ({ restored, activeTabPath } = await this.#tryOpenSavedTabs(dirHandle, savedTabs, 'retry1'));
+	  }
+	
+	  // Second retry — even longer (covers deep suspend)
+	  if (restored === 0 && savedTabs.length > 0) {
+	    console.log(`[EDITOR] Still failing — second retry after another 2800ms…`);
+	    await new Promise(r => setTimeout(r, 2800));
+	    ({ restored, activeTabPath } = await this.#tryOpenSavedTabs(dirHandle, savedTabs, 'retry2'));
+	  }
+	
+	  // If we still failed → show the manual recovery toast (this forces permission re-grant)
+	  if (restored === 0 && savedTabs.length > 0) {
+	    this.ui.showActionToast('ChromeOS wake — Tap to restore folder & tabs', async () => {
+	      try {
+	        if (await dirHandle.requestPermission({ mode: 'readwrite' }) === 'granted') {
+	          await this.fs.mutateAndRebuild();
+	          const finalRestored = await this.restoreOpenTabs(dirHandle, savedTabs);
+	          if (finalRestored) this.ui.showToast(`Restored ${finalRestored} tab${finalRestored > 1 ? 's' : ''}`);
+	        }
+	      } catch (e) {
+	        this.ui.showToast('Failed to restore access');
+	      }
+	    }, 15000);
+	  }
+	
+	  if (activeTabPath) {
+	    const activeTab = this.state.tabs.find(t => t.path === activeTabPath);
+	    if (activeTab) this.switchToTab(activeTab.id);
+	  } else if (this.state.tabs.length > 0) {
+	    this.switchToTab(this.state.tabs[0].id);
+	  }
+	
+	  return restored;
+	}
 }
 // ────────────────────────────────────────────────────────
 // UIManager – DOM init, events & rendering
@@ -2720,21 +2746,23 @@ class UIManager {
 
 	// Centralized wake handler — guards against concurrent calls
 async #wakeRestore() {
-  if (this.#wakeRestoring) return;
+  if (this.#wakeRestoring) {
+    console.log('[EDITOR WAKE] Already restoring — skipping duplicate call');
+    return;
+  }
   this.#wakeRestoring = true;
   try {
-    console.log('%c[EDITOR WAKE] Starting recovery (ChromeOS mode)', 'color:#22c55e;font-weight:bold');
+    console.log('%c[EDITOR WAKE] Starting full recovery (ChromeOS lid-close mode)', 'color:#22c55e;font-weight:bold');
 
     const hadHandleBefore = !!this.state.currentDirHandle;
     const permOk = await this.#revalidatePermission();
 
     if (permOk && this.state.currentDirHandle) {
-      // Extra delay on ChromeOS after discard/sleep
+      // Force full tree rebuild FIRST (this refreshes all handles)
       if (document.wasDiscarded) {
-        console.log('%c[EDITOR WAKE] Page was discarded — extra 900ms settle', 'color:#eab308');
-        await new Promise(r => setTimeout(r, 900));
+        await new Promise(r => setTimeout(r, 1200));
       } else {
-        await new Promise(r => setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, 600));
       }
 
       await this.fs.mutateAndRebuild();
@@ -2742,16 +2770,17 @@ async #wakeRestore() {
       this.tree.updateHeader();
       this.tree.highlightActive();
 
+      // Now restore tabs
       if (!this.state.tabs.length) {
         const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
         if (restored) this.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
       }
     } else if (!hadHandleBefore) {
-      console.log('%c[EDITOR WAKE] No folder → forcing full restoreSession()', 'color:#eab308');
+      console.log('%c[EDITOR WAKE] No folder loaded → forcing full restoreSession()', 'color:#eab308');
       await this.fs.restoreSession();
     }
 
-    // Final safety refresh of active tab
+    // Refresh active tab content from disk
     const activeTab = this.state.getActiveTab();
     if (activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty && this.#textarea) {
       try {
@@ -2769,8 +2798,10 @@ async #wakeRestore() {
     this.#wakeRestoring = false;
     this.#lastHiddenAt = 0;
   }
-}	
-    #scheduleWakeRetry() {
+}
+	
+	
+	#scheduleWakeRetry() {
         clearTimeout(this.#wakeRetryTimer);
         if (this.state.tabs.length) return;
         const hasSavedTabs = this.fs.loadOpenTabs().length > 0;
