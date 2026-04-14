@@ -2465,36 +2465,41 @@ class UIManager {
             parentDirPath: (node) => this.#parentDirPath(node),
         });
     }
-    toggleDuplicateSidebar() {
-        const rightSidebar = document.getElementById('sidebar-right');
-        const rightResize = document.getElementById('sidebar-right-resize');
-        const toggle = document.getElementById('sidebar-dupe-toggle');
-        const isHidden = rightSidebar.classList.contains('hidden');
-if (isHidden) {
-  rightSidebar.classList.remove('hidden');
-  rightResize.style.display = '';
-  toggle.classList.add('active');
-  
-  // Restore saved width for the right sidebar
-  const savedWidth = localStorage.getItem('sidebarRightWidth');
-  if (savedWidth) {
-    rightSidebar.style.width = savedWidth;
+
+	toggleDuplicateSidebar() {
+  const rightSidebar = document.getElementById('sidebar-right');
+  const rightResize = document.getElementById('sidebar-right-resize');
+  const toggle = document.getElementById('sidebar-dupe-toggle');
+  const isCurrentlyHidden = rightSidebar.classList.contains('hidden');
+
+  if (isCurrentlyHidden) {
+    // SHOW
+    rightSidebar.classList.remove('hidden');
+    rightResize.style.display = '';
+    toggle.classList.add('active');
+
+    // Restore saved width (or default)
+    const savedWidth = localStorage.getItem('sidebarRightWidth');
+    rightSidebar.style.width = savedWidth || '280px';
+
+    if (!this.#rightView) {
+      this.#rightView = new DirectoryTreeView('tree-container-right', this.state, this.fs, 'right');
+      this.#rightView.rootDirNameEl = document.getElementById('root-dir-name-right');
+      this.#rightView.sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions-right');
+      this.tree.addView(this.#rightView);
+      this.#bindViewEvents(this.#rightView);
+    }
+    this.#rightView.render();
+    this.#rightView.updateHeader();
+  } else {
+    // HIDE — this is the part that was missing
+    rightSidebar.classList.add('hidden');
+    rightSidebar.style.width = '';        // ← clears the inline width so .hidden can take effect
+    rightResize.style.display = 'none';
+    toggle.classList.remove('active');
   }
-  
-  if (!this.#rightView) {
-    this.#rightView = new DirectoryTreeView('tree-container-right', this.state, this.fs, 'right');
-    this.#rightView.rootDirNameEl = document.getElementById('root-dir-name-right');
-    this.#rightView.sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions-right');
-    this.tree.addView(this.#rightView);
-    this.#bindViewEvents(this.#rightView);
-  }
-  this.#rightView.render();
-  this.#rightView.updateHeader();
-} else {
-  rightSidebar.classList.add('hidden');
-  toggle.classList.remove('active');
 }
-}
+	
     bindTreeEvents() {
         document.getElementById('sidebar-toggle').addEventListener('click', () => this.toggleSidebar());
         document.getElementById('sidebar-root-row').addEventListener('click', e => {
