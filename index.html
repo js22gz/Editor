@@ -2118,6 +2118,10 @@ class UIManager {
     get editorStatusEl() { return this.#editorStatusEl; }
     async init() {
         this.#textarea = document.getElementById('textarea');
+		// Wait for service worker to be fully ready before restore
+		if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+		  await navigator.serviceWorker.ready;
+		}
         this.#gutter = document.getElementById('gutter');
         this.#tabsContainer = document.getElementById('tabs');
         this.#treeContainer = document.getElementById('tree-container');
@@ -2713,55 +2717,59 @@ class UIManager {
             } catch (e) { console.warn('Refresh active tab on wake failed', e); }
         }
     }
-    // Centralized wake handler — guards against concurrent calls
+
+	// Centralized wake handler — guards against concurrent calls
 async #wakeRestore() {
-    if (this.#wakeRestoring) return;
-    this.#wakeRestoring = true;
-    try {
-        console.log('[EDITOR WAKE] Starting full recovery...');
+  if (this.#wakeRestoring) return;
+  this.#wakeRestoring = true;
+  try {
+    console.log('%c[EDITOR WAKE] Starting recovery (ChromeOS mode)', 'color:#22c55e;font-weight:bold');
 
-        const hadHandleBefore = !!this.state.currentDirHandle;
-        const permOk = await this.#revalidatePermission();
+    const hadHandleBefore = !!this.state.currentDirHandle;
+    const permOk = await this.#revalidatePermission();
 
-        if (permOk && this.state.currentDirHandle) {
-            await new Promise(r => setTimeout(r, 400)); // let FS handles settle after sleep
-            await this.fs.mutateAndRebuild();
-            this.tree.render();
-            this.tree.updateHeader();
-            this.tree.highlightActive();
-            // If tabs disappeared (e.g. page discarded mid-session), restore from localStorage
-            if (!this.state.tabs.length) {
-                const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
-                if (restored) this.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-                if (!this.state.tabs.length) {
-                    await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
-                }
-            }
-        } else if (!hadHandleBefore) {
-            // Cold start / deep sleep – force full session restore (this fixes empty state)
-            console.log('[EDITOR WAKE] No folder loaded → forcing restoreSession()');
-            await this.fs.restoreSession();
-        }
+    if (permOk && this.state.currentDirHandle) {
+      // Extra delay on ChromeOS after discard/sleep
+      if (document.wasDiscarded) {
+        console.log('%c[EDITOR WAKE] Page was discarded — extra 900ms settle', 'color:#eab308');
+        await new Promise(r => setTimeout(r, 900));
+      } else {
+        await new Promise(r => setTimeout(r, 400));
+      }
 
-        // Refresh active non-dirty tab content from disk
-        const activeTab = this.state.getActiveTab();
-        if (activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty && this.#textarea) {
-            try {
-                const file = await activeTab.handle.getFile();
-                const content = await file.text();
-                activeTab.content = content;
-                if (this.state.currentTabId === activeTab.id) {
-                    this.#textarea.value = content;
-                    this.updateLineNumbers(true);
-                }
-            } catch (e) { console.warn('Wake tab refresh failed', e); }
-        }
-    } finally {
-        this.#wakeRestoring = false;
-        this.#lastHiddenAt = 0;
+      await this.fs.mutateAndRebuild();
+      this.tree.render();
+      this.tree.updateHeader();
+      this.tree.highlightActive();
+
+      if (!this.state.tabs.length) {
+        const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
+        if (restored) this.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+      }
+    } else if (!hadHandleBefore) {
+      console.log('%c[EDITOR WAKE] No folder → forcing full restoreSession()', 'color:#eab308');
+      await this.fs.restoreSession();
     }
-}
-	
+
+    // Final safety refresh of active tab
+    const activeTab = this.state.getActiveTab();
+    if (activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty && this.#textarea) {
+      try {
+        const file = await activeTab.handle.getFile();
+        activeTab.content = await file.text();
+        if (this.state.currentTabId === activeTab.id) {
+          this.#textarea.value = activeTab.content;
+          this.updateLineNumbers(true);
+        }
+      } catch (e) {
+        console.warn('Wake tab refresh failed', e);
+      }
+    }
+  } finally {
+    this.#wakeRestoring = false;
+    this.#lastHiddenAt = 0;
+  }
+}	
     #scheduleWakeRetry() {
         clearTimeout(this.#wakeRetryTimer);
         if (this.state.tabs.length) return;
