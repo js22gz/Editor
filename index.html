@@ -143,7 +143,7 @@ body {
 
 main { flex: 1; display: flex; overflow: hidden; }
 
-.editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; order: 1; }
 
 /* ────────────────────────────────────────────────────────
    3. HEADER
@@ -175,7 +175,6 @@ header:fullscreen { display: none; }
 #sidebar, #sidebar-right {
   width: 280px;
   background: var(--bg-sidebar);
-  border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -183,13 +182,16 @@ header:fullscreen { display: none; }
   overflow: hidden;
   position: relative;
 }
+#sidebar { border-right: 1px solid var(--border-color); }
+#sidebar-right { border-left: 1px solid var(--border-color); order: 3; }
 
 #sidebar.hidden, #sidebar-right.hidden {
   width: 0;
-  border-right: none;
   opacity: 0;
   pointer-events: none;
 }
+#sidebar.hidden { border-right: none; }
+#sidebar-right.hidden { border-left: none; }
 
 #sidebar-header, #sidebar-header-right {
   padding: 0;
@@ -470,7 +472,7 @@ header:fullscreen { display: none; }
 #sidebar-resize:hover { background: var(--border-subtle); }
 #sidebar.hidden + #sidebar-resize { display: none; }
 #sidebar-right-resize {
-  width: 5px; cursor: col-resize; background: transparent; flex-shrink: 0;
+  width: 5px; cursor: col-resize; background: transparent; flex-shrink: 0; order: 2;
 }
 #sidebar-right-resize:hover { background: var(--border-subtle); }
 #sidebar-right.hidden ~ #sidebar-right-resize { display: none; }
@@ -2543,7 +2545,7 @@ class UIManager {
 		
 		document.addEventListener('mousemove', e => {
 		  if (!rightResizing) return;
-		  const w = Math.max(150, Math.min(600, rightResizeStartW + (e.clientX - rightResizeStartX)));
+		  const w = Math.max(150, Math.min(600, rightResizeStartW - (e.clientX - rightResizeStartX)));
 		  document.getElementById('sidebar-right').style.width = w + 'px';
 		});
 		
