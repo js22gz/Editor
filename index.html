@@ -169,30 +169,60 @@ header:fullscreen { display: none; }
 /* ────────────────────────────────────────────────────────
    4. SIDEBAR & TREE
 ──────────────────────────────────────────────────────── */
-#sidebar {
-  width: 280px; background: var(--bg-sidebar); border-right: 1px solid var(--border-color);
-  display: flex; flex-direction: column; flex-shrink: 0;
-  transition: width 0.2s, opacity 0.2s; overflow: hidden; position: relative;
+/* ────────────────────────────────────────────────────────
+   4. SIDEBAR & TREE (DUAL-PANE – DEDUPLICATED)
+──────────────────────────────────────────────────────── */
+#sidebar, #sidebar-right {
+  width: 280px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: width 0.2s, opacity 0.2s;
+  overflow: hidden;
+  position: relative;
 }
-#sidebar.hidden { width: 0; border-right: none; opacity: 0; pointer-events: none; }
-#sidebar-right {
-  width: 280px; background: var(--bg-sidebar); border-right: 1px solid var(--border-color);
-  display: flex; flex-direction: column; flex-shrink: 0;
-  transition: width 0.2s, opacity 0.2s; overflow: hidden; position: relative;
-}
-#sidebar-right.hidden { width: 0; border-right: none; opacity: 0; pointer-events: none; }
 
-#sidebar-header, #sidebar-header-right { padding: 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-subtle); border-bottom: 1px solid var(--border-color); }
-.sidebar-header-row { padding: 8px 16px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; color: var(--text-strong); }
+#sidebar.hidden, #sidebar-right.hidden {
+  width: 0;
+  border-right: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#sidebar-header, #sidebar-header-right {
+  padding: 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-subtle);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-header-row {
+  padding: 8px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-strong);
+}
+
 .sidebar-header-row:hover { color: var(--text-primary); }
-.sidebar-header-label { color: var(--text-dim); margin-right: 6px; }
+
 .directory-clear { cursor: pointer; margin-left: 8px; }
 
 #tree-container, #tree-container-right {
-  flex: 1; overflow-y: auto; padding: 8px 12px 30px 8px;
-  font-family: ui-monospace, monospace; font-size: 14px; line-height: 1.38; user-select: none;
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px 30px 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 14px;
+  line-height: 1.38;
+  user-select: none;
 }
-
+	
 .tree-row {
   display: flex; align-items: center; padding: 6px 10px; border-radius: 3px;
   transition: background 0.1s ease; position: relative; z-index: 2;
@@ -2168,7 +2198,9 @@ class UIManager {
         this.tree.addView(this.#leftView);
         const savedSidebarWidth = localStorage.getItem('sidebarWidth');
         if (savedSidebarWidth && !this.#sidebarEl.classList.contains('hidden')) this.#sidebarEl.style.width = savedSidebarWidth;
-        this.bindEvents();
+        const savedRightWidth = localStorage.getItem('sidebarRightWidth');
+		if (savedRightWidth) { document.getElementById('sidebar-right').style.width = savedRightWidth }
+		this.bindEvents();		
         // Restore settings
         const savedFontSize = parseInt(localStorage.getItem('editorFontSize'));
         if (savedFontSize) {
@@ -2469,7 +2501,7 @@ class UIManager {
         });
         document.getElementById('sidebar-dupe-toggle').addEventListener('click', () => this.toggleDuplicateSidebar());
 
-        // Sidebar resize
+        // Left sidebar resize
         const sidebarResizeHandle = document.getElementById('sidebar-resize');
         let sidebarResizing = false, sidebarResizeStartX = 0, sidebarResizeStartW = 0;
         sidebarResizeHandle.addEventListener('mousedown', e => {
@@ -2494,6 +2526,37 @@ class UIManager {
             document.body.style.userSelect = '';
             localStorage.setItem('sidebarWidth', this.#sidebarEl.offsetWidth + 'px');
         });
+
+				// ── Right sidebar resize (mirror of left) ──
+		const rightResizeHandle = document.getElementById('sidebar-right-resize');
+		let rightResizing = false, rightResizeStartX = 0, rightResizeStartW = 0;
+		
+		rightResizeHandle.addEventListener('mousedown', e => {
+		  rightResizing = true;
+		  rightResizeStartX = e.clientX;
+		  rightResizeStartW = document.getElementById('sidebar-right').offsetWidth;
+		  document.getElementById('sidebar-right').style.transition = 'none';
+		  document.body.style.cursor = 'col-resize';
+		  document.body.style.userSelect = 'none';
+		  e.preventDefault();
+		});
+		
+		document.addEventListener('mousemove', e => {
+		  if (!rightResizing) return;
+		  const w = Math.max(150, Math.min(600, rightResizeStartW + (e.clientX - rightResizeStartX)));
+		  document.getElementById('sidebar-right').style.width = w + 'px';
+		});
+		
+		document.addEventListener('mouseup', () => {
+		  if (!rightResizing) return;
+		  rightResizing = false;
+		  document.getElementById('sidebar-right').style.transition = '';
+		  document.body.style.cursor = '';
+		  document.body.style.userSelect = '';
+		  // optional: save right width separately
+		  localStorage.setItem('sidebarRightWidth', document.getElementById('sidebar-right').offsetWidth + 'px');
+		});
+		
         // Bind container events via DirectoryTreeView
         this.#bindViewEvents(this.#leftView);
         document.addEventListener('click', e => {
