@@ -2470,25 +2470,31 @@ class UIManager {
         const rightResize = document.getElementById('sidebar-right-resize');
         const toggle = document.getElementById('sidebar-dupe-toggle');
         const isHidden = rightSidebar.classList.contains('hidden');
-        if (isHidden) {
-            rightSidebar.classList.remove('hidden');
-            rightSidebar.style.display = '';
-            rightResize.style.display = '';
-            toggle.classList.add('active');
-            if (!this.#rightView) {
-                this.#rightView = new DirectoryTreeView('tree-container-right', this.state, this.fs, 'right');
-                this.#rightView.rootDirNameEl = document.getElementById('root-dir-name-right');
-                this.#rightView.sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions-right');
-                this.tree.addView(this.#rightView);
-                this.#bindViewEvents(this.#rightView);
-            }
-            this.#rightView.render();
-            this.#rightView.updateHeader();
-        } else {
-            rightSidebar.classList.add('hidden');
-            toggle.classList.remove('active');
-        }
-    }
+if (isHidden) {
+  rightSidebar.classList.remove('hidden');
+  rightResize.style.display = '';
+  toggle.classList.add('active');
+  
+  // Restore saved width for the right sidebar
+  const savedWidth = localStorage.getItem('sidebarRightWidth');
+  if (savedWidth) {
+    rightSidebar.style.width = savedWidth;
+  }
+  
+  if (!this.#rightView) {
+    this.#rightView = new DirectoryTreeView('tree-container-right', this.state, this.fs, 'right');
+    this.#rightView.rootDirNameEl = document.getElementById('root-dir-name-right');
+    this.#rightView.sidebarHeaderActionsEl = document.getElementById('sidebar-header-actions-right');
+    this.tree.addView(this.#rightView);
+    this.#bindViewEvents(this.#rightView);
+  }
+  this.#rightView.render();
+  this.#rightView.updateHeader();
+} else {
+  rightSidebar.classList.add('hidden');
+  toggle.classList.remove('active');
+}
+}
     bindTreeEvents() {
         document.getElementById('sidebar-toggle').addEventListener('click', () => this.toggleSidebar());
         document.getElementById('sidebar-root-row').addEventListener('click', e => {
@@ -2501,61 +2507,53 @@ class UIManager {
         });
         document.getElementById('sidebar-dupe-toggle').addEventListener('click', () => this.toggleDuplicateSidebar());
 
-        // Left sidebar resize
-        const sidebarResizeHandle = document.getElementById('sidebar-resize');
-        let sidebarResizing = false, sidebarResizeStartX = 0, sidebarResizeStartW = 0;
-        sidebarResizeHandle.addEventListener('mousedown', e => {
-            sidebarResizing = true;
-            sidebarResizeStartX = e.clientX;
-            sidebarResizeStartW = this.#sidebarEl.offsetWidth;
-            this.#sidebarEl.style.transition = 'none';
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-            e.preventDefault();
-        });
-        document.addEventListener('mousemove', e => {
-            if (!sidebarResizing) return;
-            const w = Math.max(150, Math.min(600, sidebarResizeStartW + e.clientX - sidebarResizeStartX));
-            this.#sidebarEl.style.width = w + 'px';
-        });
-        document.addEventListener('mouseup', () => {
-            if (!sidebarResizing) return;
-            sidebarResizing = false;
-            this.#sidebarEl.style.transition = '';
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-            localStorage.setItem('sidebarWidth', this.#sidebarEl.offsetWidth + 'px');
-        });
+// ── Unified sidebar resizing (left + right) ──
+let resizingSidebar = null; // 'left' | 'right' | null
+let resizeStartX = 0, resizeStartW = 0, resizeEl = null;
 
-				// ── Right sidebar resize (mirror of left) ──
-		const rightResizeHandle = document.getElementById('sidebar-right-resize');
-		let rightResizing = false, rightResizeStartX = 0, rightResizeStartW = 0;
-		
-		rightResizeHandle.addEventListener('mousedown', e => {
-		  rightResizing = true;
-		  rightResizeStartX = e.clientX;
-		  rightResizeStartW = document.getElementById('sidebar-right').offsetWidth;
-		  document.getElementById('sidebar-right').style.transition = 'none';
-		  document.body.style.cursor = 'col-resize';
-		  document.body.style.userSelect = 'none';
-		  e.preventDefault();
-		});
-		
-		document.addEventListener('mousemove', e => {
-		  if (!rightResizing) return;
-		  const w = Math.max(150, Math.min(600, rightResizeStartW + (e.clientX - rightResizeStartX)));
-		  document.getElementById('sidebar-right').style.width = w + 'px';
-		});
-		
-		document.addEventListener('mouseup', () => {
-		  if (!rightResizing) return;
-		  rightResizing = false;
-		  document.getElementById('sidebar-right').style.transition = '';
-		  document.body.style.cursor = '';
-		  document.body.style.userSelect = '';
-		  // optional: save right width separately
-		  localStorage.setItem('sidebarRightWidth', document.getElementById('sidebar-right').offsetWidth + 'px');
-		});
+const startResize = (side, e) => {
+  resizingSidebar = side;
+  resizeStartX = e.clientX;
+  resizeEl = side === 'left' 
+    ? this.#sidebarEl 
+    : document.getElementById('sidebar-right');
+  
+  resizeStartW = resizeEl.offsetWidth;
+  resizeEl.style.transition = 'none';
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  e.preventDefault();
+};
+
+const handleResizeMove = (e) => {
+  if (!resizingSidebar || !resizeEl) return;
+  const delta = e.clientX - resizeStartX;
+  const newWidth = Math.max(150, Math.min(600, resizeStartW + delta));
+  resizeEl.style.width = `${newWidth}px`;
+};
+
+const handleResizeEnd = () => {
+  if (!resizingSidebar) return;
+  const wasLeft = resizingSidebar === 'left';
+  
+  if (resizeEl) resizeEl.style.transition = '';
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  
+  const widthKey = wasLeft ? 'sidebarWidth' : 'sidebarRightWidth';
+  localStorage.setItem(widthKey, (resizeEl?.offsetWidth || 280) + 'px');
+  
+  resizingSidebar = null;
+  resizeEl = null;
+};
+
+// Attach handlers once
+document.getElementById('sidebar-resize').addEventListener('mousedown', e => startResize('left', e));
+document.getElementById('sidebar-right-resize').addEventListener('mousedown', e => startResize('right', e));
+
+document.addEventListener('mousemove', handleResizeMove);
+document.addEventListener('mouseup', handleResizeEnd);
+
 		
         // Bind container events via DirectoryTreeView
         this.#bindViewEvents(this.#leftView);
