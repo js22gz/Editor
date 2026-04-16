@@ -685,7 +685,6 @@ class PathUtils {
 class FileSystemManager {
     #INVALID_CHARS = /[<>:"|?*\x00-\x1F]/;
     #MAX_FILE_SIZE = 3 * 1024 * 1024; // 3 MB
-    #saveInProgress = false;
     #restoring = false;
     #restoreStartedAt = 0;
     /** @param {ReactiveState} state @param {PathUtils} pathUtils */
@@ -701,7 +700,7 @@ class FileSystemManager {
             return () => {
                 clearTimeout(timer);
                 timer = setTimeout(() => {
-                    if (this.#saveInProgress || !this.state.currentTabId) return;
+                    if (!this.state.currentTabId) return;
                     const tab = this.state.getTab(this.state.currentTabId);
                     if (tab?.dirty) this.saveTab(tab);
                 }, 750);
@@ -1100,42 +1099,52 @@ async openFileFromNode(node) {
         return this.tabs.createNewTab(handle, name, '', name);
     }
     // ── Save ───────────────────────────────────────────────
+    #syncActiveTextTab() {
+        const tab = this.state.getActiveTab();
+        if (tab?.type !== 'extension' && tab?.dirty && this.tabs?.textarea) {
+            tab.content = this.tabs.textarea.value;
+        }
+    }
     async saveTab(tab) {
   if (!tab?.handle || !tab.dirty) return;
 
-  if (this.#saveInProgress) {
-    // Extension rapid-fire protection: remember the latest content
+  // Per-tab lock: if this tab is already mid-save, queue a follow-up
+  if (tab._saving) {
+    tab._needsResave = true;
     if (tab.type === 'extension' && tab.pendingContent !== undefined) {
       tab.content = tab.pendingContent;
     }
     return;
   }
 
-  this.#saveInProgress = true;
+  tab._saving = true;
   try {
-    let contentToSave = tab.content;
+    do {
+      tab._needsResave = false;
 
-    // Use the freshest content the extension just sent
-    if (tab.type === 'extension' && tab.pendingContent !== undefined) {
-      contentToSave = tab.pendingContent;
-      tab.content = contentToSave;
-      delete tab.pendingContent;
-    }
+      // Sync textarea for the active text tab
+      if (tab.id === this.state.currentTabId) this.#syncActiveTextTab();
 
-    await this.#write(tab.handle, contentToSave);
+      let contentToSave = tab.content;
+
+      // Use the freshest content the extension just sent
+      if (tab.type === 'extension' && tab.pendingContent !== undefined) {
+        contentToSave = tab.pendingContent;
+        tab.content = contentToSave;
+        delete tab.pendingContent;
+      }
+
+      await this.#write(tab.handle, contentToSave);
+
+    } while (tab._needsResave || (tab.type === 'extension' && tab.pendingContent !== undefined));
 
     tab.dirty = false;
     if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'hidden';
     this.ui.updateEditorStatus(tab);
-
-    // If another save arrived while we were writing → chain it immediately
-    if (tab.type === 'extension' && tab.pendingContent !== undefined) {
-      setTimeout(() => this.saveTab(tab), 0);
-    }
   } catch (err) {
     this.ui.showToast(err.message.includes('permission') ? 'Re-authorize folder' : 'Save failed');
   } finally {
-    this.#saveInProgress = false;
+    tab._saving = false;
   }
 }
 	
@@ -1144,13 +1153,8 @@ async openFileFromNode(node) {
         if (tab) this.saveTab(tab);
     }
     async flushSave() {
-        if (this.#saveInProgress) return;
-        this.#saveInProgress = true;
-        try {
-            await Promise.allSettled(this.state.tabs.filter(t => t.dirty).map(t => this.saveTab(t)));
-        } finally {
-            this.#saveInProgress = false;
-        }
+        this.#syncActiveTextTab();
+        await Promise.allSettled(this.state.tabs.filter(t => t.dirty && t.handle).map(t => this.saveTab(t)));
     }
     // ── Delete ─────────────────────────────────────────────
     async deleteFile() {
@@ -1793,6 +1797,7 @@ class TabManager {
     /** Returns true when a tab of the given type can be marked dirty/modified */
     static canTabBeDirty(type) { return TabManager.#TAB_TYPES[type]?.canDirty ?? false; }
     #nextTabId = 1;
+    #tabCreateQueue = Promise.resolve();
     /** @param {ReactiveState} state @param {FileSystemManager} fs @param {ExtensionManager} extensions */
     constructor(state, fs, extensions) {
         this.state = state;
@@ -1963,6 +1968,12 @@ class TabManager {
         this.fs.saveOpenTabs(this.state.currentTabId);
     }
     async createNewTab(handle, name, content = '', path = null, type = 'text') {
+        // Serialize tab creation to prevent duplicate tabs from concurrent calls
+        return this.#tabCreateQueue = this.#tabCreateQueue
+            .catch(e => console.warn('[EDITOR] Tab creation failed:', e))
+            .then(() => this.#doCreateTab(handle, name, content, path, type));
+    }
+    async #doCreateTab(handle, name, content, path, type) {
         if (handle) {
             for (const t of this.state.tabs) {
                 if (t.handle && await this.fs.isSameEntry(t.handle, handle)) {
