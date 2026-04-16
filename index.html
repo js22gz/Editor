@@ -1099,6 +1099,12 @@ async openFileFromNode(node) {
         return this.tabs.createNewTab(handle, name, '', name);
     }
     // ── Save ───────────────────────────────────────────────
+    #syncActiveTextTab() {
+        const tab = this.state.getActiveTab();
+        if (tab?.type !== 'extension' && tab?.dirty && this.tabs?.textarea) {
+            tab.content = this.tabs.textarea.value;
+        }
+    }
     async saveTab(tab) {
   if (!tab?.handle || !tab.dirty) return;
 
@@ -1117,9 +1123,7 @@ async openFileFromNode(node) {
       tab._needsResave = false;
 
       // Sync textarea for the active text tab
-      if (tab.type !== 'extension' && tab.id === this.state.currentTabId && this.tabs?.textarea) {
-        tab.content = this.tabs.textarea.value;
-      }
+      if (tab.id === this.state.currentTabId) this.#syncActiveTextTab();
 
       let contentToSave = tab.content;
 
@@ -1149,11 +1153,7 @@ async openFileFromNode(node) {
         if (tab) this.saveTab(tab);
     }
     async flushSave() {
-        // Sync active text tab content before flushing
-        const activeTab = this.state.getActiveTab();
-        if (activeTab?.type !== 'extension' && activeTab?.dirty && this.tabs?.textarea) {
-            activeTab.content = this.tabs.textarea.value;
-        }
+        this.#syncActiveTextTab();
         await Promise.allSettled(this.state.tabs.filter(t => t.dirty && t.handle).map(t => this.saveTab(t)));
     }
     // ── Delete ─────────────────────────────────────────────
@@ -1970,7 +1970,7 @@ class TabManager {
     async createNewTab(handle, name, content = '', path = null, type = 'text') {
         // Serialize tab creation to prevent duplicate tabs from concurrent calls
         return this.#tabCreateQueue = this.#tabCreateQueue
-            .catch(() => {})
+            .catch(e => console.warn('[EDITOR] Tab creation failed:', e))
             .then(() => this.#doCreateTab(handle, name, content, path, type));
     }
     async #doCreateTab(handle, name, content, path, type) {
