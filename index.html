@@ -2652,6 +2652,7 @@ document.addEventListener('mouseup', handleResizeEnd);
                     }
                     this.updateEditorStatus(tab);
                 }
+			if (tab?.type === 'extension' || this.#textarea.style.display === 'none') return;	
             } else if (this.state.currentDirHandle && this.#textarea.value && !this.#creatingUntitled) {
                 this.#creatingUntitled = true;
                 const typed = this.#textarea.value;
