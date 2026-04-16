@@ -1101,20 +1101,44 @@ async openFileFromNode(node) {
     }
     // ── Save ───────────────────────────────────────────────
     async saveTab(tab) {
-        if (!tab?.handle || !tab.dirty) return;
-        try {
-            const content = (this.state.currentTabId === tab.id && tab.type !== 'extension')
-                ? this.ui.textarea.value
-                : tab.content;
-            await this.#write(tab.handle, content);
-            tab.content = content;
-            tab.dirty = false;
-            if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'hidden';
-            this.ui.updateEditorStatus(tab);
-        } catch (err) {
-            this.ui.showToast(err.message.includes('permission') ? 'Re-authorize folder' : 'Save failed');
-        }
+  if (!tab?.handle || !tab.dirty) return;
+
+  if (this.#saveInProgress) {
+    // Extension rapid-fire protection: remember the latest content
+    if (tab.type === 'extension' && tab.pendingContent !== undefined) {
+      tab.content = tab.pendingContent;
     }
+    return;
+  }
+
+  this.#saveInProgress = true;
+  try {
+    let contentToSave = tab.content;
+
+    // Use the freshest content the extension just sent
+    if (tab.type === 'extension' && tab.pendingContent !== undefined) {
+      contentToSave = tab.pendingContent;
+      tab.content = contentToSave;
+      delete tab.pendingContent;
+    }
+
+    await this.#write(tab.handle, contentToSave);
+
+    tab.dirty = false;
+    if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'hidden';
+    this.ui.updateEditorStatus(tab);
+
+    // If another save arrived while we were writing → chain it immediately
+    if (tab.type === 'extension' && tab.pendingContent !== undefined) {
+      setTimeout(() => this.saveTab(tab), 0);
+    }
+  } catch (err) {
+    this.ui.showToast(err.message.includes('permission') ? 'Re-authorize folder' : 'Save failed');
+  } finally {
+    this.#saveInProgress = false;
+  }
+}
+	
     saveCurrentFile() {
         const tab = this.state.getActiveTab();
         if (tab) this.saveTab(tab);
@@ -2939,30 +2963,33 @@ bindEvents() {
     this.bindSettings();
     this.bindLifecycle();
 
-    window.addEventListener('message', async e => {
-        if (!e.data || typeof e.data !== 'object') return;
+window.addEventListener('message', async e => {
+  if (!e.data || typeof e.data !== 'object') return;
+  const activeTab = this.state.getActiveTab();
+  if (!activeTab || activeTab.type !== 'extension') return;
 
-        const activeTab = this.state.getActiveTab();
-        if (!activeTab || activeTab.type !== 'extension') return;
+  if (e.data.type === 'extension:dirty') {
+    if (TabManager.canTabBeDirty(activeTab.type)) {
+      activeTab.dirty = true;
+      if (activeTab.element) {
+        const ind = activeTab.element.querySelector('.dirty-indicator');
+        if (ind) ind.style.visibility = 'visible';
+      }
+      this.fs.scheduleSave();               // reuse existing debounce
+      this.updateEditorStatus(activeTab);
+    }
+  } else if (e.data.type === 'extension:save') {
+    // Always keep the absolute latest content
+    activeTab.pendingContent = e.data.content || '';
+    activeTab.content = e.data.content || '';
+    activeTab.dirty = true;
 
-        if (e.data.type === 'extension:dirty') {
-            if (TabManager.canTabBeDirty(activeTab.type)) {
-                activeTab.dirty = true;
-                if (activeTab.element) {
-                    const ind = activeTab.element.querySelector('.dirty-indicator');
-                    if (ind) ind.style.visibility = 'visible';
-                }
-                this.fs.scheduleSave();
-                this.updateEditorStatus(activeTab);
-            }
-        }
-        else if (e.data.type === 'extension:save') {
-            activeTab.content = e.data.content || '';
-            activeTab.dirty = true;
-            await this.fs.saveTab(activeTab);
-            this.updateEditorStatus(activeTab);
-        }
-    });
+    // Trigger the bulletproof save (guard + chaining handles everything)
+    this.fs.saveTab(activeTab);
+
+    this.updateEditorStatus(activeTab);
+  }
+});
 }
 }	
 // ────────────────────────────────────────────────────────
