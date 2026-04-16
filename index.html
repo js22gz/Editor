@@ -35,7 +35,8 @@ window.LEGEND = `<!--
          │       ├── .editor-wrapper
          │       │   ├── button#sidebar-toggle
          │       │   ├── #gutter (live line numbers)
-         │       │   └── #textarea (core editing surface)
+         │       │   ├── #textarea (core editing surface)
+         │       │   └── #extension-overlay (overlay-mode extension layer)
          │       └── .status (cursor position + file info)
          │
          └── <script> (class-based architecture)
@@ -70,9 +71,11 @@ window.LEGEND = `<!--
                   │     • loadAll() / install() / uninstall()
                   │     • _parseMeta() + getForFile(filename)
                   │     • renderTab() → sandboxed iframe + postMessage
+                  │     • sendStateToExtension() – live state to overlay
+                  │     • modes: full (replaces editor) | overlay (on top)
                   │     • protocol:
-                  │         editor → ext: {type:'editor:load', content, filename}
-                  │         ext → editor: {type:'extension:save', content}
+                  │         editor → ext: {type:'editor:state', content, cursor, lineWidth, filename}
+                  │         ext → editor: {type:'extension:updated', content, cursorLine?, cursorCol?}
                   │
                   ├── TabManager
                   │     • static TAB_TYPES (welcome · legend · text · extension)
@@ -490,6 +493,16 @@ header:fullscreen { display: none; }
 }
 .ext-frame.hidden { display: none; }
 
+#extension-overlay {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 4; pointer-events: none; overflow: hidden;
+  background: transparent;
+}
+#extension-overlay.hidden { display: none; }
+#extension-overlay .ext-frame {
+  pointer-events: auto; background: transparent;
+}
+
 /* ────────────────────────────────────────────────────────
    9. UTILITIES & STATES
 ──────────────────────────────────────────────────────── */
@@ -611,6 +624,7 @@ header:fullscreen { display: none; }
                 <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle Sidebar">›</button>
                 <div id="gutter"></div>
                 <textarea id="textarea" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea>
+                <div id="extension-overlay" class="hidden"></div>
             </div>
             <div class="status"><span id="status"></span><span style="flex:1"></span><span id="editor-status">No file open</span></div>
         </div>
@@ -893,7 +907,7 @@ class FileSystemManager {
         try {
             const data = this.state.tabs
                 .filter(t => t.path)
-                .map(t => ({ path: t.path, name: t.name, type: t.type, active: t.id === currentId }));
+                .map(t => ({ path: t.path, name: t.name, type: t.type, extensionMode: t.extensionMode || null, active: t.id === currentId }));
             // Only persist when there are real file-backed tabs to save.
             // Clearing is handled explicitly by closeTab → localStorage.removeItem.
             if (data.length) {
@@ -1101,8 +1115,11 @@ async openFileFromNode(node) {
     // ── Save ───────────────────────────────────────────────
     #syncActiveTextTab() {
         const tab = this.state.getActiveTab();
-        if (tab?.type !== 'extension' && tab?.dirty && this.tabs?.textarea) {
-            tab.content = this.tabs.textarea.value;
+        if (tab?.dirty && this.tabs?.textarea) {
+            // Sync textarea content for text tabs and overlay-mode extensions
+            if (tab.type !== 'extension' || tab.extensionMode === 'overlay') {
+                tab.content = this.tabs.textarea.value;
+            }
         }
     }
     async saveTab(tab) {
@@ -1111,9 +1128,6 @@ async openFileFromNode(node) {
   // Per-tab lock: if this tab is already mid-save, queue a follow-up
   if (tab._saving) {
     tab._needsResave = true;
-    if (tab.type === 'extension' && tab.pendingContent !== undefined) {
-      tab.content = tab.pendingContent;
-    }
     return;
   }
 
@@ -1125,18 +1139,9 @@ async openFileFromNode(node) {
       // Sync textarea for the active text tab
       if (tab.id === this.state.currentTabId) this.#syncActiveTextTab();
 
-      let contentToSave = tab.content;
+      await this.#write(tab.handle, tab.content);
 
-      // Use the freshest content the extension just sent
-      if (tab.type === 'extension' && tab.pendingContent !== undefined) {
-        contentToSave = tab.pendingContent;
-        tab.content = contentToSave;
-        delete tab.pendingContent;
-      }
-
-      await this.#write(tab.handle, contentToSave);
-
-    } while (tab._needsResave || (tab.type === 'extension' && tab.pendingContent !== undefined));
+    } while (tab._needsResave);
 
     tab.dirty = false;
     if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'hidden';
@@ -1690,7 +1695,7 @@ class ExtensionManager {
                         const html = await file.text();
                         const meta = this.#parseMeta(html);
                         if (meta) {
-                            this.extensions.push({ key: keys[i], name: meta.name, types: meta.types, handle, html });
+                            this.extensions.push({ key: keys[i], name: meta.name, types: meta.types, mode: meta.mode, handle, html });
                         }
                     } catch { }
                 }
@@ -1720,8 +1725,9 @@ class ExtensionManager {
                 existing.handle = fileHandle;
                 existing.html = html;
                 existing.types = meta.types;
+                existing.mode = meta.mode;
             } else {
-                this.extensions.push({ key: meta.name, name: meta.name, types: meta.types, handle: fileHandle, html });
+                this.extensions.push({ key: meta.name, name: meta.name, types: meta.types, mode: meta.mode, handle: fileHandle, html });
             }
             await this.fs.initDB();
             const tx = this.fs.db.transaction('extensions', 'readwrite');
@@ -1742,9 +1748,11 @@ class ExtensionManager {
         const nameMatch = html.match(/<meta\s+name=["']extension-name["']\s+content=["']([^"']+)["']/i);
         const typesMatch = html.match(/<meta\s+name=["']extension-types["']\s+content=["']([^"']+)["']/i);
         if (!nameMatch || !typesMatch) return null;
+        const modeMatch = html.match(/<meta\s+name=["']extension-mode["']\s+content=["'](overlay|full)["']/i);
         return {
             name: nameMatch[1],
-            types: typesMatch[1].split(',').map(t => t.trim().toLowerCase())
+            types: typesMatch[1].split(',').map(t => t.trim().toLowerCase()),
+            mode: modeMatch ? modeMatch[1] : 'full'
         };
     }
     getForFile(filename) {
@@ -1760,11 +1768,22 @@ class ExtensionManager {
         // Cancel stale fallback timers from a previous render
         if (tab._extTimers) tab._extTimers.forEach(t => clearTimeout(t));
 
-        const sendLoadMessage = () => {
+        const isOverlay = tab.extensionMode === 'overlay';
+
+        const sendStateMessage = () => {
             try {
+                const textarea = this.ui.textarea;
+                const pos = textarea ? textarea.selectionStart || 0 : 0;
+                const before = textarea ? textarea.value.substring(0, pos) : '';
+                const lines = before.split('\n');
+                const slider = document.getElementById('width-slider');
+                const atMax = slider ? +slider.value >= +slider.max : true;
                 tab.extFrame.contentWindow.postMessage({
-                    type: 'editor:load',
+                    type: 'editor:state',
                     content: tab.content || '',
+                    cursorLine: lines.length,
+                    cursorCol: (lines[lines.length - 1] || '').length + 1,
+                    lineWidthChars: atMax ? '∞' : +slider.value,
                     filename: tab.name
                 }, '*');
             } catch (e) {}
@@ -1773,9 +1792,12 @@ class ExtensionManager {
         // Reuse existing iframe when possible (only recreate on type toggle or explicit reload)
         if (tab.extFrame && !tab._pendingTypeSwitch) {
             tab.extFrame.classList.remove('hidden');
-            sendLoadMessage();
+            if (isOverlay) {
+                document.getElementById('extension-overlay').classList.remove('hidden');
+            }
+            sendStateMessage();
             tab._extTimers = [
-                setTimeout(sendLoadMessage, 60)
+                setTimeout(sendStateMessage, 60)
             ];
             return;
         }
@@ -1785,15 +1807,41 @@ class ExtensionManager {
         const iframe = document.createElement('iframe');
         iframe.className = 'ext-frame';
         iframe.sandbox = 'allow-scripts';
-        document.querySelector('.editor-wrapper').appendChild(iframe);
+        if (isOverlay) {
+            const overlay = document.getElementById('extension-overlay');
+            overlay.classList.remove('hidden');
+            overlay.appendChild(iframe);
+        } else {
+            document.querySelector('.editor-wrapper').appendChild(iframe);
+        }
         tab.extFrame = iframe;
         iframe.srcdoc = tab.extension.html;
         // Reliable delivery (srcdoc can be async)
-        tab.extFrame.onload = sendLoadMessage;
+        tab.extFrame.onload = sendStateMessage;
         tab._extTimers = [
-            setTimeout(sendLoadMessage, 60), // fallback
-            setTimeout(sendLoadMessage, 180) // extra safety for CDNs
+            setTimeout(sendStateMessage, 60), // fallback
+            setTimeout(sendStateMessage, 180) // extra safety for CDNs
         ];
+    }
+    /** Send updated editor:state to the active extension iframe */
+    sendStateToExtension(tab) {
+        if (!tab || tab.type !== 'extension' || !tab.extFrame) return;
+        try {
+            const textarea = this.ui.textarea;
+            const pos = textarea ? textarea.selectionStart || 0 : 0;
+            const before = textarea ? textarea.value.substring(0, pos) : '';
+            const lines = before.split('\n');
+            const slider = document.getElementById('width-slider');
+            const atMax = slider ? +slider.value >= +slider.max : true;
+            tab.extFrame.contentWindow.postMessage({
+                type: 'editor:state',
+                content: tab.content || '',
+                cursorLine: lines.length,
+                cursorCol: (lines[lines.length - 1] || '').length + 1,
+                lineWidthChars: atMax ? '∞' : +slider.value,
+                filename: tab.name
+            }, '*');
+        } catch (e) {}
     }
 }
 // ────────────────────────────────────────────────────────
@@ -1831,6 +1879,7 @@ class TabManager {
             id: this.#nextTabId++,
             name, handle, content, path, type,
             extension: ext || null,
+            extensionMode: ext ? (ext.mode || 'full') : null,
             dirty: false,
             element: null,
             extFrame: null,
@@ -1842,13 +1891,16 @@ class TabManager {
             e.stopPropagation();
             if (tab.type === 'extension') {
                 tab.type = 'text';
+                tab.extensionMode = null;
                 extToggle.className = 'ext-toggle inactive';
                 if (tab.extFrame) tab.extFrame.classList.add('hidden');
+                document.getElementById('extension-overlay').classList.add('hidden');
                 tab._pendingTypeSwitch = true;
                 this.switchToTab(tab.id);
             } else {
                 if (this.state.currentTabId === tab.id) tab.content = this.textarea.value;
                 tab.type = 'extension';
+                tab.extensionMode = tab.extension ? (tab.extension.mode || 'full') : 'full';
                 extToggle.className = 'ext-toggle active';
                 tab._pendingTypeSwitch = true;
                 this.switchToTab(tab.id);
@@ -1875,6 +1927,7 @@ class TabManager {
                         if (t.extension && t.extension.name === ext.name) {
                             if (t.type === 'extension' && t.id === currentTabId) currentTabWasExtension = true;
                             t.extension = null;
+                            t.extensionMode = null;
                             if (t.type === 'extension') t.type = 'text';
 							this.#replaceExtToggle(t);
 						}
@@ -1902,6 +1955,7 @@ class TabManager {
                 const newExt = this.extensions.getForFile(tab.name);
                 if (newExt) {
                     tab.extension = newExt;
+                    tab.extensionMode = newExt.mode || 'full';
                     if (this.state.currentTabId === tab.id) tab.content = this.textarea.value;
                     tab.type = 'extension';
 					this.#replaceExtToggle(tab);					
@@ -1940,6 +1994,7 @@ class TabManager {
                         if (newType !== tab.type) {
                             tab.type = newType;
                             tab.extension = ext || null;
+                            tab.extensionMode = ext ? (ext.mode || 'full') : null;
                             if (tab.extFrame && newType === 'text') {
                                 tab.extFrame.remove();
                                 tab.extFrame = null;
@@ -2052,23 +2107,31 @@ class TabManager {
         if (!skipSave && this.state.currentTabId !== null) {
             const cur = this.state.tabs.find(t => t.id === this.state.currentTabId);
             if (cur) {
-                if (cur.type !== 'extension') {
+                if (cur.type !== 'extension' || cur.extensionMode === 'overlay') {
                     cur.content = this.textarea.value;
                     cur.scrollTop = this.textarea.scrollTop;
                 }
                 if (cur.dirty) this.fs.saveTab(cur);
             }
         }
-        // Hide all per-tab extension iframes
+        // Hide all per-tab extension iframes and overlay
         this.state.tabs.forEach(t => { if (t.extFrame) t.extFrame.classList.add('hidden'); });
+        document.getElementById('extension-overlay').classList.add('hidden');
         this.state.currentTabId = id;
         const tab = this.state.tabs.find(t => t.id === id);
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         tab.element.classList.add('active');
         const gutterUserHidden = localStorage.getItem('gutterVisible') === 'false';
-        if (tab.type === 'extension') {
+        if (tab.type === 'extension' && tab.extensionMode === 'full') {
             this.textarea.style.display = 'none';
             if (!gutterUserHidden) this.gutter.style.display = 'none';
+            this.extensions.renderTab(tab);
+        } else if (tab.type === 'extension' && tab.extensionMode === 'overlay') {
+            // Overlay mode: keep textarea + gutter visible
+            this.textarea.style.display = '';
+            if (!gutterUserHidden) this.gutter.style.display = '';
+            this.textarea.value = tab.content || '';
+            this.textarea.readOnly = false;
             this.extensions.renderTab(tab);
         } else {
             this.textarea.style.display = '';
@@ -2095,6 +2158,9 @@ class TabManager {
         if (tab.extFrame) {
             tab.extFrame.remove();
             tab.extFrame = null;
+        }
+        if (tab.extensionMode === 'overlay') {
+            document.getElementById('extension-overlay').classList.add('hidden');
         }
         clearTimeout(tab._saveTimer);
         tab._saveTimer = null;
@@ -2430,7 +2496,7 @@ class UIManager {
     }
     updateEditorStatus(tab) {
         const modified = tab.dirty ? ' • Modified' : '';
-        if (tab.type === 'extension') {
+        if (tab.type === 'extension' && tab.extensionMode === 'full') {
             this.#statusEl.textContent = `${this.state.tabs.length} tab${this.state.tabs.length !== 1 ? 's' : ''}`;
         } else {
             const pos = this.#textarea.selectionStart || 0;
@@ -2651,6 +2717,11 @@ document.addEventListener('mouseup', handleResizeEnd);
                         this.fs.scheduleSave();
                     }
                     this.updateEditorStatus(tab);
+                    // Send updated state to overlay extensions on every input
+                    if (tab.type === 'extension' && tab.extensionMode === 'overlay') {
+                        tab.content = this.#textarea.value;
+                        this.extensions.sendStateToExtension(tab);
+                    }
                 }
 			if (tab?.type === 'extension' || this.#textarea.style.display === 'none') return;	
             } else if (this.state.currentDirHandle && this.#textarea.value && !this.#creatingUntitled) {
@@ -2676,7 +2747,27 @@ document.addEventListener('mouseup', handleResizeEnd);
         this.#textarea.addEventListener('paste', () => {
             setTimeout(() => this.updateLineNumbers(), 0);
         });
-        this.#textarea.addEventListener('scroll', () => this.#gutter.scrollTop = this.#textarea.scrollTop);
+        this.#textarea.addEventListener('scroll', () => {
+            this.#gutter.scrollTop = this.#textarea.scrollTop;
+            // Sync overlay extension scroll
+            const overlayEl = document.getElementById('extension-overlay');
+            if (!overlayEl.classList.contains('hidden')) {
+                overlayEl.scrollTop = this.#textarea.scrollTop;
+            }
+        });
+        // Send state to overlay extension on cursor position changes
+        this.#textarea.addEventListener('keyup', () => {
+            const tab = this.state.getActiveTab();
+            if (tab?.type === 'extension' && tab.extensionMode === 'overlay') {
+                this.extensions.sendStateToExtension(tab);
+            }
+        });
+        this.#textarea.addEventListener('click', () => {
+            const tab = this.state.getActiveTab();
+            if (tab?.type === 'extension' && tab.extensionMode === 'overlay') {
+                this.extensions.sendStateToExtension(tab);
+            }
+        });
         this.#textarea.addEventListener('keydown', e => {
             if (e.key === 'Tab') {
                 e.preventDefault();
@@ -2715,6 +2806,11 @@ document.addEventListener('mouseup', handleResizeEnd);
                 this.#textarea.style.minWidth = chWidth; /* forces the wrap to move at every value */
                 this.#textarea.style.whiteSpace = 'pre-wrap';
                 this.#textarea.style.wordWrap = 'break-word';
+            }
+            // Notify overlay extension of line-width change
+            const tab = this.state.getActiveTab();
+            if (tab?.type === 'extension' && tab.extensionMode === 'overlay') {
+                this.extensions.sendStateToExtension(tab);
             }
         });
       slider.dispatchEvent(new Event('input'));
@@ -2994,26 +3090,43 @@ window.addEventListener('message', async e => {
   const activeTab = this.state.getActiveTab();
   if (!activeTab || activeTab.type !== 'extension') return;
 
-  if (e.data.type === 'extension:save') {
-    // Cancel any pending scheduleSave timer for this tab
-    clearTimeout(activeTab._saveTimer);
-    activeTab._saveTimer = null;
+  if (e.data.type === 'extension:updated') {
+    const newContent = e.data.content ?? '';
+    // Only mark dirty if content actually changed
+    if (newContent !== activeTab.content) {
+      activeTab.content = newContent;
+      activeTab.dirty = true;
 
-    // Always keep the absolute latest content
-    activeTab.pendingContent = e.data.content || '';
-    activeTab.content = e.data.content || '';
-    activeTab.dirty = true;
+      if (activeTab.element) {
+        const ind = activeTab.element.querySelector('.dirty-indicator');
+        if (ind) ind.style.visibility = 'visible';
+      }
 
-    if (activeTab.element) {
-      const ind = activeTab.element.querySelector('.dirty-indicator');
-      if (ind) ind.style.visibility = 'visible';
+      // For overlay mode, sync textarea with updated content
+      if (activeTab.extensionMode === 'overlay' && this.#textarea) {
+        this.#textarea.value = newContent;
+        this.updateLineNumbers();
+      }
+
+      this.fs.scheduleSave();
     }
 
-    // Trigger the bulletproof save (guard + chaining handles everything)
-    this.fs.saveTab(activeTab);
+    // Update cursor position for overlay mode if provided
+    if (activeTab.extensionMode === 'overlay' && this.#textarea) {
+      if (e.data.cursorLine != null && e.data.cursorCol != null) {
+        const lines = newContent.split('\n');
+        let pos = 0;
+        for (let i = 0; i < Math.min(e.data.cursorLine - 1, lines.length); i++) {
+          pos += lines[i].length + 1;
+        }
+        pos += Math.min(e.data.cursorCol - 1, (lines[e.data.cursorLine - 1] || '').length);
+        this.#textarea.selectionStart = this.#textarea.selectionEnd = pos;
+      }
+    }
 
     this.updateEditorStatus(activeTab);
   }
+  // Silently ignore old extension:save messages for backward compatibility
 });
 }
 }	
