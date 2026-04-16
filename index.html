@@ -624,7 +624,7 @@ header:fullscreen { display: none; }
                 <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle Sidebar">›</button>
                 <div id="gutter"></div>
                 <textarea id="textarea" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea>
-                <div id="extension-overlay" class="hidden"></div>
+                <div id="extension-overlay" class="hidden" role="region" aria-label="Extension overlay"></div>
             </div>
             <div class="status"><span id="status"></span><span style="flex:1"></span><span id="editor-status">No file open</span></div>
         </div>
@@ -1764,6 +1764,22 @@ class ExtensionManager {
         }
         return null;
     }
+    #buildStatePayload(tab) {
+        const textarea = this.ui.textarea;
+        const pos = textarea ? textarea.selectionStart || 0 : 0;
+        const before = textarea ? textarea.value.substring(0, pos) : '';
+        const lines = before.split('\n');
+        const slider = document.getElementById('width-slider');
+        const atMax = slider ? +slider.value >= +slider.max : true;
+        return {
+            type: 'editor:state',
+            content: tab.content || '',
+            cursorLine: lines.length,
+            cursorCol: (lines[lines.length - 1] || '').length + 1,
+            lineWidthChars: atMax ? '∞' : +slider.value,
+            filename: tab.name
+        };
+    }
     renderTab(tab) {
         // Cancel stale fallback timers from a previous render
         if (tab._extTimers) tab._extTimers.forEach(t => clearTimeout(t));
@@ -1772,20 +1788,7 @@ class ExtensionManager {
 
         const sendStateMessage = () => {
             try {
-                const textarea = this.ui.textarea;
-                const pos = textarea ? textarea.selectionStart || 0 : 0;
-                const before = textarea ? textarea.value.substring(0, pos) : '';
-                const lines = before.split('\n');
-                const slider = document.getElementById('width-slider');
-                const atMax = slider ? +slider.value >= +slider.max : true;
-                tab.extFrame.contentWindow.postMessage({
-                    type: 'editor:state',
-                    content: tab.content || '',
-                    cursorLine: lines.length,
-                    cursorCol: (lines[lines.length - 1] || '').length + 1,
-                    lineWidthChars: atMax ? '∞' : +slider.value,
-                    filename: tab.name
-                }, '*');
+                tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), '*');
             } catch (e) {}
         };
 
@@ -1827,20 +1830,7 @@ class ExtensionManager {
     sendStateToExtension(tab) {
         if (!tab || tab.type !== 'extension' || !tab.extFrame) return;
         try {
-            const textarea = this.ui.textarea;
-            const pos = textarea ? textarea.selectionStart || 0 : 0;
-            const before = textarea ? textarea.value.substring(0, pos) : '';
-            const lines = before.split('\n');
-            const slider = document.getElementById('width-slider');
-            const atMax = slider ? +slider.value >= +slider.max : true;
-            tab.extFrame.contentWindow.postMessage({
-                type: 'editor:state',
-                content: tab.content || '',
-                cursorLine: lines.length,
-                cursorCol: (lines[lines.length - 1] || '').length + 1,
-                lineWidthChars: atMax ? '∞' : +slider.value,
-                filename: tab.name
-            }, '*');
+            tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), '*');
         } catch (e) {}
     }
 }
@@ -2747,27 +2737,23 @@ document.addEventListener('mouseup', handleResizeEnd);
         this.#textarea.addEventListener('paste', () => {
             setTimeout(() => this.updateLineNumbers(), 0);
         });
+        const overlayEl = document.getElementById('extension-overlay');
         this.#textarea.addEventListener('scroll', () => {
             this.#gutter.scrollTop = this.#textarea.scrollTop;
             // Sync overlay extension scroll
-            const overlayEl = document.getElementById('extension-overlay');
             if (!overlayEl.classList.contains('hidden')) {
                 overlayEl.scrollTop = this.#textarea.scrollTop;
             }
         });
         // Send state to overlay extension on cursor position changes
-        this.#textarea.addEventListener('keyup', () => {
+        const sendOverlayState = () => {
             const tab = this.state.getActiveTab();
             if (tab?.type === 'extension' && tab.extensionMode === 'overlay') {
                 this.extensions.sendStateToExtension(tab);
             }
-        });
-        this.#textarea.addEventListener('click', () => {
-            const tab = this.state.getActiveTab();
-            if (tab?.type === 'extension' && tab.extensionMode === 'overlay') {
-                this.extensions.sendStateToExtension(tab);
-            }
-        });
+        };
+        this.#textarea.addEventListener('keyup', sendOverlayState);
+        this.#textarea.addEventListener('click', sendOverlayState);
         this.#textarea.addEventListener('keydown', e => {
             if (e.key === 'Tab') {
                 e.preventDefault();
@@ -3094,6 +3080,12 @@ window.addEventListener('message', async e => {
     const newContent = e.data.content ?? '';
     // Only mark dirty if content actually changed
     if (newContent !== activeTab.content) {
+      // For overlay mode, sync textarea first so state is consistent
+      if (activeTab.extensionMode === 'overlay' && this.#textarea) {
+        this.#textarea.value = newContent;
+        this.updateLineNumbers();
+      }
+
       activeTab.content = newContent;
       activeTab.dirty = true;
 
@@ -3102,24 +3094,18 @@ window.addEventListener('message', async e => {
         if (ind) ind.style.visibility = 'visible';
       }
 
-      // For overlay mode, sync textarea with updated content
-      if (activeTab.extensionMode === 'overlay' && this.#textarea) {
-        this.#textarea.value = newContent;
-        this.updateLineNumbers();
-      }
-
       this.fs.scheduleSave();
     }
 
     // Update cursor position for overlay mode if provided
     if (activeTab.extensionMode === 'overlay' && this.#textarea) {
-      if (e.data.cursorLine != null && e.data.cursorCol != null) {
+      if (e.data.cursorLine != null && e.data.cursorCol != null && e.data.cursorLine > 0) {
         const lines = newContent.split('\n');
         let pos = 0;
         for (let i = 0; i < Math.min(e.data.cursorLine - 1, lines.length); i++) {
           pos += lines[i].length + 1;
         }
-        pos += Math.min(e.data.cursorCol - 1, (lines[e.data.cursorLine - 1] || '').length);
+        pos += Math.min(Math.max(e.data.cursorCol - 1, 0), (lines[e.data.cursorLine - 1] || '').length);
         this.#textarea.selectionStart = this.#textarea.selectionEnd = pos;
       }
     }
