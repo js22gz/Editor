@@ -73,7 +73,6 @@ window.LEGEND = `<!--
                   │     • protocol:
                   │         editor → ext: {type:'editor:load', content, filename}
                   │         ext → editor: {type:'extension:save', content}
-                  │         ext → editor: {type:'extension:dirty'}
                   │
                   ├── TabManager
                   │     • static TAB_TYPES (welcome · legend · text · extension)
@@ -696,13 +695,14 @@ class FileSystemManager {
         /** @type {TabManager} */ this.tabs = null;
         /** @type {UIManager} */ this.ui = null;
         this.scheduleSave = (() => {
-            let timer;
             return () => {
-                clearTimeout(timer);
-                timer = setTimeout(() => {
-                    if (!this.state.currentTabId) return;
-                    const tab = this.state.getTab(this.state.currentTabId);
-                    if (tab?.dirty) this.saveTab(tab);
+                if (!this.state.currentTabId) return;
+                const tab = this.state.getTab(this.state.currentTabId);
+                if (!tab) return;
+                clearTimeout(tab._saveTimer);
+                tab._saveTimer = setTimeout(() => {
+                    tab._saveTimer = null;
+                    if (tab.dirty) this.saveTab(tab);
                 }, 750);
             };
         })();
@@ -1759,15 +1759,7 @@ class ExtensionManager {
     renderTab(tab) {
         // Cancel stale fallback timers from a previous render
         if (tab._extTimers) tab._extTimers.forEach(t => clearTimeout(t));
-        // Always recreate the iframe to guarantee a clean reload
-        if (tab.extFrame) { tab.extFrame.remove(); tab.extFrame = null; }
-        const iframe = document.createElement('iframe');
-        iframe.className = 'ext-frame';
-        iframe.sandbox = 'allow-scripts';
-        document.querySelector('.editor-wrapper').appendChild(iframe);
-        tab.extFrame = iframe;
-        iframe.srcdoc = tab.extension.html;
-        // Reliable delivery (srcdoc can be async)
+
         const sendLoadMessage = () => {
             try {
                 tab.extFrame.contentWindow.postMessage({
@@ -1777,6 +1769,26 @@ class ExtensionManager {
                 }, '*');
             } catch (e) {}
         };
+
+        // Reuse existing iframe when possible (only recreate on type toggle or explicit reload)
+        if (tab.extFrame && !tab._pendingTypeSwitch) {
+            tab.extFrame.classList.remove('hidden');
+            sendLoadMessage();
+            tab._extTimers = [
+                setTimeout(sendLoadMessage, 60)
+            ];
+            return;
+        }
+
+        // Recreate the iframe for type toggle or first render
+        if (tab.extFrame) { tab.extFrame.remove(); tab.extFrame = null; }
+        const iframe = document.createElement('iframe');
+        iframe.className = 'ext-frame';
+        iframe.sandbox = 'allow-scripts';
+        document.querySelector('.editor-wrapper').appendChild(iframe);
+        tab.extFrame = iframe;
+        iframe.srcdoc = tab.extension.html;
+        // Reliable delivery (srcdoc can be async)
         tab.extFrame.onload = sendLoadMessage;
         tab._extTimers = [
             setTimeout(sendLoadMessage, 60), // fallback
@@ -2084,6 +2096,8 @@ class TabManager {
             tab.extFrame.remove();
             tab.extFrame = null;
         }
+        clearTimeout(tab._saveTimer);
+        tab._saveTimer = null;
         this.state.tabs.splice(idx, 1);
         tab.element.remove();
         if (this.state.tabs.length === 0) {
@@ -2979,21 +2993,20 @@ window.addEventListener('message', async e => {
   const activeTab = this.state.getActiveTab();
   if (!activeTab || activeTab.type !== 'extension') return;
 
-  if (e.data.type === 'extension:dirty') {
-    if (TabManager.canTabBeDirty(activeTab.type)) {
-      activeTab.dirty = true;
-      if (activeTab.element) {
-        const ind = activeTab.element.querySelector('.dirty-indicator');
-        if (ind) ind.style.visibility = 'visible';
-      }
-      this.fs.scheduleSave();               // reuse existing debounce
-      this.updateEditorStatus(activeTab);
-    }
-  } else if (e.data.type === 'extension:save') {
+  if (e.data.type === 'extension:save') {
+    // Cancel any pending scheduleSave timer for this tab
+    clearTimeout(activeTab._saveTimer);
+    activeTab._saveTimer = null;
+
     // Always keep the absolute latest content
     activeTab.pendingContent = e.data.content || '';
     activeTab.content = e.data.content || '';
     activeTab.dirty = true;
+
+    if (activeTab.element) {
+      const ind = activeTab.element.querySelector('.dirty-indicator');
+      if (ind) ind.style.visibility = 'visible';
+    }
 
     // Trigger the bulletproof save (guard + chaining handles everything)
     this.fs.saveTab(activeTab);
