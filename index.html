@@ -72,7 +72,7 @@ window.LEGEND = `<!--
                   │     • _parseMeta() + getForFile(filename)
                   │     • renderTab() → sandboxed iframe + postMessage
                   │     • sendStateToExtension() – live state to overlay
-                  │     • modes: full (replaces editor) | overlay (on top)
+                  │     • modes: full (replaces editor) | overlay (on top) | split (side-by-side)
                   │     • protocol:
                   │         editor → ext: {type:'editor:state', content, cursor, lineWidth, filename}
                   │         ext → editor: {type:'extension:updated', content, cursorLine?, cursorCol?}
@@ -501,6 +501,21 @@ header:fullscreen { display: none; }
 #extension-overlay.hidden { display: none; }
 #extension-overlay .ext-frame {
   pointer-events: auto; background: transparent;
+}
+
+/* ── Split-mode extension layout ── */
+.editor-wrapper.split-mode #textarea {
+  flex: none;
+}
+.split-handle {
+  width: 5px; cursor: col-resize; background: transparent; flex-shrink: 0;
+  z-index: 2;
+}
+.split-handle:hover, .split-handle.dragging {
+  background: var(--border-subtle);
+}
+.split-right {
+  flex: 1; position: relative; min-width: 60px; overflow: hidden;
 }
 
 /* ────────────────────────────────────────────────────────
@@ -1117,7 +1132,7 @@ async openFileFromNode(node) {
         const tab = this.state.getActiveTab();
         if (tab?.dirty && this.tabs?.textarea) {
             // Sync textarea content for text tabs and overlay-mode extensions
-            if (tab.type !== 'extension' || tab.extensionMode === 'overlay') {
+            if (tab.type !== 'extension' || tab.extensionMode === 'overlay' || tab.extensionMode === 'split') {
                 tab.content = this.tabs.textarea.value;
             }
         }
@@ -1748,7 +1763,7 @@ class ExtensionManager {
         const nameMatch = html.match(/<meta\s+name=["']extension-name["']\s+content=["']([^"']+)["']/i);
         const typesMatch = html.match(/<meta\s+name=["']extension-types["']\s+content=["']([^"']+)["']/i);
         if (!nameMatch || !typesMatch) return null;
-        const modeMatch = html.match(/<meta\s+name=["']extension-mode["']\s+content=["'](overlay|full)["']/i);
+        const modeMatch = html.match(/<meta\s+name=["']extension-mode["']\s+content=["'](overlay|full|split)["']/i);
         return {
             name: nameMatch[1],
             types: typesMatch[1].split(',').map(t => t.trim().toLowerCase()),
@@ -1785,6 +1800,7 @@ class ExtensionManager {
         if (tab._extTimers) tab._extTimers.forEach(t => clearTimeout(t));
 
         const isOverlay = tab.extensionMode === 'overlay';
+        const isSplit = tab.extensionMode === 'split';
 
         const sendStateMessage = () => {
             try {
@@ -1798,6 +1814,13 @@ class ExtensionManager {
             if (isOverlay) {
                 document.getElementById('extension-overlay').classList.remove('hidden');
             }
+            if (isSplit && tab._splitHandle && tab._splitRight) {
+                const wrapper = document.querySelector('.editor-wrapper');
+                wrapper.classList.add('split-mode');
+                tab._splitHandle.style.display = '';
+                tab._splitRight.style.display = '';
+                this.#applySplitRatio(wrapper);
+            }
             sendStateMessage();
             tab._extTimers = [
                 setTimeout(sendStateMessage, 60)
@@ -1807,6 +1830,8 @@ class ExtensionManager {
 
         // Recreate the iframe for type toggle or first render
         if (tab.extFrame) { tab.extFrame.remove(); tab.extFrame = null; }
+        if (tab._splitHandle) { tab._splitHandle.remove(); tab._splitHandle = null; }
+        if (tab._splitRight) { tab._splitRight.remove(); tab._splitRight = null; }
         const iframe = document.createElement('iframe');
         iframe.className = 'ext-frame';
         iframe.sandbox = 'allow-scripts';
@@ -1814,6 +1839,8 @@ class ExtensionManager {
             const overlay = document.getElementById('extension-overlay');
             overlay.classList.remove('hidden');
             overlay.appendChild(iframe);
+        } else if (isSplit) {
+            this.#setupSplitLayout(tab, iframe);
         } else {
             document.querySelector('.editor-wrapper').appendChild(iframe);
         }
@@ -1825,6 +1852,54 @@ class ExtensionManager {
             setTimeout(sendStateMessage, 60), // fallback
             setTimeout(sendStateMessage, 180) // extra safety for CDNs
         ];
+    }
+    #setupSplitLayout(tab, iframe) {
+        const wrapper = document.querySelector('.editor-wrapper');
+        wrapper.classList.add('split-mode');
+
+        const handle = document.createElement('div');
+        handle.className = 'split-handle';
+        wrapper.appendChild(handle);
+
+        const rightPane = document.createElement('div');
+        rightPane.className = 'split-right';
+        rightPane.appendChild(iframe);
+        wrapper.appendChild(rightPane);
+
+        tab._splitHandle = handle;
+        tab._splitRight = rightPane;
+
+        this.#applySplitRatio(wrapper);
+        this.#bindSplitDrag(handle, wrapper);
+    }
+    #applySplitRatio(wrapper) {
+        const textarea = this.ui.textarea;
+        const gutter = document.getElementById('gutter');
+        const gutterW = gutter.offsetWidth || 0;
+        const totalW = wrapper.clientWidth;
+        const savedRatio = parseFloat(localStorage.getItem('splitPaneRatio'));
+        const ratio = (!isNaN(savedRatio) && savedRatio > 0.1 && savedRatio < 0.9) ? savedRatio : 0.5;
+        const textareaW = Math.max(100, Math.round(ratio * totalW) - gutterW);
+        textarea.style.width = textareaW + 'px';
+    }
+    #bindSplitDrag(handle, wrapper) {
+        let dragging = false;
+        handle.addEventListener('pointerdown', e => {
+            e.preventDefault();
+            dragging = true;
+            handle.classList.add('dragging');
+            handle.setPointerCapture(e.pointerId);
+        });
+        handle.addEventListener('pointermove', e => {
+            if (!dragging) return;
+            const rect = wrapper.getBoundingClientRect();
+            const ratio = Math.min(0.85, Math.max(0.15, (e.clientX - rect.left) / rect.width));
+            localStorage.setItem('splitPaneRatio', ratio.toString());
+            this.#applySplitRatio(wrapper);
+        });
+        const stop = () => { dragging = false; handle.classList.remove('dragging'); };
+        handle.addEventListener('pointerup', stop);
+        handle.addEventListener('lostpointercapture', stop);
     }
     /** Send updated editor:state to the active extension iframe */
     sendStateToExtension(tab) {
@@ -1919,6 +1994,8 @@ class TabManager {
                             t.extension = null;
                             t.extensionMode = null;
                             if (t.type === 'extension') t.type = 'text';
+                            if (t._splitHandle) { t._splitHandle.remove(); t._splitHandle = null; }
+                            if (t._splitRight) { t._splitRight.remove(); t._splitRight = null; }
 							this.#replaceExtToggle(t);
 						}
                     }
@@ -1988,6 +2065,12 @@ class TabManager {
                             if (tab.extFrame && newType === 'text') {
                                 tab.extFrame.remove();
                                 tab.extFrame = null;
+                            }
+                            if (tab._splitHandle && newType === 'text') {
+                                tab._splitHandle.remove(); tab._splitHandle = null;
+                            }
+                            if (tab._splitRight && newType === 'text') {
+                                tab._splitRight.remove(); tab._splitRight = null;
                             }
                             if (tab.element) {
                                 const existingToggle = tab.element.querySelector('.ext-toggle');
@@ -2097,7 +2180,7 @@ class TabManager {
         if (!skipSave && this.state.currentTabId !== null) {
             const cur = this.state.tabs.find(t => t.id === this.state.currentTabId);
             if (cur) {
-                if (cur.type !== 'extension' || cur.extensionMode === 'overlay') {
+                if (cur.type !== 'extension' || cur.extensionMode === 'overlay' || cur.extensionMode === 'split') {
                     cur.content = this.textarea.value;
                     cur.scrollTop = this.textarea.scrollTop;
                 }
@@ -2107,6 +2190,14 @@ class TabManager {
         // Hide all per-tab extension iframes and overlay
         this.state.tabs.forEach(t => { if (t.extFrame) t.extFrame.classList.add('hidden'); });
         document.getElementById('extension-overlay').classList.add('hidden');
+        // Clean up split layout from any previous tab
+        const editorWrapper = document.querySelector('.editor-wrapper');
+        editorWrapper.classList.remove('split-mode');
+        this.textarea.style.width = '';
+        this.state.tabs.forEach(t => {
+            if (t._splitHandle) t._splitHandle.style.display = 'none';
+            if (t._splitRight) t._splitRight.style.display = 'none';
+        });
         this.state.currentTabId = id;
         const tab = this.state.tabs.find(t => t.id === id);
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -2118,6 +2209,13 @@ class TabManager {
             this.extensions.renderTab(tab);
         } else if (tab.type === 'extension' && tab.extensionMode === 'overlay') {
             // Overlay mode: keep textarea + gutter visible
+            this.textarea.style.display = '';
+            if (!gutterUserHidden) this.gutter.style.display = '';
+            this.textarea.value = tab.content || '';
+            this.textarea.readOnly = false;
+            this.extensions.renderTab(tab);
+        } else if (tab.type === 'extension' && tab.extensionMode === 'split') {
+            // Split mode: textarea + gutter on left, extension iframe on right
             this.textarea.style.display = '';
             if (!gutterUserHidden) this.gutter.style.display = '';
             this.textarea.value = tab.content || '';
@@ -2149,8 +2247,14 @@ class TabManager {
             tab.extFrame.remove();
             tab.extFrame = null;
         }
+        if (tab._splitHandle) { tab._splitHandle.remove(); tab._splitHandle = null; }
+        if (tab._splitRight) { tab._splitRight.remove(); tab._splitRight = null; }
         if (tab.extensionMode === 'overlay') {
             document.getElementById('extension-overlay').classList.add('hidden');
+        }
+        if (tab.extensionMode === 'split') {
+            document.querySelector('.editor-wrapper').classList.remove('split-mode');
+            this.textarea.style.width = '';
         }
         clearTimeout(tab._saveTimer);
         tab._saveTimer = null;
@@ -2707,8 +2811,8 @@ document.addEventListener('mouseup', handleResizeEnd);
                         this.fs.scheduleSave();
                     }
                     this.updateEditorStatus(tab);
-                    // Send updated state to overlay extensions on every input
-                    if (tab.type === 'extension' && tab.extensionMode === 'overlay') {
+                    // Send updated state to overlay/split extensions on every input
+                    if (tab.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split')) {
                         tab.content = this.#textarea.value;
                         this.extensions.sendStateToExtension(tab);
                     }
@@ -2745,10 +2849,10 @@ document.addEventListener('mouseup', handleResizeEnd);
                 overlayEl.scrollTop = this.#textarea.scrollTop;
             }
         });
-        // Send state to overlay extension on cursor position changes
+        // Send state to overlay/split extension on cursor position changes
         const sendOverlayState = () => {
             const tab = this.state.getActiveTab();
-            if (tab?.type === 'extension' && tab.extensionMode === 'overlay') {
+            if (tab?.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split')) {
                 this.extensions.sendStateToExtension(tab);
             }
         };
@@ -2793,9 +2897,9 @@ document.addEventListener('mouseup', handleResizeEnd);
                 this.#textarea.style.whiteSpace = 'pre-wrap';
                 this.#textarea.style.wordWrap = 'break-word';
             }
-            // Notify overlay extension of line-width change
+            // Notify overlay/split extension of line-width change
             const tab = this.state.getActiveTab();
-            if (tab?.type === 'extension' && tab.extensionMode === 'overlay') {
+            if (tab?.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split')) {
                 this.extensions.sendStateToExtension(tab);
             }
         });
@@ -3080,8 +3184,8 @@ window.addEventListener('message', async e => {
     const newContent = e.data.content ?? '';
     // Only mark dirty if content actually changed
     if (newContent !== activeTab.content) {
-      // For overlay mode, sync textarea first so state is consistent
-      if (activeTab.extensionMode === 'overlay' && this.#textarea) {
+      // For overlay/split mode, sync textarea first so state is consistent
+      if ((activeTab.extensionMode === 'overlay' || activeTab.extensionMode === 'split') && this.#textarea) {
         this.#textarea.value = newContent;
         this.updateLineNumbers();
       }
@@ -3097,8 +3201,8 @@ window.addEventListener('message', async e => {
       this.fs.scheduleSave();
     }
 
-    // Update cursor position for overlay mode if provided
-    if (activeTab.extensionMode === 'overlay' && this.#textarea) {
+    // Update cursor position for overlay/split mode if provided
+    if ((activeTab.extensionMode === 'overlay' || activeTab.extensionMode === 'split') && this.#textarea) {
       if (e.data.cursorLine != null && e.data.cursorCol != null && e.data.cursorLine > 0) {
         const lines = newContent.split('\n');
         let pos = 0;
