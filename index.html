@@ -1878,7 +1878,7 @@ class ExtensionManager {
         const gutterW = gutter.offsetWidth || 0;
         const totalW = wrapper.clientWidth;
         const savedRatio = parseFloat(localStorage.getItem('splitPaneRatio'));
-        const ratio = (!isNaN(savedRatio) && savedRatio > 0.1 && savedRatio < 0.9) ? savedRatio : 0.5;
+        const ratio = (!isNaN(savedRatio) && savedRatio > 0.15 && savedRatio < 0.85) ? savedRatio : 0.5;
         const textareaW = Math.max(100, Math.round(ratio * totalW) - gutterW);
         textarea.style.width = textareaW + 'px';
     }
