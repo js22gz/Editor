@@ -1748,6 +1748,8 @@ class ExtensionManager {
             const tx = this.fs.db.transaction('extensions', 'readwrite');
             tx.objectStore('extensions').put(fileHandle, meta.name);
             this.ui.showToast(`Extension "${meta.name}" installed (${meta.types.join(', ')})`);
+            // Re-attach the new/updated extension to any matching open tabs
+            if (this.tabs) this.tabs.reattachExtensions();
         } catch (e) {
             if (e.name !== 'AbortError') this.ui.showToast('Extension install cancelled or failed');
         }
@@ -2338,6 +2340,36 @@ class TabManager {
 	
 	  return restored;
 	}
+    /**
+     * Re-scan every open tab and re-attach its extension object from
+     * the (possibly freshly-reloaded) ExtensionManager.  Tabs whose
+     * file name matches an installed extension get promoted back to
+     * type 'extension'; tabs whose extension was uninstalled are
+     * demoted to 'text'.
+     */
+    reattachExtensions() {
+        for (const tab of this.state.tabs) {
+            const ext = this.extensions.getForFile(tab.name);
+            if (ext) {
+                tab.extension = ext;
+                tab.extensionMode = ext.mode || 'full';
+                if (tab.type !== 'extension') {
+                    tab.type = 'extension';
+                }
+                this.#replaceExtToggle(tab);
+            } else if (tab.type === 'extension') {
+                // Extension no longer available — fall back to text
+                tab.extension = null;
+                tab.extensionMode = null;
+                tab.type = 'text';
+                if (tab.extFrame) { tab.extFrame.remove(); tab.extFrame = null; }
+                this.#replaceExtToggle(tab);
+            }
+        }
+        // Re-render the active tab so the correct mode is shown
+        const active = this.state.getActiveTab();
+        if (active) this.switchToTab(active.id);
+    }
 }
 // ────────────────────────────────────────────────────────
 // UIManager – DOM init, events & rendering
@@ -3020,6 +3052,7 @@ document.addEventListener('mouseup', handleResizeEnd);
     }
     // Rebuild tree and restore any missing tabs after wake
     async #wakeRebuild() {
+        await this.extensions.loadAll();
         await this.fs.mutateAndRebuild();
         this.tree.highlightActive();
         // If tabs disappeared (page discarded mid-session), restore from localStorage
@@ -3031,6 +3064,8 @@ document.addEventListener('mouseup', handleResizeEnd);
             }
             return;
         }
+        // Re-attach extensions to surviving tabs
+        this.tabs.reattachExtensions();
         // Refresh active non-dirty tab content from disk
         const activeTab = this.state.getActiveTab();
         if (activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty) {
@@ -3056,6 +3091,9 @@ async #wakeRestore() {
   try {
     console.log('%c[EDITOR WAKE] Starting full recovery (ChromeOS lid-close mode)', 'color:#22c55e;font-weight:bold');
 
+    // Reload extensions from IndexedDB so tabs can re-attach
+    await this.extensions.loadAll();
+
     const hadHandleBefore = !!this.state.currentDirHandle;
     const permOk = await this.#revalidatePermission();
 
@@ -3076,6 +3114,9 @@ async #wakeRestore() {
       if (!this.state.tabs.length) {
         const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
         if (restored) this.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+      } else {
+        // Tabs survived but may have lost their extension objects
+        this.tabs.reattachExtensions();
       }
     } else if (!hadHandleBefore) {
       console.log('%c[EDITOR WAKE] No folder loaded → forcing full restoreSession()', 'color:#eab308');
@@ -3236,6 +3277,7 @@ class EditorApp {
         this.fs.tabs = this.tabs;
         this.fs.ui = this.ui;
         this.extensions.ui = this.ui;
+        this.extensions.tabs = this.tabs;
         this.tabs.ui = this.ui;
     }
     async init() { await this.ui.init(); }
