@@ -747,6 +747,17 @@ class PathUtils {
 class FileSystemManager {
     #INVALID_CHARS = /[<>:"|?*\x00-\x1F]/;
     #MAX_FILE_SIZE = 3 * 1024 * 1024; // 3 MB
+    #NON_TEXT_EXT = new Set([
+        'png','jpg','jpeg','gif','bmp','ico','webp','tif','tiff','psd','ai','eps','raw','cr2','nef','heic','heif','avif',
+        'mp3','wav','ogg','flac','aac','wma','m4a','aiff','opus','mid','midi',
+        'mp4','avi','mov','mkv','wmv','flv','webm','m4v','mpg','mpeg','3gp',
+        'zip','rar','7z','tar','gz','bz2','xz','zst','iso','dmg','pkg','deb','rpm','cab','lz','lz4','lzma',
+        'pdf','doc','docx','xls','xlsx','ppt','pptx','odt','ods','odp','pages','numbers','key',
+        'exe','dll','so','dylib','bin','app','msi','apk','ipa','com','class','o','obj','pyc','pyo','wasm',
+        'db','sqlite','sqlite3','mdb','accdb',
+        'ttf','otf','woff','woff2','eot',
+        'blend','fbx','glb','gltf','stl','3ds','dwg','dxf',
+    ]);
     /** @param {ReactiveState} state @param {PathUtils} pathUtils */
     constructor(state, pathUtils) {
         this.state = state;
@@ -773,6 +784,12 @@ class FileSystemManager {
         if (file.size <= this.#MAX_FILE_SIZE) return true;
         const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
         return bus.emit('ui:confirm', { confirmMessage: `This file is ${sizeMB} MB. Files over 3 MB may slow down or freeze the editor. Open anyway?`, danger: true });
+    }
+    /** Returns true if the filename has a known non-text extension. */
+    #isNonText(name) {
+        const dot = name.lastIndexOf('.');
+        if (dot < 1) return false;
+        return this.#NON_TEXT_EXT.has(name.slice(dot + 1).toLowerCase());
     }
     // ── Core helpers ───────────────────────────────────────
     async #guard(handle, action = 'operation') {
@@ -985,6 +1002,7 @@ class FileSystemManager {
     async openFile() {
   try {
     const [handle] = await window.showOpenFilePicker();
+    if (this.#isNonText(handle.name)) return bus.emit('ui:toast', 'Not a text file. This is a text editor', 3000);
     const file = await handle.getFile();
     if (!await this.#confirmLargeFile(file)) return;
     const content = await file.text();
@@ -1002,6 +1020,7 @@ class FileSystemManager {
 
 async openFileFromNode(node) {
   try {
+    if (this.#isNonText(node.name)) return bus.emit('ui:toast', 'Not a text file. This is a text editor', 3000);
     const file = await node.handle.getFile();
     if (!await this.#confirmLargeFile(file)) return;
     const content = await file.text();
@@ -1307,15 +1326,20 @@ async renameItem(target) {
         if (!destNode) return bus.emit('ui:toast', 'Destination folder not found');
         try {
             await this.#guard(destNode.handle);
-            if (await this.#entryExists(destNode.handle, srcNode.name)) {
-                return bus.emit('ui:toast', `"${srcNode.name}" already exists in destination`);
+            let copyName = srcNode.name;
+            if (await this.#entryExists(destNode.handle, copyName)) {
+                const dot = copyName.lastIndexOf('.');
+                const base = dot > 0 ? copyName.slice(0, dot) : copyName;
+                const ext = dot > 0 ? copyName.slice(dot) : '';
+                let n = 1;
+                do { copyName = `${base}(${n++})${ext}`; } while (await this.#entryExists(destNode.handle, copyName));
             }
             if (srcNode.kind === 'file') {
                 const file = await srcNode.handle.getFile();
-                const newHandle = await destNode.handle.getFileHandle(srcNode.name, { create: true });
+                const newHandle = await destNode.handle.getFileHandle(copyName, { create: true });
                 await this.#write(newHandle, file);
             } else {
-                await this.#copyDirectory(srcNode.handle, destNode.handle, srcNode.name);
+                await this.#copyDirectory(srcNode.handle, destNode.handle, copyName);
             }
             if (destFolderPath) {
                 this.state.expandedFolders.add(destFolderPath);
