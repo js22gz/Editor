@@ -185,9 +185,6 @@ header:fullscreen { display: none; }
 }
 
 /* ────────────────────────────────────────────────────────
-   4. SIDEBAR & TREE
-──────────────────────────────────────────────────────── */
-/* ────────────────────────────────────────────────────────
    4. SIDEBAR & TREE (DUAL-PANE – DEDUPLICATED)
 ──────────────────────────────────────────────────────── */
 #sidebar, #sidebar-right {
@@ -503,16 +500,12 @@ header:fullscreen { display: none; }
   height: 1px; background: var(--border-color); margin: 4px 0;
 }
 
-#sidebar-resize {
+.sidebar-resize {
   width: 5px; cursor: col-resize; background: transparent; flex-shrink: 0;
 }
-#sidebar-resize:hover { background: var(--border-subtle); }
-#sidebar.hidden + #sidebar-resize { display: none; }
-#sidebar-right-resize {
-  width: 5px; cursor: col-resize; background: transparent; flex-shrink: 0;
-}
-#sidebar-right-resize:hover { background: var(--border-subtle); }
-#sidebar-right.hidden ~ #sidebar-right-resize { display: none; }
+.sidebar-resize:hover { background: var(--border-subtle); }
+#sidebar.hidden + .sidebar-resize,
+#sidebar-right.hidden + .sidebar-resize { display: none; }
 .sidebar-dupe-toggle {
   position: absolute; bottom: 8px; right: 8px;
   background: none; border: 1px solid var(--border-color);
@@ -641,7 +634,7 @@ header:fullscreen { display: none; }
             <div id="tree-container"></div>
             <button id="sidebar-dupe-toggle" class="sidebar-dupe-toggle" title="Duplicate sidebar">⎘</button>
         </aside>
-        <div id="sidebar-resize"></div>
+        <div id="sidebar-resize" class="sidebar-resize"></div>
         <aside id="sidebar-right" class="hidden">
             <div id="sidebar-header-right">
                 <div class="sidebar-header-row">
@@ -653,7 +646,7 @@ header:fullscreen { display: none; }
             </div>
             <div id="tree-container-right"></div>
         </aside>
-        <div id="sidebar-right-resize"></div>
+        <div id="sidebar-right-resize" class="sidebar-resize"></div>
         <div class="editor-area">
             <div id="tabs" class="hide-ext">
                 <div id="tab-settings-wrap">
