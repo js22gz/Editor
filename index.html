@@ -3055,7 +3055,7 @@ document.addEventListener('mouseup', handleResizeEnd);
             this.fs.saveOpenTabs(this.state.currentTabId);
         });
         this.#textarea.addEventListener('input', () => {
-            this.updateLineNumbers();
+            bus.emit('editor:lines-changed');
             if (this.state.currentTabId) {
                 const tab = this.state.tabs.find(t => t.id === this.state.currentTabId);
                 if (tab) {
@@ -3064,7 +3064,7 @@ document.addEventListener('mouseup', handleResizeEnd);
                         if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'visible';
                         this.fs.scheduleSave();
                     }
-                    this.updateEditorStatus(tab);
+                    bus.emit('tab:status-update', tab);
                     // Send updated state to overlay/split extensions on every input
                     if (tab.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split')) {
                         tab.content = this.#textarea.value;
@@ -3086,14 +3086,14 @@ document.addEventListener('mouseup', handleResizeEnd);
                         if (ind) ind.style.visibility = 'visible';
                         this.#textarea.selectionStart = this.#textarea.selectionEnd = cursor;
                         this.fs.scheduleSave();
-                        this.updateEditorStatus(tab);
-                        this.updateLineNumbers();
+                        bus.emit('tab:status-update', tab);
+                        bus.emit('editor:lines-changed');
                     }
                 }).catch(() => { this.#creatingUntitled = false; });
             }
         });
         this.#textarea.addEventListener('paste', () => {
-            setTimeout(() => this.updateLineNumbers(), 0);
+            setTimeout(() => bus.emit('editor:lines-changed'), 0);
         });
         const overlayEl = document.getElementById('extension-overlay');
         this.#textarea.addEventListener('scroll', () => {
@@ -3264,7 +3264,7 @@ window.addEventListener('message', async e => {
       // For overlay/split mode, sync textarea first so state is consistent
       if ((activeTab.extensionMode === 'overlay' || activeTab.extensionMode === 'split') && this.#textarea) {
         this.#textarea.value = newContent;
-        this.updateLineNumbers();
+        bus.emit('editor:lines-changed');
       }
 
       activeTab.content = newContent;
@@ -3291,7 +3291,7 @@ window.addEventListener('message', async e => {
       }
     }
 
-    this.updateEditorStatus(activeTab);
+    bus.emit('tab:status-update', activeTab);
   }
   // Silently ignore old extension:save messages for backward compatibility
 });
