@@ -688,7 +688,7 @@ header:fullscreen { display: none; }
                             <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
                             <button class="settings-btn" id="settings-font-reset" title="Reset font size">ø</button>
                             <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
-                            <span class="settings-lbl">Font size</span>
+                            <span class="settings-lbl">Font size <span id="settings-font-val">14</span></span>
                         </div>
                     </div>
                     <div class="settings-section">
@@ -2232,7 +2232,7 @@ class TabManager {
         const gutterUserHidden = localStorage.getItem('gutterVisible') === 'false';
         if (tab.type === 'settings') {
             this.textarea.style.display = 'none';
-            this.gutter.style.display = 'none';
+            if (!gutterUserHidden) this.gutter.style.display = '';
             document.getElementById('settings-panel').classList.remove('hidden');
         } else if (tab.type === 'extension' && tab.extensionMode === 'full') {
             this.textarea.style.display = 'none';
@@ -2739,6 +2739,7 @@ class UIManager {
         if (savedFontSize) {
             this.#textarea.style.fontSize = savedFontSize + 'px';
             this.#gutter.style.fontSize = savedFontSize + 'px';
+            document.getElementById('settings-font-val').textContent = savedFontSize;
         }
         if (localStorage.getItem('sliderVisible') === 'false') {
             document.getElementById('line-width-slider').classList.add('hidden');
@@ -2887,6 +2888,10 @@ class UIManager {
     }
     /** @param {boolean} [force] - when true, always rerender even if line count unchanged */
     updateLineNumbers(force = false) {
+        if (this.state.getActiveTab()?.type === 'settings') {
+            this.#gutter.textContent = '';
+            return;
+        }
         if (force) {
             // Synchronous update when explicitly forced (e.g. tab switch)
             cancelAnimationFrame(this.#lineNumberRafId);
@@ -3295,6 +3300,7 @@ document.addEventListener('mouseup', handleResizeEnd);
         const applyFontSize = sz => {
             this.#textarea.style.fontSize = sz + 'px';
             this.#gutter.style.fontSize = sz + 'px';
+            document.getElementById('settings-font-val').textContent = sz;
         };
         document.getElementById('settings-font-decrease').addEventListener('click', () => {
             const cur = parseInt(this.#textarea.style.fontSize) || DEFAULT_FONT_SIZE;
