@@ -373,6 +373,7 @@ header:fullscreen { display: none; }
 }
 .settings-row-label { flex: 1; color: var(--text-primary); font-size: 13px; }
 .settings-row-value { color: var(--text-muted); font-size: 11px; min-width: 20px; text-align: center; }
+.settings-ext-types { color: var(--text-muted); font-size: 11px; flex-shrink: 0; }
 
 /* ── Line width slider – reliable downward triangle thumb (Chrome-first) ── */
 #line-width-slider {
@@ -3275,7 +3276,7 @@ document.addEventListener('mouseup', handleResizeEnd);
             name.className = 'settings-row-label';
             name.textContent = ext.name;
             const types = document.createElement('span');
-            types.style.cssText = 'color:var(--text-muted);font-size:11px;flex-shrink:0;';
+            types.className = 'settings-ext-types';
             types.textContent = ext.types.join(', ');
             const removeBtn = document.createElement('button');
             removeBtn.className = 'settings-btn settings-btn-text';
