@@ -57,7 +57,6 @@ window.LEGEND = `<!--
                   │     • Full CRUD + drag & drop (move/copy/rename)
                   │     • Auto-save (debounce 750 ms) + flush
                   │     • #newItem() shared helper (newFile / newFolder)
-                  │     • Session restore (pageshow / visibilitychange in bindLifecycle)
                   │     • #guard() permission helper
                   │
                   ├── TreeManager
@@ -83,12 +82,23 @@ window.LEGEND = `<!--
                   │     • Drag-to-reorder tabs
                   │     • updateTabPaths() after rename/move
                   │
+                  ├── StateRestoreManager (wake / restore / snapshot)
+                  │     • Phases: idle → snapshotting | restoring
+                  │     • restoreSession() — cold-start restore
+                  │     • bindLifecycle() — event listeners: pageshow /
+                  │       visibilitychange / freeze / resume / focus /
+                  │       blur / beforeunload
+                  │     • #wakeRestore() — centralized wake handler
+                  │     • #snapshotState() — capture before suspend
+                  │     • #revalidatePermission() — permission retry + toast
+                  │     • #handlePendingAuth() — deferred permission grant
+                  │     • scheduleColdStartRetry() — extra deep-sleep guard
+                  │
                   ├── UIManager
                   │     • DOM wiring, context menu, long-press (mobile)
                   │     • showToast / showDialog / updateLineNumbers
                   │     • bindKeyboard() · bindTreeEvents() · bindTabEvents()
-                  │       bindSettings() · bindLifecycle()
-                  │     • #revalidatePermission() shared helper
+                  │       bindSettings()
                   │
                   └── EditorApp (orchestrator)
                         • wires all classes together
@@ -713,8 +723,6 @@ class PathUtils {
 class FileSystemManager {
     #INVALID_CHARS = /[<>:"|?*\x00-\x1F]/;
     #MAX_FILE_SIZE = 3 * 1024 * 1024; // 3 MB
-    #restoring = false;
-    #restoreStartedAt = 0;
     /** @param {ReactiveState} state @param {PathUtils} pathUtils */
     constructor(state, pathUtils) {
         this.state = state;
@@ -935,77 +943,6 @@ class FileSystemManager {
             const saved = localStorage.getItem('openTabs');
             return saved ? JSON.parse(saved) : [];
         } catch { return []; }
-    }
-    // ── Session restore ────────────────────────────────────
-    async restoreSession() {
-        if (this.#restoring && Date.now() - this.#restoreStartedAt < 15000) return;
-        this.#restoring = true;
-        this.#restoreStartedAt = Date.now();
-        try {
-            // After a page discard (common on ChromeOS deep-sleep / lid-down),
-            // file-system handles may not be usable immediately.  A short pause
-            // lets the OS and browser settle before we touch them.
-            if (document.wasDiscarded) {
-                console.log('[EDITOR] Page was discarded — delaying restore for FS readiness');
-                await new Promise(r => setTimeout(r, 600));
-            }
-            this.loadExpandedState();
-            const saved = await this.loadSavedFolder();
-            if (saved.status === 'granted') {
-                this.state.currentDirHandle = saved.handle;
-                await this.build(saved.handle);
-                await this.#expandSavedFolders();
-                this.tree.render();
-                this.tree.updateHeader();
-                const restored = await this.tabs.restoreOpenTabs(saved.handle);
-                if (restored) this.ui.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-            } else if (saved.status === 'needs-auth') {
-                this.#handlePendingAuth(saved.handle);
-                return;
-            }
-            if (!this.state.tabs.length) {
-                await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
-            }
-        } finally {
-            this.#restoring = false;
-        }
-    }
-    async #expandSavedFolders() {
-        for (const path of [...this.state.expandedFolders].sort((a, b) => a.split('/').length - b.split('/').length)) {
-            const node = this.tree.getNode(path);
-            if (node?.kind === 'directory') await this.loadChildren(node);
-        }
-    }
-    #handlePendingAuth(handle) {
-        const pendingTabs = this.loadOpenTabs();
-        this.ui.showActionToast('Tap to restore folder access', async () => {
-            try {
-                if (await handle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
-                    this.ui.showToast('Access was not granted');
-                    return;
-                }
-                this.state.currentDirHandle = handle;
-                await this.build(handle);
-                this.loadExpandedState();
-                await this.#expandSavedFolders();
-                this.tree.render();
-                this.tree.updateHeader();
-                // Remove welcome tab before restore
-                const welcomeIdx = this.state.tabs.findIndex(t => t.type === 'welcome');
-                if (welcomeIdx !== -1) {
-                    this.state.tabs[welcomeIdx].element.remove();
-                    this.state.tabs.splice(welcomeIdx, 1);
-                }
-                const restored = await this.tabs.restoreOpenTabs(handle, pendingTabs);
-                if (restored) this.ui.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-                else if (!this.state.tabs.length) {
-                    await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
-                }
-                this.ui.showToast('Folder access restored ✓');
-            } catch {
-                this.ui.showToast('Failed to restore access');
-            }
-        }, 15000);
     }
     // ── Open folder/file ───────────────────────────────────
     async openFolder() {
@@ -2372,6 +2309,287 @@ class TabManager {
     }
 }
 // ────────────────────────────────────────────────────────
+// StateRestoreManager – wake / restore / snapshot lifecycle
+//   Phases:  idle → snapshotting (on blur/hide/freeze)
+//            idle → restoring   (on wake/resume/focus)
+// ────────────────────────────────────────────────────────
+class StateRestoreManager {
+    // ── Internal state machine ────────────────────────────
+    #phase = 'idle';        // 'idle' | 'snapshotting' | 'restoring'
+    #lastHiddenAt = 0;
+    #wakeRetryTimer = null;
+    #restoring = false;
+    #restoreStartedAt = 0;
+    /** @param {ReactiveState} state @param {FileSystemManager} fs @param {TabManager} tabs @param {TreeManager} tree @param {ExtensionManager} extensions */
+    constructor(state, fs, tabs, tree, extensions) {
+        this.state = state;
+        this.fs = fs;
+        this.tabs = tabs;
+        this.tree = tree;
+        this.extensions = extensions;
+        /** @type {UIManager} */ this.ui = null;
+    }
+    // ── Public API (narrow surface) ───────────────────────
+    /** Initial cold-start restore — called once from UIManager.init() */
+    async restoreSession() {
+        if (this.#restoring && Date.now() - this.#restoreStartedAt < 15000) return;
+        this.#restoring = true;
+        this.#restoreStartedAt = Date.now();
+        this.#phase = 'restoring';
+        try {
+            if (document.wasDiscarded) {
+                console.log('[EDITOR] Page was discarded — delaying restore for FS readiness');
+                await new Promise(r => setTimeout(r, 600));
+            }
+            this.fs.loadExpandedState();
+            const saved = await this.fs.loadSavedFolder();
+            if (saved.status === 'granted') {
+                this.state.currentDirHandle = saved.handle;
+                await this.fs.build(saved.handle);
+                await this.#expandSavedFolders();
+                this.tree.render();
+                this.tree.updateHeader();
+                const restored = await this.tabs.restoreOpenTabs(saved.handle);
+                if (restored) this.ui.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+            } else if (saved.status === 'needs-auth') {
+                this.#handlePendingAuth(saved.handle);
+                return;
+            }
+            if (!this.state.tabs.length) {
+                await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
+            }
+        } finally {
+            this.#restoring = false;
+            this.#phase = 'idle';
+        }
+    }
+    /** Bind all lifecycle event listeners — called once from UIManager.bindEvents() */
+    bindLifecycle() {
+        window.addEventListener('pageshow', async (e) => {
+            if (e.persisted || document.wasDiscarded) {
+                console.log(`[EDITOR WAKE] pageshow → persisted=${e.persisted} wasDiscarded=${document.wasDiscarded}`);
+                await this.#wakeRestore();
+            }
+        });
+        document.addEventListener('freeze', () => {
+            this.#lastHiddenAt = Date.now();
+            this.#snapshotState();
+        });
+        document.addEventListener('resume', () => this.#wakeRestore());
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState === 'visible') {
+                console.log('[EDITOR WAKE] visibilitychange → visible');
+                await this.#wakeRestore();
+            } else {
+                this.#lastHiddenAt = Date.now();
+                this.#snapshotState();
+            }
+        });
+        // CRITICAL for both shallow minimize AND deep sleep
+        window.addEventListener('blur', () => {
+            this.#lastHiddenAt = Date.now();
+            this.#snapshotState();
+        });
+        window.addEventListener('focus', async () => {
+            const timeAway = this.#lastHiddenAt ? Date.now() - this.#lastHiddenAt : 0;
+            if (timeAway > 700 || !this.state.currentDirHandle) {
+                console.log(`[EDITOR WAKE] Focus after ${timeAway}ms (cold start detected)`);
+                await this.#wakeRestore();
+            }
+        });
+        window.addEventListener('beforeunload', e => {
+            this.#snapshotState();
+            if (this.state.tabs.some(t => t.dirty)) {
+                e.preventDefault();
+                return e.returnValue = 'Unsaved changes will be lost';
+            }
+        });
+    }
+    /** Extra cold-start recovery — called from UIManager.init() after initial restore */
+    scheduleColdStartRetry() {
+        setTimeout(async () => {
+            if (!this.state.currentDirHandle) {
+                console.log('[EDITOR] Still empty after onload → forcing wake restore');
+                await this.#wakeRestore();
+            }
+        }, 800);
+    }
+    // ── Snapshot (pre-suspend) ─────────────────────────────
+    #snapshotState() {
+        this.#phase = 'snapshotting';
+        const textarea = this.ui?.textarea;
+        const activeTab = this.state.getActiveTab();
+        if (activeTab && activeTab.type !== 'extension' && textarea) {
+            activeTab.content = textarea.value;
+            activeTab.scrollTop = textarea.scrollTop;
+        }
+        if (this.state.currentDirHandle) {
+            this.fs.saveOpenTabs(this.state.currentTabId);
+        }
+        this.fs.flushSave().catch(e => console.warn('Flush during snapshot failed', e));
+        this.#phase = 'idle';
+    }
+    // ── Wake restore (post-resume) ────────────────────────
+    async #wakeRestore() {
+        if (this.#phase === 'restoring') {
+            console.log('[EDITOR WAKE] Already restoring — skipping duplicate call');
+            return;
+        }
+        this.#phase = 'restoring';
+        try {
+            console.log('%c[EDITOR WAKE] Starting full recovery (ChromeOS lid-close mode)', 'color:#22c55e;font-weight:bold');
+            await this.extensions.loadAll();
+            const hadHandleBefore = !!this.state.currentDirHandle;
+            const permOk = await this.#revalidatePermission();
+            if (permOk && this.state.currentDirHandle) {
+                if (document.wasDiscarded) {
+                    await new Promise(r => setTimeout(r, 1200));
+                } else {
+                    await new Promise(r => setTimeout(r, 600));
+                }
+                await this.fs.mutateAndRebuild();
+                this.tree.render();
+                this.tree.updateHeader();
+                this.tree.highlightActive();
+                if (!this.state.tabs.length) {
+                    const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
+                    if (restored) this.ui.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+                } else {
+                    this.tabs.reattachExtensions();
+                }
+            } else if (!hadHandleBefore) {
+                console.log('%c[EDITOR WAKE] No folder loaded → forcing full restoreSession()', 'color:#eab308');
+                await this.restoreSession();
+            }
+            // Refresh active tab content from disk
+            const textarea = this.ui?.textarea;
+            const activeTab = this.state.getActiveTab();
+            if (activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty && textarea) {
+                try {
+                    const file = await activeTab.handle.getFile();
+                    activeTab.content = await file.text();
+                    if (this.state.currentTabId === activeTab.id) {
+                        textarea.value = activeTab.content;
+                        this.ui.updateLineNumbers(true);
+                    }
+                } catch (e) {
+                    console.warn('Wake tab refresh failed', e);
+                }
+            }
+        } finally {
+            this.#phase = 'idle';
+            this.#lastHiddenAt = 0;
+        }
+    }
+    // ── Permission re-validation ──────────────────────────
+    async #revalidatePermission() {
+        if (!this.state.currentDirHandle) {
+            await this.restoreSession();
+            return !!this.state.currentDirHandle;
+        }
+        let perm = await this.fs.queryPermission(this.state.currentDirHandle);
+        if (perm === 'granted') return true;
+        await new Promise(r => setTimeout(r, 1500));
+        perm = await this.fs.queryPermission(this.state.currentDirHandle);
+        if (perm === 'granted') return true;
+        this.ui.showActionToast('Tap to restore folder access', async () => {
+            try {
+                const result = await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' });
+                if (result === 'granted') {
+                    await this.#wakeRebuild();
+                    this.ui.showToast('Folder access restored ✓');
+                } else {
+                    this.ui.showToast('Access was not granted');
+                }
+            } catch {
+                this.ui.showToast('Failed to restore access');
+            }
+        });
+        return false;
+    }
+    // ── Wake rebuild (tree + tabs + active content) ───────
+    async #wakeRebuild() {
+        await this.extensions.loadAll();
+        await this.fs.mutateAndRebuild();
+        this.tree.highlightActive();
+        if (!this.state.tabs.length && this.state.currentDirHandle) {
+            const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
+            if (restored) this.ui.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+            if (!this.state.tabs.length) {
+                await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
+            }
+            return;
+        }
+        this.tabs.reattachExtensions();
+        const textarea = this.ui?.textarea;
+        const activeTab = this.state.getActiveTab();
+        if (activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty) {
+            try {
+                const file = await activeTab.handle.getFile();
+                const content = await file.text();
+                activeTab.content = content;
+                if (this.state.currentTabId === activeTab.id && textarea) {
+                    textarea.value = content;
+                    this.ui.updateLineNumbers(true);
+                }
+            } catch (e) { console.warn('Refresh active tab on wake failed', e); }
+        }
+    }
+    // ── Pending auth handler ──────────────────────────────
+    #handlePendingAuth(handle) {
+        const pendingTabs = this.fs.loadOpenTabs();
+        this.ui.showActionToast('Tap to restore folder access', async () => {
+            try {
+                if (await handle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
+                    this.ui.showToast('Access was not granted');
+                    return;
+                }
+                this.state.currentDirHandle = handle;
+                await this.fs.build(handle);
+                this.fs.loadExpandedState();
+                await this.#expandSavedFolders();
+                this.tree.render();
+                this.tree.updateHeader();
+                const welcomeIdx = this.state.tabs.findIndex(t => t.type === 'welcome');
+                if (welcomeIdx !== -1) {
+                    this.state.tabs[welcomeIdx].element.remove();
+                    this.state.tabs.splice(welcomeIdx, 1);
+                }
+                const restored = await this.tabs.restoreOpenTabs(handle, pendingTabs);
+                if (restored) this.ui.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
+                else if (!this.state.tabs.length) {
+                    await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
+                }
+                this.ui.showToast('Folder access restored ✓');
+            } catch {
+                this.ui.showToast('Failed to restore access');
+            }
+        }, 15000);
+    }
+    // ── Expand previously expanded folders ─────────────────
+    async #expandSavedFolders() {
+        for (const path of [...this.state.expandedFolders].sort((a, b) => a.split('/').length - b.split('/').length)) {
+            const node = this.tree.getNode(path);
+            if (node?.kind === 'directory') await this.fs.loadChildren(node);
+        }
+    }
+    // ── Scheduled retry for lost tabs ─────────────────────
+    #scheduleWakeRetry() {
+        clearTimeout(this.#wakeRetryTimer);
+        if (this.state.tabs.length) return;
+        const hasSavedTabs = this.fs.loadOpenTabs().length > 0;
+        if (!hasSavedTabs) return;
+        this.#wakeRetryTimer = setTimeout(async () => {
+            if (this.state.tabs.length) return;
+            try {
+                await this.restoreSession();
+            } catch (e) {
+                console.warn('Wake retry restoreSession failed', e);
+            }
+        }, 3000);
+    }
+}
+// ────────────────────────────────────────────────────────
 // UIManager – DOM init, events & rendering
 // ────────────────────────────────────────────────────────
 class UIManager {
@@ -2390,18 +2608,16 @@ class UIManager {
     #lastLineCount = 1;
     #lineNumberRafId = null;
     #creatingUntitled = false;
-    #wakeRestoring = false;
-    #lastHiddenAt = 0;
-    #wakeRetryTimer = null;
     #leftView = null;
     #rightView = null;
-	    /** @param {ReactiveState} state @param {TabManager} tabs @param {TreeManager} tree @param {FileSystemManager} fs @param {ExtensionManager} extensions */
-    constructor(state, tabs, tree, fs, extensions) {
+	    /** @param {ReactiveState} state @param {TabManager} tabs @param {TreeManager} tree @param {FileSystemManager} fs @param {ExtensionManager} extensions @param {StateRestoreManager} restoreManager */
+    constructor(state, tabs, tree, fs, extensions, restoreManager) {
         this.state = state;
         this.tabs = tabs;
         this.tree = tree;
         this.fs = fs;
         this.extensions = extensions;
+        this.restoreManager = restoreManager;
         this.#isMobile = window.innerWidth <= 768;
     }
     get contextMenuTarget() { return this.#contextMenuTarget; }
@@ -2462,14 +2678,8 @@ class UIManager {
         }
         await this.fs.initDB();
         await this.extensions.loadAll();
-        await this.fs.restoreSession();
-		// ── Extra cold-start recovery (after deep sleep)
-		setTimeout(async () => {
-		    if (!this.state.currentDirHandle) {
-		        console.log('[EDITOR] Still empty after onload → forcing wake restore');
-		        await this.#wakeRestore();
-		    }
-		}, 800);
+        await this.restoreManager.restoreSession();
+        this.restoreManager.scheduleColdStartRetry();
     }
     showToast(message, duration = 2800) {
         const t = document.createElement('div');
@@ -3010,211 +3220,12 @@ document.addEventListener('mouseup', handleResizeEnd);
             localStorage.setItem('editorFontSize', DEFAULT_FONT_SIZE);
         });
     }
-    // Returns true if permission is already granted, false if user action is needed
-    async #revalidatePermission() {
-        if (!this.state.currentDirHandle) {
-            await this.fs.restoreSession();
-            return !!this.state.currentDirHandle;
-        }
-        let perm = await this.fs.queryPermission(this.state.currentDirHandle);
-        if (perm === 'granted') return true;
-        // Retry once after a short delay — permissions can be transiently
-        // unavailable right after waking from sleep / power-saver mode
-        await new Promise(r => setTimeout(r, 1500));
-        perm = await this.fs.queryPermission(this.state.currentDirHandle);
-        if (perm === 'granted') return true;
-        this.showActionToast('Tap to restore folder access', async () => {
-            try {
-                const result = await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' });
-                if (result === 'granted') {
-                    await this.#wakeRebuild();
-                    this.showToast('Folder access restored ✓');
-                } else {
-                    this.showToast('Access was not granted');
-                }
-            } catch {
-                this.showToast('Failed to restore access');
-            }
-        });
-        return false;
-    }
-    // Capture in-memory state to localStorage before the browser suspends the page
-    #snapshotState() {
-        const activeTab = this.state.getActiveTab();
-        if (activeTab && activeTab.type !== 'extension' && this.#textarea) {
-            activeTab.content = this.#textarea.value;
-            activeTab.scrollTop = this.#textarea.scrollTop;
-        }
-        if (this.state.currentDirHandle) {
-            this.fs.saveOpenTabs(this.state.currentTabId);
-        }
-        this.fs.flushSave().catch(e => console.warn('Flush during snapshot failed', e));
-    }
-    // Rebuild tree and restore any missing tabs after wake
-    async #wakeRebuild() {
-        await this.extensions.loadAll();
-        await this.fs.mutateAndRebuild();
-        this.tree.highlightActive();
-        // If tabs disappeared (page discarded mid-session), restore from localStorage
-        if (!this.state.tabs.length && this.state.currentDirHandle) {
-            const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
-            if (restored) this.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-            if (!this.state.tabs.length) {
-                await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
-            }
-            return;
-        }
-        // Re-attach extensions to surviving tabs
-        this.tabs.reattachExtensions();
-        // Refresh active non-dirty tab content from disk
-        const activeTab = this.state.getActiveTab();
-        if (activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty) {
-            try {
-                const file = await activeTab.handle.getFile();
-                const content = await file.text();
-                activeTab.content = content;
-                if (this.state.currentTabId === activeTab.id && this.#textarea) {
-                    this.#textarea.value = content;
-                    this.updateLineNumbers(true);
-                }
-            } catch (e) { console.warn('Refresh active tab on wake failed', e); }
-        }
-    }
-
-	// Centralized wake handler — guards against concurrent calls
-async #wakeRestore() {
-  if (this.#wakeRestoring) {
-    console.log('[EDITOR WAKE] Already restoring — skipping duplicate call');
-    return;
-  }
-  this.#wakeRestoring = true;
-  try {
-    console.log('%c[EDITOR WAKE] Starting full recovery (ChromeOS lid-close mode)', 'color:#22c55e;font-weight:bold');
-
-    // Reload extensions from IndexedDB so tabs can re-attach
-    await this.extensions.loadAll();
-
-    const hadHandleBefore = !!this.state.currentDirHandle;
-    const permOk = await this.#revalidatePermission();
-
-    if (permOk && this.state.currentDirHandle) {
-      // Force full tree rebuild FIRST (this refreshes all handles)
-      if (document.wasDiscarded) {
-        await new Promise(r => setTimeout(r, 1200));
-      } else {
-        await new Promise(r => setTimeout(r, 600));
-      }
-
-      await this.fs.mutateAndRebuild();
-      this.tree.render();
-      this.tree.updateHeader();
-      this.tree.highlightActive();
-
-      // Now restore tabs
-      if (!this.state.tabs.length) {
-        const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
-        if (restored) this.showToast(`Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-      } else {
-        // Tabs survived but may have lost their extension objects
-        this.tabs.reattachExtensions();
-      }
-    } else if (!hadHandleBefore) {
-      console.log('%c[EDITOR WAKE] No folder loaded → forcing full restoreSession()', 'color:#eab308');
-      await this.fs.restoreSession();
-    }
-
-    // Refresh active tab content from disk
-    const activeTab = this.state.getActiveTab();
-    if (activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty && this.#textarea) {
-      try {
-        const file = await activeTab.handle.getFile();
-        activeTab.content = await file.text();
-        if (this.state.currentTabId === activeTab.id) {
-          this.#textarea.value = activeTab.content;
-          this.updateLineNumbers(true);
-        }
-      } catch (e) {
-        console.warn('Wake tab refresh failed', e);
-      }
-    }
-  } finally {
-    this.#wakeRestoring = false;
-    this.#lastHiddenAt = 0;
-  }
-}
-	
-	
-	#scheduleWakeRetry() {
-        clearTimeout(this.#wakeRetryTimer);
-        if (this.state.tabs.length) return;
-        const hasSavedTabs = this.fs.loadOpenTabs().length > 0;
-        if (!hasSavedTabs) return;
-        this.#wakeRetryTimer = setTimeout(async () => {
-            if (this.state.tabs.length) return;
-            try {
-                await this.fs.restoreSession();
-            } catch (e) {
-                console.warn('Wake retry restoreSession failed', e);
-            }
-        }, 3000);
-    }
-
-	bindLifecycle() {
-    // bfcache restore OR page-discard reload
-    window.addEventListener('pageshow', async (e) => {
-        if (e.persisted || document.wasDiscarded) {
-            console.log(`[EDITOR WAKE] pageshow → persisted=${e.persisted} wasDiscarded=${document.wasDiscarded}`);
-            await this.#wakeRestore();
-        }
-    });
-
-    document.addEventListener('freeze', () => {
-        this.#lastHiddenAt = Date.now();
-        this.#snapshotState();
-    });
-
-    document.addEventListener('resume', () => this.#wakeRestore());
-
-    // visibility + minimize/maximize
-    document.addEventListener('visibilitychange', async () => {
-        if (document.visibilityState === 'visible') {
-            console.log('[EDITOR WAKE] visibilitychange → visible');
-            await this.#wakeRestore();
-        } else {
-            this.#lastHiddenAt = Date.now();
-            this.#snapshotState();
-        }
-    });
-
-    // ←←← CRITICAL for both shallow minimize AND deep sleep
-    window.addEventListener('blur', () => {
-        this.#lastHiddenAt = Date.now();
-        this.#snapshotState();
-    });
-
-    window.addEventListener('focus', async () => {
-        const timeAway = this.#lastHiddenAt ? Date.now() - this.#lastHiddenAt : 0;
-        // 700 ms or no folder loaded = treat as wake
-        if (timeAway > 700 || !this.state.currentDirHandle) {
-            console.log(`[EDITOR WAKE] Focus after ${timeAway}ms (cold start detected)`);
-            await this.#wakeRestore();
-        }
-    });
-
-    window.addEventListener('beforeunload', e => {
-        this.#snapshotState();
-        if (this.state.tabs.some(t => t.dirty)) {
-            e.preventDefault();
-            return e.returnValue = 'Unsaved changes will be lost';
-        }
-    });
-}
 bindEvents() {
     this.bindKeyboard();
     this.bindTreeEvents();
     this.bindTabEvents();
     this.bindSettings();
-    this.bindLifecycle();
+    this.restoreManager.bindLifecycle();
 
 window.addEventListener('message', async e => {
   if (!e.data || typeof e.data !== 'object') return;
@@ -3272,13 +3283,16 @@ class EditorApp {
         this.tree = new TreeManager(this.state, this.fs);
         this.extensions = new ExtensionManager(this.state, this.fs);
         this.tabs = new TabManager(this.state, this.fs, this.extensions);
-        this.ui = new UIManager(this.state, this.tabs, this.tree, this.fs, this.extensions);
+        this.restore = new StateRestoreManager(this.state, this.fs, this.tabs, this.tree, this.extensions);
+        this.ui = new UIManager(this.state, this.tabs, this.tree, this.fs, this.extensions, this.restore);
+        // Wire cross-references
         this.fs.tree = this.tree;
         this.fs.tabs = this.tabs;
         this.fs.ui = this.ui;
         this.extensions.ui = this.ui;
         this.extensions.tabs = this.tabs;
         this.tabs.ui = this.ui;
+        this.restore.ui = this.ui;
     }
     async init() { await this.ui.init(); }
 }
