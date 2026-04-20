@@ -50,7 +50,7 @@ window.LEGEND = `<!--
                   │
                   ├── EventBus (const bus)
                   │     • on(event, fn) / off(event, fn) / emit(event, ...args)
-                  │     • Namespaces: ui: tab: editor: extension:
+                  │     • Namespaces: ui: tab: editor: extension: restore:
                   │     • Decouples cross-component notifications
                   │
                   ├── PathUtils
@@ -89,6 +89,7 @@ window.LEGEND = `<!--
                   │
                   ├── StateRestoreManager (wake / restore / snapshot)
                   │     • Phases: idle → snapshotting | restoring
+                  │     • Bus: restore:started / :completed / :snapshot / :permission-needed
                   │     • restoreSession() — cold-start restore
                   │     • bindLifecycle() — event listeners: pageshow /
                   │       visibilitychange / freeze / resume / focus /
@@ -701,7 +702,7 @@ class ReactiveState extends EventTarget {
 }
 // ────────────────────────────────────────────────────────
 // EventBus – namespaced internal event system
-//   Namespaces: ui: tab: editor: extension:
+//   Namespaces: ui: tab: editor: extension: restore:
 // ────────────────────────────────────────────────────────
 const bus = (() => {
     const listeners = new Map();
@@ -1006,9 +1007,7 @@ async openFileFromNode(node) {
     if (!await this.#confirmLargeFile(file)) return;
     const content = await file.text();
     await this.tabs.createNewTab(node.handle, node.name, content, node.path);
-    if (this.ui.isMobile && !this.ui.sidebarEl.classList.contains('hidden')) {
-      this.ui.toggleSidebar();
-    }
+    bus.emit('ui:sidebar-auto-close');
   } catch (e) {
     bus.emit('ui:toast', e.message.includes('permission') ? 'Re-open folder to grant write access' : 'File too large or unreadable as text');
   }
@@ -1024,9 +1023,9 @@ async openFileFromNode(node) {
         }
     }
     // ── Target directory for new items ─────────────────────
-    async #getTargetDir() {
-        const targetPath = this.ui.contextMenuTarget?.kind === 'directory'
-            ? this.ui.contextMenuTarget.path
+    async #getTargetDir(contextTarget) {
+        const targetPath = contextTarget?.kind === 'directory'
+            ? contextTarget.path
             : (this.state.activeDirectoryPath || '');
         const { parent, name } = await this.pathUtils.resolve(this.state.currentDirHandle, targetPath);
         const dir = targetPath ? await parent.getDirectoryHandle(name) : parent;
@@ -1034,7 +1033,7 @@ async openFileFromNode(node) {
         return { dir, targetPath };
     }
     // ── New file/folder ────────────────────────────────────
-    async #newItem(kind, suppliedName) {
+    async #newItem(kind, suppliedName, contextTarget) {
         if (!this.state.currentDirHandle) return bus.emit('ui:toast', 'Open a folder first');
         const isFile = kind === 'file';
         let trimmed;
@@ -1050,7 +1049,7 @@ async openFileFromNode(node) {
         }
         if (this.#INVALID_CHARS.test(trimmed) || /[\/\\]/.test(trimmed))
             return bus.emit('ui:toast', isFile ? 'Invalid filename' : 'Invalid folder name');
-        const { dir, targetPath } = await this.#getTargetDir();
+        const { dir, targetPath } = await this.#getTargetDir(contextTarget);
         if (isFile) {
             const handle = await dir.getFileHandle(trimmed, { create: true });
             await this.#write(handle, '');
@@ -1071,8 +1070,8 @@ async openFileFromNode(node) {
         }
         bus.emit('ui:close-context-menu');
     }
-    async newFile(name) { return this.#newItem('file', name); }
-    async newFolder(name) { return this.#newItem('folder', name); }
+    async newFile(name, contextTarget) { return this.#newItem('file', name, contextTarget); }
+    async newFolder(name, contextTarget) { return this.#newItem('folder', name, contextTarget); }
     async createUntitledFile() {
         if (!this.state.currentDirHandle) return null;
         const root = this.state.currentDirHandle;
@@ -1137,8 +1136,7 @@ async openFileFromNode(node) {
         await Promise.allSettled(this.state.tabs.filter(t => t.dirty && t.handle).map(t => this.saveTab(t)));
     }
     // ── Delete ─────────────────────────────────────────────
-    async deleteFile() {
-        const target = this.ui.contextMenuTarget;
+    async deleteFile(target) {
         if (!target || target.kind !== 'file') return;
         if (!await this.ui.showDialog({ isConfirm: true, confirmMessage: `Delete "${target.name}"?`, danger: true })) {
             bus.emit('ui:close-context-menu'); return;
@@ -1160,8 +1158,7 @@ async openFileFromNode(node) {
         }
         bus.emit('ui:close-context-menu');
     }
-    async deleteFolder() {
-        const target = this.ui.contextMenuTarget;
+    async deleteFolder(target) {
         if (!target || target.kind !== 'directory') return;
         const isNonEmpty = target.children?.length > 0;
         const confirmed = isNonEmpty
@@ -1182,8 +1179,7 @@ async openFileFromNode(node) {
         bus.emit('ui:close-context-menu');
     }
 // ── Rename ─────────────────────────────────────────────
-async renameItem() {
-    const target = this.ui.contextMenuTarget;
+async renameItem(target) {
     if (!target) return;
     const newName = await this.ui.showDialog({
         promptTitle: `Rename ${target.kind}:`,
@@ -1646,7 +1642,6 @@ class ExtensionManager {
     constructor(state, fs) {
         this.state = state;
         this.fs = fs;
-        /** @type {UIManager} */ this.ui = null;
     }
     async loadAll() {
         await this.fs.initDB();
@@ -2341,7 +2336,6 @@ class StateRestoreManager {
     // ── Internal state machine ────────────────────────────
     #phase = 'idle';        // 'idle' | 'snapshotting' | 'restoring'
     #lastHiddenAt = 0;
-    #wakeRetryTimer = null;
     #restoring = false;
     #restoreStartedAt = 0;
     /** @param {ReactiveState} state @param {FileSystemManager} fs @param {TabManager} tabs @param {TreeManager} tree @param {ExtensionManager} extensions */
@@ -2359,6 +2353,7 @@ class StateRestoreManager {
         this.#restoring = true;
         this.#restoreStartedAt = Date.now();
         this.#phase = 'restoring';
+        bus.emit('restore:started', 'cold');
         try {
             if (document.wasDiscarded) {
                 console.log('[EDITOR] Page was discarded — delaying restore for FS readiness');
@@ -2384,6 +2379,7 @@ class StateRestoreManager {
         } finally {
             this.#restoring = false;
             this.#phase = 'idle';
+            bus.emit('restore:completed', 'cold');
         }
     }
     /** Bind all lifecycle event listeners — called once from UIManager.bindEvents() */
@@ -2440,6 +2436,7 @@ class StateRestoreManager {
     // ── Snapshot (pre-suspend) ─────────────────────────────
     #snapshotState() {
         this.#phase = 'snapshotting';
+        bus.emit('restore:snapshot');
         const textarea = document.getElementById('textarea');
         const activeTab = this.state.getActiveTab();
         if (activeTab && activeTab.type !== 'extension' && textarea) {
@@ -2459,6 +2456,7 @@ class StateRestoreManager {
             return;
         }
         this.#phase = 'restoring';
+        bus.emit('restore:started', 'wake');
         try {
             console.log('%c[EDITOR WAKE] Starting full recovery (ChromeOS lid-close mode)', 'color:#22c55e;font-weight:bold');
             await this.extensions.loadAll();
@@ -2471,8 +2469,7 @@ class StateRestoreManager {
                     await new Promise(r => setTimeout(r, 600));
                 }
                 await this.fs.mutateAndRebuild();
-                this.tree.render();
-                this.tree.updateHeader();
+                // mutateAndRebuild() already renders + updates header
                 this.tree.highlightActive();
                 if (!this.state.tabs.length) {
                     const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
@@ -2502,6 +2499,7 @@ class StateRestoreManager {
         } finally {
             this.#phase = 'idle';
             this.#lastHiddenAt = 0;
+            bus.emit('restore:completed', 'wake');
         }
     }
     // ── Permission re-validation ──────────────────────────
@@ -2515,6 +2513,7 @@ class StateRestoreManager {
         await new Promise(r => setTimeout(r, 1500));
         perm = await this.fs.queryPermission(this.state.currentDirHandle);
         if (perm === 'granted') return true;
+        bus.emit('restore:permission-needed');
         bus.emit('ui:action-toast', 'Tap to restore folder access', async () => {
             try {
                 const result = await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' });
@@ -2596,21 +2595,6 @@ class StateRestoreManager {
             if (node?.kind === 'directory') await this.fs.loadChildren(node);
         }
     }
-    // ── Scheduled retry for lost tabs ─────────────────────
-    #scheduleWakeRetry() {
-        clearTimeout(this.#wakeRetryTimer);
-        if (this.state.tabs.length) return;
-        const hasSavedTabs = this.fs.loadOpenTabs().length > 0;
-        if (!hasSavedTabs) return;
-        this.#wakeRetryTimer = setTimeout(async () => {
-            if (this.state.tabs.length) return;
-            try {
-                await this.restoreSession();
-            } catch (e) {
-                console.warn('Wake retry restoreSession failed', e);
-            }
-        }, 3000);
-    }
 }
 // ────────────────────────────────────────────────────────
 // UIManager – DOM init, events & rendering
@@ -2643,15 +2627,10 @@ class UIManager {
         this.restoreManager = restoreManager;
         this.#isMobile = window.innerWidth <= 768;
     }
-    get contextMenuTarget() { return this.#contextMenuTarget; }
-    get isMobile() { return this.#isMobile; }
     #parentDirPath(node) {
         if (node.kind === 'directory') return node.path;
         return node.path.includes('/') ? node.path.substring(0, node.path.lastIndexOf('/')) : null;
     }
-    get sidebarEl() { return this.#sidebarEl; }
-    get textarea() { return this.#textarea; }
-    get editorStatusEl() { return this.#editorStatusEl; }
     async init() {
         this.#textarea = document.getElementById('textarea');
 		// Wait for service worker to be fully ready before restore
@@ -2802,21 +2781,21 @@ class UIManager {
             });
             if (this.state.copiedNode) { addSeparator(); addItem('Paste', () => this.fs.copyEntry(this.state.copiedNode, this.state.activeDirectoryPath || '')); }
         } else if (node.kind === 'directory') {
-            addItem('New File', () => this.fs.newFile());
-            addItem('New Folder', () => this.fs.newFolder());
+            addItem('New File', () => this.fs.newFile(undefined, node));
+            addItem('New Folder', () => this.fs.newFolder(undefined, node));
             addSeparator();
-            addItem('Rename', () => this.fs.renameItem());
+            addItem('Rename', () => this.fs.renameItem(node));
             addItem('Copy', () => { this.state.copiedNode = node; this.showToast(`"${node.name}" ready to paste`); });
             if (this.state.copiedNode) addItem('Paste', () => this.fs.copyEntry(this.state.copiedNode, node.path));
             addSeparator();
-            addItem('Delete Folder', () => this.fs.deleteFolder(), 'danger');
+            addItem('Delete Folder', () => this.fs.deleteFolder(node), 'danger');
         } else {
-            addItem('Open', () => this.fs.openFileFromNode(this.#contextMenuTarget));
-            addItem('Open in browser', () => this.fs.openInBrowser(this.#contextMenuTarget));
-            addItem('Rename', () => this.fs.renameItem());
-            addItem('Copy', () => { this.state.copiedNode = this.#contextMenuTarget; this.showToast(`"${this.#contextMenuTarget.name}" ready to paste`); });
+            addItem('Open', () => this.fs.openFileFromNode(node));
+            addItem('Open in browser', () => this.fs.openInBrowser(node));
+            addItem('Rename', () => this.fs.renameItem(node));
+            addItem('Copy', () => { this.state.copiedNode = node; this.showToast(`"${node.name}" ready to paste`); });
             addSeparator();
-            addItem('Delete File', () => this.fs.deleteFile(), 'danger');
+            addItem('Delete File', () => this.fs.deleteFile(node), 'danger');
         }
         this.#contextMenu.style.left = e.clientX + 'px';
         this.#contextMenu.style.top = e.clientY + 'px';
@@ -3066,7 +3045,7 @@ document.addEventListener('mouseup', handleResizeEnd);
             this.fs.saveOpenTabs(this.state.currentTabId);
         });
         this.#textarea.addEventListener('input', () => {
-            this.updateLineNumbers();
+            bus.emit('editor:lines-changed');
             if (this.state.currentTabId) {
                 const tab = this.state.tabs.find(t => t.id === this.state.currentTabId);
                 if (tab) {
@@ -3075,7 +3054,7 @@ document.addEventListener('mouseup', handleResizeEnd);
                         if (tab.element) tab.element.querySelector('.dirty-indicator').style.visibility = 'visible';
                         this.fs.scheduleSave();
                     }
-                    this.updateEditorStatus(tab);
+                    bus.emit('tab:status-update', tab);
                     // Send updated state to overlay/split extensions on every input
                     if (tab.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split')) {
                         tab.content = this.#textarea.value;
@@ -3097,14 +3076,14 @@ document.addEventListener('mouseup', handleResizeEnd);
                         if (ind) ind.style.visibility = 'visible';
                         this.#textarea.selectionStart = this.#textarea.selectionEnd = cursor;
                         this.fs.scheduleSave();
-                        this.updateEditorStatus(tab);
-                        this.updateLineNumbers();
+                        bus.emit('tab:status-update', tab);
+                        bus.emit('editor:lines-changed');
                     }
                 }).catch(() => { this.#creatingUntitled = false; });
             }
         });
         this.#textarea.addEventListener('paste', () => {
-            setTimeout(() => this.updateLineNumbers(), 0);
+            setTimeout(() => bus.emit('editor:lines-changed'), 0);
         });
         const overlayEl = document.getElementById('extension-overlay');
         this.#textarea.addEventListener('scroll', () => {
@@ -3248,6 +3227,9 @@ bindEvents() {
     bus.on('ui:toast', (msg, dur) => this.showToast(msg, dur));
     bus.on('ui:action-toast', (msg, cb, dur) => this.showActionToast(msg, cb, dur));
     bus.on('ui:close-context-menu', () => this.closeContextMenu());
+    bus.on('ui:sidebar-auto-close', () => {
+        if (this.#isMobile && !this.#sidebarEl.classList.contains('hidden')) this.toggleSidebar();
+    });
     bus.on('tab:status-update', tab => {
         if (tab) this.updateEditorStatus(tab);
         else this.#editorStatusEl.textContent = 'No file open';
@@ -3272,7 +3254,7 @@ window.addEventListener('message', async e => {
       // For overlay/split mode, sync textarea first so state is consistent
       if ((activeTab.extensionMode === 'overlay' || activeTab.extensionMode === 'split') && this.#textarea) {
         this.#textarea.value = newContent;
-        this.updateLineNumbers();
+        bus.emit('editor:lines-changed');
       }
 
       activeTab.content = newContent;
@@ -3299,7 +3281,7 @@ window.addEventListener('message', async e => {
       }
     }
 
-    this.updateEditorStatus(activeTab);
+    bus.emit('tab:status-update', activeTab);
   }
   // Silently ignore old extension:save messages for backward compatibility
 });
@@ -3322,7 +3304,6 @@ class EditorApp {
         this.fs.tree = this.tree;
         this.fs.tabs = this.tabs;
         this.fs.ui = this.ui;
-        this.extensions.ui = this.ui;
         this.tabs.ui = this.ui;
     }
     async init() { await this.ui.init(); }
