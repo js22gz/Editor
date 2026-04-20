@@ -2205,7 +2205,7 @@ class TabManager {
         if (!skipSave && this.state.currentTabId !== null) {
             const cur = this.state.tabs.find(t => t.id === this.state.currentTabId);
             if (cur) {
-                if (cur.type !== 'extension' && cur.type !== 'settings' || cur.extensionMode === 'overlay' || cur.extensionMode === 'split') {
+                if ((cur.type !== 'extension' && cur.type !== 'settings') || cur.extensionMode === 'overlay' || cur.extensionMode === 'split') {
                     cur.content = this.textarea.value;
                     cur.scrollTop = this.textarea.scrollTop;
                 }
