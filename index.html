@@ -714,7 +714,7 @@ const bus = (() => {
         },
         off(event, fn) { listeners.get(event)?.delete(fn); },
         emit(event, ...args) {
-            listeners.get(event)?.forEach(fn => fn(...args));
+            let r; listeners.get(event)?.forEach(fn => { r = fn(...args); }); return r;
         }
     });
 })();
@@ -754,7 +754,6 @@ class FileSystemManager {
         this.db = null;
         /** @type {TreeManager} */ this.tree = null;
         /** @type {TabManager} */ this.tabs = null;
-        /** @type {UIManager} */ this.ui = null;
         this.scheduleSave = (() => {
             return () => {
                 if (!this.state.currentTabId) return;
@@ -773,7 +772,7 @@ class FileSystemManager {
     async #confirmLargeFile(file) {
         if (file.size <= this.#MAX_FILE_SIZE) return true;
         const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-        return this.ui.showDialog({ isConfirm: true, confirmMessage: `This file is ${sizeMB} MB. Files over 3 MB may slow down or freeze the editor. Open anyway?`, danger: true });
+        return bus.emit('ui:confirm', { confirmMessage: `This file is ${sizeMB} MB. Files over 3 MB may slow down or freeze the editor. Open anyway?`, danger: true });
     }
     // ── Core helpers ───────────────────────────────────────
     async #guard(handle, action = 'operation') {
@@ -1043,7 +1042,7 @@ async openFileFromNode(node) {
             const activePath = this.state.activeDirectoryPath || '';
             const rootName = this.state.currentDirHandle.name;
             const displayPath = '/' + rootName + (activePath ? '/' + activePath : '') + '/';
-            const name = await this.ui.showDialog({ promptTitle: isFile ? 'New file name:' : 'New folder name:', subtitle: displayPath });
+            const name = await bus.emit('ui:prompt', { promptTitle: isFile ? 'New file name:' : 'New folder name:', subtitle: displayPath });
             if (!name?.trim()) return;
             trimmed = name.trim();
         }
@@ -1138,7 +1137,7 @@ async openFileFromNode(node) {
     // ── Delete ─────────────────────────────────────────────
     async deleteFile(target) {
         if (!target || target.kind !== 'file') return;
-        if (!await this.ui.showDialog({ isConfirm: true, confirmMessage: `Delete "${target.name}"?`, danger: true })) {
+        if (!await bus.emit('ui:confirm', { confirmMessage: `Delete "${target.name}"?`, danger: true })) {
             bus.emit('ui:close-context-menu'); return;
         }
         try {
@@ -1162,8 +1161,8 @@ async openFileFromNode(node) {
         if (!target || target.kind !== 'directory') return;
         const isNonEmpty = target.children?.length > 0;
         const confirmed = isNonEmpty
-            ? (await this.ui.showDialog({ promptTitle: `Type "remove" to delete non-empty folder "${target.name}":` }) || '').trim().toLowerCase() === 'remove'
-            : await this.ui.showDialog({ isConfirm: true, confirmMessage: `Delete folder "${target.name}"?`, danger: true });
+            ? (await bus.emit('ui:prompt', { promptTitle: `Type "remove" to delete non-empty folder "${target.name}":` }) || '').trim().toLowerCase() === 'remove'
+            : await bus.emit('ui:confirm', { confirmMessage: `Delete folder "${target.name}"?`, danger: true });
         if (!confirmed) { bus.emit('ui:close-context-menu'); return; }
         try {
             const { parent, name } = await this.pathUtils.resolve(this.state.currentDirHandle, target.path);
@@ -1181,7 +1180,7 @@ async openFileFromNode(node) {
 // ── Rename ─────────────────────────────────────────────
 async renameItem(target) {
     if (!target) return;
-    const newName = await this.ui.showDialog({
+    const newName = await bus.emit('ui:prompt', {
         promptTitle: `Rename ${target.kind}:`,
         defaultValue: target.name
     });
@@ -1885,7 +1884,6 @@ class TabManager {
         this.state = state;
         this.fs = fs;
         this.extensions = extensions;
-        /** @type {UIManager} */ this.ui = null;
         this.textarea = null;
         this.gutter = null;
         this.tabsContainer = null;
@@ -1942,7 +1940,7 @@ class TabManager {
                 longPressTriggered = false;
                 longPressTimer = setTimeout(async () => {
                     longPressTriggered = true;
-                    if (!await this.ui.showDialog({isConfirm: true, confirmMessage: `Uninstall extension "${ext.name}"?`, danger: true})) return;
+                    if (!await bus.emit('ui:confirm', {confirmMessage: `Uninstall extension "${ext.name}"?`, danger: true})) return;
                     await this.extensions.uninstall(ext.name);
                     const currentTabId = this.state.currentTabId;
                     let currentTabWasExtension = false;
@@ -2200,7 +2198,7 @@ class TabManager {
         const idx = this.state.tabs.findIndex(t => t.id === id);
         if (idx === -1) return;
         const tab = this.state.tabs[idx];
-        if (tab.dirty && !await this.ui.showDialog({isConfirm: true, confirmMessage: `"${tab.name}" has unsaved changes. Close anyway?`})) return;
+        if (tab.dirty && !await bus.emit('ui:confirm', {confirmMessage: `"${tab.name}" has unsaved changes. Close anyway?`})) return;
         if (tab.extFrame) {
             tab.extFrame.remove();
             tab.extFrame = null;
@@ -3235,6 +3233,8 @@ bindEvents() {
         else this.#editorStatusEl.textContent = 'No file open';
     });
     bus.on('editor:lines-changed', force => this.updateLineNumbers(force));
+    bus.on('ui:confirm', opts => this.showDialog({ ...opts, isConfirm: true }));
+    bus.on('ui:prompt', opts => this.showDialog(opts));
 
     this.bindKeyboard();
     this.bindTreeEvents();
@@ -3303,8 +3303,6 @@ class EditorApp {
         // Wire cross-references (reduced via EventBus)
         this.fs.tree = this.tree;
         this.fs.tabs = this.tabs;
-        this.fs.ui = this.ui;
-        this.tabs.ui = this.ui;
     }
     async init() { await this.ui.init(); }
 }
