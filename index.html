@@ -85,8 +85,9 @@ window.LEGEND = `<!--
                   ├── StateRestoreManager (wake / restore / snapshot)
                   │     • Phases: idle → snapshotting | restoring
                   │     • restoreSession() — cold-start restore
-                  │     • bindLifecycle() — pageshow / visibilitychange /
-                  │       freeze / resume / focus / blur / beforeunload
+                  │     • bindLifecycle() — event listeners: pageshow /
+                  │       visibilitychange / freeze / resume / focus /
+                  │       blur / beforeunload
                   │     • #wakeRestore() — centralized wake handler
                   │     • #snapshotState() — capture before suspend
                   │     • #revalidatePermission() — permission retry + toast
