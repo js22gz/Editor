@@ -1006,9 +1006,7 @@ async openFileFromNode(node) {
     if (!await this.#confirmLargeFile(file)) return;
     const content = await file.text();
     await this.tabs.createNewTab(node.handle, node.name, content, node.path);
-    if (this.ui.isMobile && !this.ui.sidebarEl.classList.contains('hidden')) {
-      this.ui.toggleSidebar();
-    }
+    bus.emit('ui:sidebar-auto-close');
   } catch (e) {
     bus.emit('ui:toast', e.message.includes('permission') ? 'Re-open folder to grant write access' : 'File too large or unreadable as text');
   }
@@ -1024,9 +1022,9 @@ async openFileFromNode(node) {
         }
     }
     // ── Target directory for new items ─────────────────────
-    async #getTargetDir() {
-        const targetPath = this.ui.contextMenuTarget?.kind === 'directory'
-            ? this.ui.contextMenuTarget.path
+    async #getTargetDir(contextTarget) {
+        const targetPath = contextTarget?.kind === 'directory'
+            ? contextTarget.path
             : (this.state.activeDirectoryPath || '');
         const { parent, name } = await this.pathUtils.resolve(this.state.currentDirHandle, targetPath);
         const dir = targetPath ? await parent.getDirectoryHandle(name) : parent;
@@ -1034,7 +1032,7 @@ async openFileFromNode(node) {
         return { dir, targetPath };
     }
     // ── New file/folder ────────────────────────────────────
-    async #newItem(kind, suppliedName) {
+    async #newItem(kind, suppliedName, contextTarget) {
         if (!this.state.currentDirHandle) return bus.emit('ui:toast', 'Open a folder first');
         const isFile = kind === 'file';
         let trimmed;
@@ -1050,7 +1048,7 @@ async openFileFromNode(node) {
         }
         if (this.#INVALID_CHARS.test(trimmed) || /[\/\\]/.test(trimmed))
             return bus.emit('ui:toast', isFile ? 'Invalid filename' : 'Invalid folder name');
-        const { dir, targetPath } = await this.#getTargetDir();
+        const { dir, targetPath } = await this.#getTargetDir(contextTarget);
         if (isFile) {
             const handle = await dir.getFileHandle(trimmed, { create: true });
             await this.#write(handle, '');
@@ -1071,8 +1069,8 @@ async openFileFromNode(node) {
         }
         bus.emit('ui:close-context-menu');
     }
-    async newFile(name) { return this.#newItem('file', name); }
-    async newFolder(name) { return this.#newItem('folder', name); }
+    async newFile(name, contextTarget) { return this.#newItem('file', name, contextTarget); }
+    async newFolder(name, contextTarget) { return this.#newItem('folder', name, contextTarget); }
     async createUntitledFile() {
         if (!this.state.currentDirHandle) return null;
         const root = this.state.currentDirHandle;
@@ -1137,8 +1135,7 @@ async openFileFromNode(node) {
         await Promise.allSettled(this.state.tabs.filter(t => t.dirty && t.handle).map(t => this.saveTab(t)));
     }
     // ── Delete ─────────────────────────────────────────────
-    async deleteFile() {
-        const target = this.ui.contextMenuTarget;
+    async deleteFile(target) {
         if (!target || target.kind !== 'file') return;
         if (!await this.ui.showDialog({ isConfirm: true, confirmMessage: `Delete "${target.name}"?`, danger: true })) {
             bus.emit('ui:close-context-menu'); return;
@@ -1160,8 +1157,7 @@ async openFileFromNode(node) {
         }
         bus.emit('ui:close-context-menu');
     }
-    async deleteFolder() {
-        const target = this.ui.contextMenuTarget;
+    async deleteFolder(target) {
         if (!target || target.kind !== 'directory') return;
         const isNonEmpty = target.children?.length > 0;
         const confirmed = isNonEmpty
@@ -1182,8 +1178,7 @@ async openFileFromNode(node) {
         bus.emit('ui:close-context-menu');
     }
 // ── Rename ─────────────────────────────────────────────
-async renameItem() {
-    const target = this.ui.contextMenuTarget;
+async renameItem(target) {
     if (!target) return;
     const newName = await this.ui.showDialog({
         promptTitle: `Rename ${target.kind}:`,
@@ -1646,7 +1641,6 @@ class ExtensionManager {
     constructor(state, fs) {
         this.state = state;
         this.fs = fs;
-        /** @type {UIManager} */ this.ui = null;
     }
     async loadAll() {
         await this.fs.initDB();
@@ -2643,15 +2637,10 @@ class UIManager {
         this.restoreManager = restoreManager;
         this.#isMobile = window.innerWidth <= 768;
     }
-    get contextMenuTarget() { return this.#contextMenuTarget; }
-    get isMobile() { return this.#isMobile; }
     #parentDirPath(node) {
         if (node.kind === 'directory') return node.path;
         return node.path.includes('/') ? node.path.substring(0, node.path.lastIndexOf('/')) : null;
     }
-    get sidebarEl() { return this.#sidebarEl; }
-    get textarea() { return this.#textarea; }
-    get editorStatusEl() { return this.#editorStatusEl; }
     async init() {
         this.#textarea = document.getElementById('textarea');
 		// Wait for service worker to be fully ready before restore
@@ -2802,21 +2791,21 @@ class UIManager {
             });
             if (this.state.copiedNode) { addSeparator(); addItem('Paste', () => this.fs.copyEntry(this.state.copiedNode, this.state.activeDirectoryPath || '')); }
         } else if (node.kind === 'directory') {
-            addItem('New File', () => this.fs.newFile());
-            addItem('New Folder', () => this.fs.newFolder());
+            addItem('New File', () => this.fs.newFile(undefined, node));
+            addItem('New Folder', () => this.fs.newFolder(undefined, node));
             addSeparator();
-            addItem('Rename', () => this.fs.renameItem());
+            addItem('Rename', () => this.fs.renameItem(node));
             addItem('Copy', () => { this.state.copiedNode = node; this.showToast(`"${node.name}" ready to paste`); });
             if (this.state.copiedNode) addItem('Paste', () => this.fs.copyEntry(this.state.copiedNode, node.path));
             addSeparator();
-            addItem('Delete Folder', () => this.fs.deleteFolder(), 'danger');
+            addItem('Delete Folder', () => this.fs.deleteFolder(node), 'danger');
         } else {
-            addItem('Open', () => this.fs.openFileFromNode(this.#contextMenuTarget));
-            addItem('Open in browser', () => this.fs.openInBrowser(this.#contextMenuTarget));
-            addItem('Rename', () => this.fs.renameItem());
-            addItem('Copy', () => { this.state.copiedNode = this.#contextMenuTarget; this.showToast(`"${this.#contextMenuTarget.name}" ready to paste`); });
+            addItem('Open', () => this.fs.openFileFromNode(node));
+            addItem('Open in browser', () => this.fs.openInBrowser(node));
+            addItem('Rename', () => this.fs.renameItem(node));
+            addItem('Copy', () => { this.state.copiedNode = node; this.showToast(`"${node.name}" ready to paste`); });
             addSeparator();
-            addItem('Delete File', () => this.fs.deleteFile(), 'danger');
+            addItem('Delete File', () => this.fs.deleteFile(node), 'danger');
         }
         this.#contextMenu.style.left = e.clientX + 'px';
         this.#contextMenu.style.top = e.clientY + 'px';
@@ -3248,6 +3237,9 @@ bindEvents() {
     bus.on('ui:toast', (msg, dur) => this.showToast(msg, dur));
     bus.on('ui:action-toast', (msg, cb, dur) => this.showActionToast(msg, cb, dur));
     bus.on('ui:close-context-menu', () => this.closeContextMenu());
+    bus.on('ui:sidebar-auto-close', () => {
+        if (this.#isMobile && !this.#sidebarEl.classList.contains('hidden')) this.toggleSidebar();
+    });
     bus.on('tab:status-update', tab => {
         if (tab) this.updateEditorStatus(tab);
         else this.#editorStatusEl.textContent = 'No file open';
@@ -3322,7 +3314,6 @@ class EditorApp {
         this.fs.tree = this.tree;
         this.fs.tabs = this.tabs;
         this.fs.ui = this.ui;
-        this.extensions.ui = this.ui;
         this.tabs.ui = this.ui;
     }
     async init() { await this.ui.init(); }
