@@ -50,7 +50,7 @@ window.LEGEND = `<!--
                   │
                   ├── EventBus (const bus)
                   │     • on(event, fn) / off(event, fn) / emit(event, ...args)
-                  │     • Namespaces: ui: tab: editor: extension:
+                  │     • Namespaces: ui: tab: editor: extension: restore:
                   │     • Decouples cross-component notifications
                   │
                   ├── PathUtils
@@ -89,6 +89,8 @@ window.LEGEND = `<!--
                   │
                   ├── StateRestoreManager (wake / restore / snapshot)
                   │     • Phases: idle → snapshotting | restoring
+                  │     • Bus lifecycle: restore:started / restore:completed
+                  │       restore:snapshot / restore:permission-needed
                   │     • restoreSession() — cold-start restore
                   │     • bindLifecycle() — event listeners: pageshow /
                   │       visibilitychange / freeze / resume / focus /
@@ -701,7 +703,7 @@ class ReactiveState extends EventTarget {
 }
 // ────────────────────────────────────────────────────────
 // EventBus – namespaced internal event system
-//   Namespaces: ui: tab: editor: extension:
+//   Namespaces: ui: tab: editor: extension: restore:
 // ────────────────────────────────────────────────────────
 const bus = (() => {
     const listeners = new Map();
@@ -2335,7 +2337,6 @@ class StateRestoreManager {
     // ── Internal state machine ────────────────────────────
     #phase = 'idle';        // 'idle' | 'snapshotting' | 'restoring'
     #lastHiddenAt = 0;
-    #wakeRetryTimer = null;
     #restoring = false;
     #restoreStartedAt = 0;
     /** @param {ReactiveState} state @param {FileSystemManager} fs @param {TabManager} tabs @param {TreeManager} tree @param {ExtensionManager} extensions */
@@ -2353,6 +2354,7 @@ class StateRestoreManager {
         this.#restoring = true;
         this.#restoreStartedAt = Date.now();
         this.#phase = 'restoring';
+        bus.emit('restore:started', 'cold');
         try {
             if (document.wasDiscarded) {
                 console.log('[EDITOR] Page was discarded — delaying restore for FS readiness');
@@ -2378,6 +2380,7 @@ class StateRestoreManager {
         } finally {
             this.#restoring = false;
             this.#phase = 'idle';
+            bus.emit('restore:completed', 'cold');
         }
     }
     /** Bind all lifecycle event listeners — called once from UIManager.bindEvents() */
@@ -2434,6 +2437,7 @@ class StateRestoreManager {
     // ── Snapshot (pre-suspend) ─────────────────────────────
     #snapshotState() {
         this.#phase = 'snapshotting';
+        bus.emit('restore:snapshot');
         const textarea = document.getElementById('textarea');
         const activeTab = this.state.getActiveTab();
         if (activeTab && activeTab.type !== 'extension' && textarea) {
@@ -2453,6 +2457,7 @@ class StateRestoreManager {
             return;
         }
         this.#phase = 'restoring';
+        bus.emit('restore:started', 'wake');
         try {
             console.log('%c[EDITOR WAKE] Starting full recovery (ChromeOS lid-close mode)', 'color:#22c55e;font-weight:bold');
             await this.extensions.loadAll();
@@ -2465,8 +2470,7 @@ class StateRestoreManager {
                     await new Promise(r => setTimeout(r, 600));
                 }
                 await this.fs.mutateAndRebuild();
-                this.tree.render();
-                this.tree.updateHeader();
+                // mutateAndRebuild already renders + updates header
                 this.tree.highlightActive();
                 if (!this.state.tabs.length) {
                     const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
@@ -2496,6 +2500,7 @@ class StateRestoreManager {
         } finally {
             this.#phase = 'idle';
             this.#lastHiddenAt = 0;
+            bus.emit('restore:completed', 'wake');
         }
     }
     // ── Permission re-validation ──────────────────────────
@@ -2509,6 +2514,7 @@ class StateRestoreManager {
         await new Promise(r => setTimeout(r, 1500));
         perm = await this.fs.queryPermission(this.state.currentDirHandle);
         if (perm === 'granted') return true;
+        bus.emit('restore:permission-needed');
         bus.emit('ui:action-toast', 'Tap to restore folder access', async () => {
             try {
                 const result = await this.state.currentDirHandle.requestPermission({ mode: 'readwrite' });
@@ -2589,21 +2595,6 @@ class StateRestoreManager {
             const node = this.tree.getNode(path);
             if (node?.kind === 'directory') await this.fs.loadChildren(node);
         }
-    }
-    // ── Scheduled retry for lost tabs ─────────────────────
-    #scheduleWakeRetry() {
-        clearTimeout(this.#wakeRetryTimer);
-        if (this.state.tabs.length) return;
-        const hasSavedTabs = this.fs.loadOpenTabs().length > 0;
-        if (!hasSavedTabs) return;
-        this.#wakeRetryTimer = setTimeout(async () => {
-            if (this.state.tabs.length) return;
-            try {
-                await this.restoreSession();
-            } catch (e) {
-                console.warn('Wake retry restoreSession failed', e);
-            }
-        }, 3000);
     }
 }
 // ────────────────────────────────────────────────────────
