@@ -89,8 +89,7 @@ window.LEGEND = `<!--
                   │
                   ├── StateRestoreManager (wake / restore / snapshot)
                   │     • Phases: idle → snapshotting | restoring
-                  │     • Bus lifecycle: restore:started / restore:completed
-                  │       restore:snapshot / restore:permission-needed
+                  │     • Bus: restore:started / :completed / :snapshot / :permission-needed
                   │     • restoreSession() — cold-start restore
                   │     • bindLifecycle() — event listeners: pageshow /
                   │       visibilitychange / freeze / resume / focus /
@@ -2470,7 +2469,7 @@ class StateRestoreManager {
                     await new Promise(r => setTimeout(r, 600));
                 }
                 await this.fs.mutateAndRebuild();
-                // mutateAndRebuild already renders + updates header
+                // mutateAndRebuild() already renders + updates header
                 this.tree.highlightActive();
                 if (!this.state.tabs.length) {
                     const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
