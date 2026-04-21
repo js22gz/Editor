@@ -497,6 +497,16 @@ header:fullscreen { display: none; }
   height: 1px; background: var(--border-color); margin: 4px 0;
 }
 
+.dialog-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 10001; }
+.dialog-box { background: var(--bg-surface); padding: 24px; border-radius: 8px; min-width: 320px; border: 1px solid var(--border-color); }
+.dialog-title { margin-bottom: 12px; font-size: 14px; }
+.dialog-subtitle { margin-bottom: 12px; font-size: 12px; color: var(--text-muted); word-break: break-all; }
+.dialog-input { width: 100%; padding: 10px; background: var(--border-color); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 4px; font-size: 16px; }
+.dialog-actions { display: flex; gap: 8px; margin-top: 16px; }
+.dialog-btn { flex: 1; min-height: 44px; border: none; border-radius: 4px; background: var(--border-color); color: var(--text-primary); }
+.dialog-btn-ok { background: var(--text-secondary); color: var(--bg-base); }
+.dialog-btn-ok.danger { background: var(--danger); color: #fff; }
+
 .sidebar-resize {
   width: 5px; cursor: col-resize; background: transparent; flex-shrink: 0;
 }
@@ -2710,15 +2720,14 @@ class UIManager {
     showDialog({promptTitle, subtitle = '', defaultValue = '', isConfirm = false, confirmMessage = '', danger = false} = {}) {
         return new Promise(resolve => {
             const modal = document.createElement('div');
-            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10001;';
-            const okBg = danger ? '#ef4444' : '#a1a1aa', okFg = danger ? '#fff' : '#09090b';
-            modal.innerHTML = `<div style="background:#18181b;padding:24px;border-radius:8px;min-width:320px;border:1px solid #27272a;">` +
-                `<div style="margin-bottom:12px;font-size:14px;"></div>` +
-                `<div style="margin-bottom:12px;font-size:12px;color:#71717a;word-break:break-all;"></div>` +
-                (!isConfirm ? `<input type="text" style="width:100%;padding:10px;background:#27272a;border:1px solid #3f3f46;color:#e4e4e7;border-radius:4px;font-size:16px;">` : '') +
-                `<div style="display:flex;gap:8px;margin-top:16px;">` +
-                `<button style="flex:1;min-height:44px;background:${okBg};color:${okFg};border:none;border-radius:4px;">${isConfirm ? 'Confirm' : 'OK'}</button>` +
-                `<button style="flex:1;min-height:44px;background:#27272a;color:#e4e4e7;border:none;border-radius:4px;">Cancel</button></div></div>`;
+            modal.className = 'dialog-overlay';
+            modal.innerHTML = `<div class="dialog-box">` +
+                `<div class="dialog-title"></div>` +
+                `<div class="dialog-subtitle"></div>` +
+                (!isConfirm ? `<input type="text" class="dialog-input">` : '') +
+                `<div class="dialog-actions">` +
+                `<button class="dialog-btn dialog-btn-ok${danger ? ' danger' : ''}">${isConfirm ? 'Confirm' : 'OK'}</button>` +
+                `<button class="dialog-btn">Cancel</button></div></div>`;
             // textContent assignment keeps user-supplied strings free of HTML injection
             modal.firstElementChild.firstElementChild.textContent = isConfirm ? confirmMessage : promptTitle;
             const subtitleEl = modal.firstElementChild.children[1];
