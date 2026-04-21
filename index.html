@@ -53,16 +53,13 @@ window.LEGEND = `<!--
                   │     • Namespaces: ui: tab: editor: extension: restore:
                   │     • Decouples cross-component notifications
                   │
-                  ├── PathUtils
-                  │     • resolve(base, pathStr)
-                  │
                   ├── FileSystemManager (FSA + persistence)
                   │     • IndexedDB (handles + extensions)
                   │     • Lazy tree (loadChildren + mutateAndRebuild)
                   │     • Full CRUD + drag & drop (move/copy/rename)
                   │     • Auto-save (debounce 750 ms) + flush
                   │     • #newItem() shared helper (newFile / newFolder)
-                  │     • #guard() permission helper
+                  │     • #guard() + #resolve() — permission & path helpers
                   │
                   ├── TreeManager
                   │     • nodeByPath Map + fileTree root
@@ -745,35 +742,11 @@ const bus = (() => {
             listeners.get(event).add(fn);
             return () => listeners.get(event)?.delete(fn);
         },
-        off(event, fn) { listeners.get(event)?.delete(fn); },
         emit(event, ...args) {
             let r; listeners.get(event)?.forEach(fn => { r = fn(...args); }); return r;
         }
     });
 })();
-// ────────────────────────────────────────────────────────
-// PathUtils – file-path helpers
-// ────────────────────────────────────────────────────────
-class PathUtils {
-    /**
-     * Resolves a path relative to a base directory handle.
-     * @param {FileSystemDirectoryHandle} base
-     * @param {string} pathStr
-     */
-    async resolve(base, pathStr = '') {
-        if (!base) throw new Error('No base handle');
-        if (!pathStr || pathStr === '/') {
-            return { parent: base, name: base.name, path: '/' };
-        }
-        const parts = pathStr.split('/').filter(Boolean);
-        let parent = base;
-        const name = parts[parts.length - 1];
-        for (let i = 0; i < parts.length - 1; i++) {
-            parent = await parent.getDirectoryHandle(parts[i]);
-        }
-        return { parent, name, path: pathStr };
-    }
-}
 // ────────────────────────────────────────────────────────
 // FileSystemManager 
 // ────────────────────────────────────────────────────────
@@ -791,27 +764,35 @@ class FileSystemManager {
         'ttf','otf','woff','woff2','eot',
         'blend','fbx','glb','gltf','stl','3ds','dwg','dxf',
     ]);
-    /** @param {ReactiveState} state @param {PathUtils} pathUtils */
-    constructor(state, pathUtils) {
+    /** @param {ReactiveState} state */
+    constructor(state) {
         this.state = state;
-        this.pathUtils = pathUtils;
         this.db = null;
         /** @type {TreeManager} */ this.tree = null;
         /** @type {TabManager} */ this.tabs = null;
-        this.scheduleSave = (() => {
-            return () => {
-                if (!this.state.currentTabId) return;
-                const tab = this.state.getTab(this.state.currentTabId);
-                if (!tab) return;
-                clearTimeout(tab._saveTimer);
-                tab._saveTimer = setTimeout(() => {
-                    tab._saveTimer = null;
-                    if (tab.dirty) this.saveTab(tab);
-                }, 750);
-            };
-        })();
+        this.scheduleSave = () => {
+            if (!this.state.currentTabId) return;
+            const tab = this.state.getTab(this.state.currentTabId);
+            if (!tab) return;
+            clearTimeout(tab._saveTimer);
+            tab._saveTimer = setTimeout(() => {
+                tab._saveTimer = null;
+                if (tab.dirty) this.saveTab(tab);
+            }, 750);
+        };
     }
     get maxFileSize() { return this.#MAX_FILE_SIZE; }
+    async #resolve(base, pathStr = '') {
+        if (!base) throw new Error('No base handle');
+        if (!pathStr || pathStr === '/') return { parent: base, name: base.name, path: '/' };
+        const parts = pathStr.split('/').filter(Boolean);
+        let parent = base;
+        const name = parts[parts.length - 1];
+        for (let i = 0; i < parts.length - 1; i++) {
+            parent = await parent.getDirectoryHandle(parts[i]);
+        }
+        return { parent, name, path: pathStr };
+    }
     /** Prompt the user before opening a file exceeding #MAX_FILE_SIZE. Returns true if the file is small enough or the user chose to proceed. */
     async #confirmLargeFile(file) {
         if (file.size <= this.#MAX_FILE_SIZE) return true;
@@ -1078,7 +1059,7 @@ async openFileFromNode(node) {
         const targetPath = contextTarget?.kind === 'directory'
             ? contextTarget.path
             : (this.state.activeDirectoryPath || '');
-        const { parent, name } = await this.pathUtils.resolve(this.state.currentDirHandle, targetPath);
+        const { parent, name } = await this.#resolve(this.state.currentDirHandle, targetPath);
         const dir = targetPath ? await parent.getDirectoryHandle(name) : parent;
         await this.#guard(dir);
         return { dir, targetPath };
@@ -1199,7 +1180,7 @@ async openFileFromNode(node) {
                     break;
                 }
             }
-            const { parent, name } = await this.pathUtils.resolve(this.state.currentDirHandle, target.path);
+            const { parent, name } = await this.#resolve(this.state.currentDirHandle, target.path);
             await this.#guard(parent);
             await parent.removeEntry(name);
             await this.mutateAndRebuild();
@@ -1217,7 +1198,7 @@ async openFileFromNode(node) {
             : await bus.emit('ui:confirm', { confirmMessage: `Delete folder "${target.name}"?`, danger: true });
         if (!confirmed) { bus.emit('ui:close-context-menu'); return; }
         try {
-            const { parent, name } = await this.pathUtils.resolve(this.state.currentDirHandle, target.path);
+            const { parent, name } = await this.#resolve(this.state.currentDirHandle, target.path);
             await this.#guard(parent);
             await parent.removeEntry(name, { recursive: true });
             this.state.expandedFolders.delete(target.path);
@@ -1243,7 +1224,7 @@ async renameItem(target) {
     }
     try {
         const oldPath = target.path;
-        const { parent } = await this.pathUtils.resolve(this.state.currentDirHandle, oldPath);
+        const { parent } = await this.#resolve(this.state.currentDirHandle, oldPath);
         await this.#guard(parent);
 
         let updatedHandle = target.handle;
@@ -1279,7 +1260,7 @@ async renameItem(target) {
             return bus.emit('ui:toast', 'Cannot move folder into itself');
         }
         try {
-            const { parent: srcParent } = await this.pathUtils.resolve(this.state.currentDirHandle, srcPath);
+            const { parent: srcParent } = await this.#resolve(this.state.currentDirHandle, srcPath);
             const destNode = this.tree.getNode(destFolderPath || '/');
             if (!destNode) return bus.emit('ui:toast', 'Destination folder not found');
             await this.#guard(srcParent);
@@ -1326,7 +1307,7 @@ async renameItem(target) {
         }
         if (!moved) {
             await this.#copyDirectory(srcNode.handle, destHandle, srcNode.name);
-            await (await this.pathUtils.resolve(this.state.currentDirHandle, srcNode.path)).parent.removeEntry(srcNode.name, { recursive: true });
+            await (await this.#resolve(this.state.currentDirHandle, srcNode.path)).parent.removeEntry(srcNode.name, { recursive: true });
         }
     }
     static #MAX_COPY_DEPTH = 100;
@@ -2155,11 +2136,8 @@ class TabManager {
         const closeBtn = document.createElement('span');
         closeBtn.className = 'close';
         closeBtn.textContent = '×';
-        if (tab.type === 'extension') {
+        if (tab.type === 'extension' || tab.type === 'text') {
             const extToggle = this.#createExtToggle(tab, tab.extension);
-            tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
-        } else if (tab.type === 'text') {
-            const extToggle = this.#createExtToggle(tab, null);
             tabEl.append(extToggle, tabName, dirtyInd, closeBtn);
         } else {
             tabEl.append(tabName, dirtyInd, closeBtn);
@@ -2231,15 +2209,7 @@ class TabManager {
             this.textarea.style.display = 'none';
             if (!gutterUserHidden) this.gutter.style.display = 'none';
             this.extensions.renderTab(tab);
-        } else if (tab.type === 'extension' && tab.extensionMode === 'overlay') {
-            // Overlay mode: keep textarea + gutter visible
-            this.textarea.style.display = '';
-            if (!gutterUserHidden) this.gutter.style.display = '';
-            this.textarea.value = tab.content || '';
-            this.textarea.readOnly = false;
-            this.extensions.renderTab(tab);
-        } else if (tab.type === 'extension' && tab.extensionMode === 'split') {
-            // Split mode: textarea + gutter on left, extension iframe on right
+        } else if (tab.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split')) {
             this.textarea.style.display = '';
             if (!gutterUserHidden) this.gutter.style.display = '';
             this.textarea.value = tab.content || '';
@@ -2327,14 +2297,12 @@ class TabManager {
 	
 	  // First retry — longer delay for ChromeOS lid close
 	  if (restored === 0 && savedTabs.length > 0) {
-	    console.log(`[EDITOR] All ${savedTabs.length} tab(s) failed — retrying after 2800ms…`);
 	    await new Promise(r => setTimeout(r, 2800));
 	    ({ restored, activeTabPath } = await this.#tryOpenSavedTabs(dirHandle, savedTabs, 'retry1'));
 	  }
 	
 	  // Second retry — even longer (covers deep suspend)
 	  if (restored === 0 && savedTabs.length > 0) {
-	    console.log(`[EDITOR] Still failing — second retry after another 2800ms…`);
 	    await new Promise(r => setTimeout(r, 2800));
 	    ({ restored, activeTabPath } = await this.#tryOpenSavedTabs(dirHandle, savedTabs, 'retry2'));
 	  }
@@ -2403,8 +2371,6 @@ class StateRestoreManager {
     // ── Internal state machine ────────────────────────────
     #phase = 'idle';        // 'idle' | 'snapshotting' | 'restoring'
     #lastHiddenAt = 0;
-    #restoring = false;
-    #restoreStartedAt = 0;
     /** @param {ReactiveState} state @param {FileSystemManager} fs @param {TabManager} tabs @param {TreeManager} tree @param {ExtensionManager} extensions */
     constructor(state, fs, tabs, tree, extensions) {
         this.state = state;
@@ -2416,16 +2382,11 @@ class StateRestoreManager {
     // ── Public API (narrow surface) ───────────────────────
     /** Initial cold-start restore — called once from UIManager.init() */
     async restoreSession() {
-        if (this.#restoring && Date.now() - this.#restoreStartedAt < 15000) return;
-        this.#restoring = true;
-        this.#restoreStartedAt = Date.now();
+        if (this.#phase === 'restoring') return;
         this.#phase = 'restoring';
         bus.emit('restore:started', 'cold');
         try {
-            if (document.wasDiscarded) {
-                console.log('[EDITOR] Page was discarded — delaying restore for FS readiness');
-                await new Promise(r => setTimeout(r, 600));
-            }
+            if (document.wasDiscarded) await new Promise(r => setTimeout(r, 600));
             this.fs.loadExpandedState();
             const saved = await this.fs.loadSavedFolder();
             if (saved.status === 'granted') {
@@ -2444,7 +2405,6 @@ class StateRestoreManager {
                 await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
             }
         } finally {
-            this.#restoring = false;
             this.#phase = 'idle';
             bus.emit('restore:completed', 'cold');
         }
@@ -2452,10 +2412,7 @@ class StateRestoreManager {
     /** Bind all lifecycle event listeners — called once from UIManager.bindEvents() */
     bindLifecycle() {
         window.addEventListener('pageshow', async (e) => {
-            if (e.persisted || document.wasDiscarded) {
-                console.log(`[EDITOR WAKE] pageshow → persisted=${e.persisted} wasDiscarded=${document.wasDiscarded}`);
-                await this.#wakeRestore();
-            }
+            if (e.persisted || document.wasDiscarded) await this.#wakeRestore();
         });
         document.addEventListener('freeze', () => {
             this.#lastHiddenAt = Date.now();
@@ -2464,7 +2421,6 @@ class StateRestoreManager {
         document.addEventListener('resume', () => this.#wakeRestore());
         document.addEventListener('visibilitychange', async () => {
             if (document.visibilityState === 'visible') {
-                console.log('[EDITOR WAKE] visibilitychange → visible');
                 await this.#wakeRestore();
             } else {
                 this.#lastHiddenAt = Date.now();
@@ -2478,10 +2434,7 @@ class StateRestoreManager {
         });
         window.addEventListener('focus', async () => {
             const timeAway = this.#lastHiddenAt ? Date.now() - this.#lastHiddenAt : 0;
-            if (timeAway > 700 || !this.state.currentDirHandle) {
-                console.log(`[EDITOR WAKE] Focus after ${timeAway}ms (cold start detected)`);
-                await this.#wakeRestore();
-            }
+            if (timeAway > 700 || !this.state.currentDirHandle) await this.#wakeRestore();
         });
         window.addEventListener('beforeunload', e => {
             this.#snapshotState();
@@ -2494,10 +2447,7 @@ class StateRestoreManager {
     /** Extra cold-start recovery — called from UIManager.init() after initial restore */
     scheduleColdStartRetry() {
         setTimeout(async () => {
-            if (!this.state.currentDirHandle) {
-                console.log('[EDITOR] Still empty after onload → forcing wake restore');
-                await this.#wakeRestore();
-            }
+            if (!this.state.currentDirHandle) await this.#wakeRestore();
         }, 800);
     }
     // ── Snapshot (pre-suspend) ─────────────────────────────
@@ -2518,25 +2468,16 @@ class StateRestoreManager {
     }
     // ── Wake restore (post-resume) ────────────────────────
     async #wakeRestore() {
-        if (this.#phase === 'restoring') {
-            console.log('[EDITOR WAKE] Already restoring — skipping duplicate call');
-            return;
-        }
+        if (this.#phase === 'restoring') return;
         this.#phase = 'restoring';
         bus.emit('restore:started', 'wake');
         try {
-            console.log('%c[EDITOR WAKE] Starting full recovery (ChromeOS lid-close mode)', 'color:#22c55e;font-weight:bold');
             await this.extensions.loadAll();
             const hadHandleBefore = !!this.state.currentDirHandle;
             const permOk = await this.#revalidatePermission();
             if (permOk && this.state.currentDirHandle) {
-                if (document.wasDiscarded) {
-                    await new Promise(r => setTimeout(r, 1200));
-                } else {
-                    await new Promise(r => setTimeout(r, 600));
-                }
+                await new Promise(r => setTimeout(r, document.wasDiscarded ? 1200 : 600));
                 await this.fs.mutateAndRebuild();
-                // mutateAndRebuild() already renders + updates header
                 this.tree.highlightActive();
                 if (!this.state.tabs.length) {
                     const restored = await this.tabs.restoreOpenTabs(this.state.currentDirHandle);
@@ -2545,7 +2486,6 @@ class StateRestoreManager {
                     this.tabs.reattachExtensions();
                 }
             } else if (!hadHandleBefore) {
-                console.log('%c[EDITOR WAKE] No folder loaded → forcing full restoreSession()', 'color:#eab308');
                 await this.restoreSession();
             }
             // Refresh active tab content from disk
@@ -3390,8 +3330,7 @@ window.addEventListener('message', async e => {
 class EditorApp {
     constructor() {
         this.state = new ReactiveState();
-        this.pathUtils = new PathUtils();
-        this.fs = new FileSystemManager(this.state, this.pathUtils);
+        this.fs = new FileSystemManager(this.state);
         this.tree = new TreeManager(this.state, this.fs);
         this.extensions = new ExtensionManager(this.state, this.fs);
         this.tabs = new TabManager(this.state, this.fs, this.extensions);
