@@ -2564,6 +2564,12 @@ class StateRestoreManager {
     }
 
     async #restoreTabs(handle) {
+        // Remove any placeholder welcome tab before restoring real files
+        const welcomeIdx = this.state.tabs.findIndex(t => t.type === 'welcome');
+        if (welcomeIdx !== -1) {
+            this.state.tabs[welcomeIdx].element.remove();
+            this.state.tabs.splice(welcomeIdx, 1);
+        }
         const restored = await this.tabs.restoreOpenTabs(handle);
         if (restored) bus.emit('ui:toast', `Restored ${restored} tab${restored > 1 ? 's' : ''}`);
         if (!this.state.tabs.length) {
@@ -2593,7 +2599,6 @@ class StateRestoreManager {
 
     // ── Pending auth handler (cold-start, folder not yet authorized) ──
     #handlePendingAuth(handle) {
-        const pendingTabs = this.fs.loadOpenTabs();
         bus.emit('ui:action-toast', 'Tap to restore folder access', async () => {
             try {
                 if (await handle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
@@ -2602,16 +2607,7 @@ class StateRestoreManager {
                 }
                 this.state.currentDirHandle = handle;
                 await this.#rebuildTree(handle);
-                const welcomeIdx = this.state.tabs.findIndex(t => t.type === 'welcome');
-                if (welcomeIdx !== -1) {
-                    this.state.tabs[welcomeIdx].element.remove();
-                    this.state.tabs.splice(welcomeIdx, 1);
-                }
-                const restored = await this.tabs.restoreOpenTabs(handle, pendingTabs);
-                if (restored) bus.emit('ui:toast', `Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-                else if (!this.state.tabs.length) {
-                    await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
-                }
+                await this.#restoreTabs(handle);
                 bus.emit('ui:toast', 'Folder access restored ✓');
             } catch {
                 bus.emit('ui:toast', 'Failed to restore access');
