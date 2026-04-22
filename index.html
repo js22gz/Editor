@@ -2358,7 +2358,7 @@ class TabManager {
 // DEBUG flag — set localStorage.DEBUG_RESTORE = '1' to enable
 // ────────────────────────────────────────────────────────
 const DEBUG_RESTORE = localStorage.getItem('DEBUG_RESTORE') === '1';
-function _dbg(...args) { if (DEBUG_RESTORE) console.log('[restore]', ...args); }
+function logRestore(...args) { if (DEBUG_RESTORE) console.log('[restore]', ...args); }
 
 // ────────────────────────────────────────────────────────
 // PermissionCoordinator – single place for FS permission flow
@@ -2423,7 +2423,7 @@ class StateRestoreManager {
 
     // ── State machine ──────────────────────────────────────
     #transition(to) {
-        _dbg(`${this.#state} → ${to}`);
+        logRestore(`${this.#state} → ${to}`);
         this.#state = to;
     }
 
@@ -2436,10 +2436,10 @@ class StateRestoreManager {
      */
     async ensureRestored(reason = 'unknown') {
         if (this.#restoreInProgress) {
-            _dbg(`ensureRestored(${reason}) — queued behind in-progress restore`);
+            logRestore(`ensureRestored(${reason}) — queued behind in-progress restore`);
             return this.#restoreInProgress;
         }
-        _dbg(`ensureRestored(${reason}) — begin`);
+        logRestore(`ensureRestored(${reason}) — begin`);
         this.#transition('restoring');
         bus.emit('restore:started', reason);
         this.#restoreInProgress = this.#doRestore(reason)
@@ -2447,7 +2447,7 @@ class StateRestoreManager {
                 this.#restoreInProgress = null;
                 this.#transition('idle');
                 bus.emit('restore:completed', reason);
-                _dbg(`ensureRestored(${reason}) — completed`);
+                logRestore(`ensureRestored(${reason}) — completed`);
             });
         return this.#restoreInProgress;
     }
@@ -2514,9 +2514,11 @@ class StateRestoreManager {
         const permOk = await this.#permCoord.hasPermission();
         if (!permOk) {
             // handleLostPermission() shows a toast and returns synchronously.
-            // #doRestore() returns immediately after, the finally block clears
-            // #restoreInProgress, and ensureRestored() is safely callable again
-            // when the user taps the toast.
+            // #doRestore() returns immediately after via the `return` below, then
+            // the finally block in ensureRestored() clears #restoreInProgress and
+            // transitions back to 'idle'. When the user taps the toast, calling
+            // ensureRestored() again is always safe — either it starts a fresh
+            // restore (if idle) or queues behind any concurrent restore in progress.
             this.#permCoord.handleLostPermission(() => this.ensureRestored('manual-permission-grant'));
             return;
         }
@@ -2528,7 +2530,7 @@ class StateRestoreManager {
     // ── Tree rebuild helpers ───────────────────────────────
     async #rebuildTree(handle) {
         await this.fs.build(handle);
-        this.fs.loadExpandedState(); // must load before expanding saved paths
+        this.fs.loadExpandedState(); // Must be called before expanding saved paths
         await this.#expandSavedFolders();
         this.tree.render();
         this.tree.updateHeader();
@@ -2557,7 +2559,7 @@ class StateRestoreManager {
                     textarea.value = activeTab.content;
                     bus.emit('editor:lines-changed', true);
                 }
-            } catch (e) { _dbg('wake tab refresh failed', e); }
+            } catch (e) { logRestore('wake tab refresh failed', e); }
         }
     }
 
@@ -2585,7 +2587,7 @@ class StateRestoreManager {
         if (this.state.currentDirHandle) {
             this.fs.saveOpenTabs(this.state.currentTabId);
         }
-        this.fs.flushSave().catch(e => _dbg('flush during snapshot failed', e));
+        this.fs.flushSave().catch(e => logRestore('flush during snapshot failed', e));
         this.#transition('idle');
     }
 
