@@ -30,7 +30,7 @@ window.LEGEND = `<!--
          │   ├── #sidebar-resize (draggable)
          │   └── .editor-area
          │       ├── #tabs (draggable tab strip)
-         │       │   └── #tab-settings-wrap (⛭ button → opens settings tab)
+         │       │   └── #tab-settings-wrap (⛭ button → settings popover)
          │       ├── #line-width-slider (24–200 ch or ∞)
          │       ├── .editor-wrapper
          │       │   ├── button#sidebar-toggle
@@ -331,7 +331,7 @@ header:fullscreen { display: none; }
 /* ────────────────────────────────────────────────────────
    7. RULER + SETTINGS
 ──────────────────────────────────────────────────────── */
-#tab-settings-wrap { position: relative; flex-shrink: 0; }
+#tab-settings-wrap { position: relative; flex-shrink: 0; z-index: 200; }
 #tab-settings-btn {
   width: 60px; height: 100%; background: none; border: none;
   border-right: 1px solid var(--border-color); color: var(--text-secondary);
@@ -339,6 +339,7 @@ header:fullscreen { display: none; }
   justify-content: center; transition: background 0.15s, color 0.15s;
 }
 #tab-settings-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+#tab-settings-btn.active { background: var(--bg-active); color: var(--text-strong); }
 
 .settings-btn {
   background: var(--bg-base); border: 1px solid var(--border-color);
@@ -352,8 +353,12 @@ header:fullscreen { display: none; }
 #settings-toggle-ext:not(.active) { text-decoration: line-through; }
 
 #settings-panel {
-  flex: 1; overflow-y: auto; background: var(--bg-editor);
-  padding: 24px 32px; display: flex; flex-direction: column; gap: 24px;
+  position: absolute; top: 100%; left: 100%; z-index: 200;
+  background: var(--bg-surface); border: 1px solid var(--border-color);
+  border-radius: 4px; padding: 16px;
+  display: flex; flex-direction: column; gap: 16px;
+  width: 240px; max-height: 60vh; overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 #settings-panel.hidden { display: none; }
 .settings-section-hd {
@@ -662,6 +667,38 @@ header:fullscreen { display: none; }
             <div id="tabs" class="hide-ext">
                 <div id="tab-settings-wrap">
                     <button id="tab-settings-btn" title="Settings">⛭</button>
+                    <div id="settings-panel" class="hidden">
+                        <div class="settings-section">
+                            <div class="settings-section-hd">Format</div>
+                            <div class="settings-row">
+                                <button class="settings-btn active" id="settings-toggle-slider" title="Toggle width slider">⇔</button>
+                                <span class="settings-lbl">Width slider</span>
+                            </div>
+                            <div class="settings-row">
+                                <button class="settings-btn active" id="settings-toggle-gutter" title="Toggle gutter">#</button>
+                                <span class="settings-lbl">Line numbers</span>
+                            </div>
+                            <div class="settings-row">
+                                <button class="settings-btn" id="settings-toggle-ext" title="Toggle extension indicator">ext</button>
+                                <span class="settings-lbl">Ext indicator</span>
+                            </div>
+                            <div class="settings-row">
+                                <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
+                                <button class="settings-btn" id="settings-font-reset" title="Reset font size">ø</button>
+                                <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
+                                <span class="settings-lbl" id="settings-font-lbl">Font size <span id="settings-font-val">14</span></span>
+                            </div>
+                            <div class="settings-row">
+                                <label class="settings-lbl"><input type="radio" id="layout-left" name="layout-align" value="left" checked> Left</label>
+                                <label class="settings-lbl"><input type="radio" id="layout-center" name="layout-align" value="center"> Center</label>
+                                <span class="settings-lbl">Alignment</span>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <div class="settings-section-hd">Extensions</div>
+                            <div id="settings-ext-list"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div id="line-width-slider">
@@ -673,38 +710,6 @@ header:fullscreen { display: none; }
                 <div id="gutter"></div>
                 <textarea id="textarea" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea>
                 <div id="extension-overlay" class="hidden" role="region" aria-label="Extension overlay"></div>
-                <div id="settings-panel" class="hidden">
-                    <div class="settings-section">
-                        <div class="settings-section-hd">Format</div>
-                        <div class="settings-row">
-                            <button class="settings-btn active" id="settings-toggle-slider" title="Toggle width slider">⇔</button>
-                            <span class="settings-lbl">Width slider</span>
-                        </div>
-                        <div class="settings-row">
-                            <button class="settings-btn active" id="settings-toggle-gutter" title="Toggle gutter">#</button>
-                            <span class="settings-lbl">Line numbers</span>
-                        </div>
-                        <div class="settings-row">
-                            <button class="settings-btn" id="settings-toggle-ext" title="Toggle extension indicator">ext</button>
-                            <span class="settings-lbl">Ext indicator</span>
-                        </div>
-                        <div class="settings-row">
-                            <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
-                            <button class="settings-btn" id="settings-font-reset" title="Reset font size">ø</button>
-                            <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
-                            <span class="settings-lbl" id="settings-font-lbl">Font size <span id="settings-font-val">14</span></span>
-                        </div>
-                        <div class="settings-row">
-                            <label class="settings-lbl"><input type="radio" id="layout-left" name="layout-align" value="left" checked> Left</label>
-                            <label class="settings-lbl"><input type="radio" id="layout-center" name="layout-align" value="center"> Center</label>
-                            <span class="settings-lbl">Alignment</span>
-                        </div>
-                    </div>
-                    <div class="settings-section">
-                        <div class="settings-section-hd">Extensions</div>
-                        <div id="settings-ext-list"></div>
-                    </div>
-                </div>
             </div>
             <div class="status"><span id="status"></span><span style="flex:1"></span><span id="editor-status">No file open</span></div>
         </div>
@@ -1965,7 +1970,6 @@ class TabManager {
     static #TAB_TYPES = {
         welcome: { canSave: false, canDirty: false },
         legend: { canSave: false, canDirty: false },
-        settings: { canSave: false, canDirty: false },
         text: { canSave: true, canDirty: true },
         extension: { canSave: true, canDirty: true }
     };
@@ -2164,10 +2168,6 @@ class TabManager {
             .then(() => this.#createTab(handle, name, content, path, type));
     }
     async #createTab(handle, name, content, path, type) {
-        if (type === 'settings') {
-            const existing = this.state.tabs.find(t => t.type === 'settings');
-            if (existing) { this.switchToTab(existing.id); return; }
-        }
         if (handle) {
             for (const t of this.state.tabs) {
                 if (t.handle && await this.fs.isSameEntry(t.handle, handle)) {
@@ -2231,7 +2231,7 @@ class TabManager {
         if (!skipSave && this.state.currentTabId !== null) {
             const cur = this.state.tabs.find(t => t.id === this.state.currentTabId);
             if (cur) {
-                if ((cur.type !== 'extension' && cur.type !== 'settings') || cur.extensionMode === 'overlay' || cur.extensionMode === 'split') {
+                if (cur.type !== 'extension' || cur.extensionMode === 'overlay' || cur.extensionMode === 'split') {
                     cur.content = this.textarea.value;
                     cur.scrollTop = this.textarea.scrollTop;
                 }
@@ -2249,18 +2249,12 @@ class TabManager {
             if (t._splitHandle) t._splitHandle.style.display = 'none';
             if (t._splitRight) t._splitRight.style.display = 'none';
         });
-        // Hide settings panel; shown only for settings tab
-        document.getElementById('settings-panel').classList.add('hidden');
         this.state.currentTabId = id;
         const tab = this.state.tabs.find(t => t.id === id);
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         tab.element.classList.add('active');
         const gutterUserHidden = localStorage.getItem('gutterVisible') === 'false';
-        if (tab.type === 'settings') {
-            this.textarea.style.display = 'none';
-            if (!gutterUserHidden) this.gutter.style.display = '';
-            document.getElementById('settings-panel').classList.remove('hidden');
-        } else if (tab.type === 'extension' && tab.extensionMode === 'full') {
+        if (tab.type === 'extension' && tab.extensionMode === 'full') {
             this.textarea.style.display = 'none';
             if (!gutterUserHidden) this.gutter.style.display = 'none';
             this.extensions.renderTab(tab);
@@ -2313,7 +2307,6 @@ class TabManager {
             this.state.currentTabId = null;
             this.textarea.value = '';
             this.gutter.replaceChildren();
-            document.getElementById('settings-panel').classList.add('hidden');
             bus.emit('tab:status-update', null);
             this.fs.saveOpenTabs(null);
             localStorage.removeItem('openTabs');
@@ -2883,10 +2876,6 @@ class UIManager {
     }
     /** @param {boolean} [force] - when true, always rerender even if line count unchanged */
     updateLineNumbers(force = false) {
-        if (this.state.getActiveTab()?.type === 'settings') {
-            this.#gutter.textContent = '';
-            return;
-        }
         if (force) {
             // Synchronous update when explicitly forced (e.g. tab switch)
             cancelAnimationFrame(this.#lineNumberRafId);
@@ -2908,11 +2897,6 @@ class UIManager {
     }
     updateEditorStatus(tab) {
         const modified = tab.dirty ? ' • Modified' : '';
-        if (tab.type === 'settings') {
-            this.#statusEl.textContent = `${this.state.tabs.length} tab${this.state.tabs.length !== 1 ? 's' : ''}`;
-            this.#editorStatusEl.textContent = '';
-            return;
-        }
         if (tab.type === 'extension' && tab.extensionMode === 'full') {
             this.#statusEl.textContent = `${this.state.tabs.length} tab${this.state.tabs.length !== 1 ? 's' : ''}`;
         } else {
@@ -3262,11 +3246,27 @@ document.addEventListener('mouseup', handleResizeEnd);
       slider.dispatchEvent(new Event('input'));
     }
     bindSettings() {
-        // Open settings tab (or focus it if already open)
-        document.getElementById('tab-settings-btn').addEventListener('click', () => {
-            const existing = this.state.tabs.find(t => t.type === 'settings');
-            if (existing) { this.tabs.switchToTab(existing.id); return; }
-            this.tabs.createNewTab(null, 'settings', '', null, 'settings');
+        // Toggle settings popover
+        const settingsBtn = document.getElementById('tab-settings-btn');
+        const settingsPanel = document.getElementById('settings-panel');
+        settingsBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            const nowHidden = settingsPanel.classList.toggle('hidden');
+            settingsBtn.classList.toggle('active', !nowHidden);
+            if (!nowHidden) this.#refreshSettingsExtList();
+        });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && !settingsPanel.classList.contains('hidden')) {
+                settingsPanel.classList.add('hidden');
+                settingsBtn.classList.remove('active');
+            }
+        });
+        document.addEventListener('click', e => {
+            if (!settingsPanel.classList.contains('hidden') &&
+                    !settingsPanel.contains(e.target) && e.target !== settingsBtn) {
+                settingsPanel.classList.add('hidden');
+                settingsBtn.classList.remove('active');
+            }
         });
         // Toggle width slider
         document.getElementById('settings-toggle-slider').addEventListener('click', e => {
@@ -3333,7 +3333,6 @@ bindEvents() {
     bus.on('tab:status-update', tab => {
         if (tab) this.updateEditorStatus(tab);
         else this.#editorStatusEl.textContent = 'No file open';
-        if (tab?.type === 'settings') this.#refreshSettingsExtList();
     });
     bus.on('editor:lines-changed', force => this.updateLineNumbers(force));
     bus.on('ui:confirm', opts => this.showDialog({ ...opts, isConfirm: true }));
