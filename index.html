@@ -2569,7 +2569,6 @@ class StateRestoreManager {
         if (!this.state.currentDirHandle) {
             const saved = await this.fs.loadSavedFolder();
             if (saved.status === 'granted') {
-                this.#permToastShowing = false;
                 this.state.currentDirHandle = saved.handle;
                 await this.#rebuildTree(saved.handle);
                 await this.#restoreTabs(saved.handle);
@@ -2609,7 +2608,6 @@ class StateRestoreManager {
         }
 
         // Permission confirmed — rebuild tree and sync open tabs
-        this.#permToastShowing = false;
         await this.#rebuildAndSync();
     }
 
