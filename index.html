@@ -688,7 +688,7 @@ header:fullscreen { display: none; }
                             <button class="settings-btn" id="settings-font-decrease" title="Decrease font size">A−</button>
                             <button class="settings-btn" id="settings-font-reset" title="Reset font size">ø</button>
                             <button class="settings-btn" id="settings-font-increase" title="Increase font size">A+</button>
-                            <span class="settings-lbl">Font size <span id="settings-font-val">14</span></span>
+                            <span class="settings-lbl" id="settings-font-lbl">Font size <span id="settings-font-val">14</span></span>
                         </div>
                     </div>
                     <div class="settings-section">
@@ -2662,6 +2662,7 @@ class UIManager {
             this.#textarea.style.fontSize = savedFontSize + 'px';
             this.#gutter.style.fontSize = savedFontSize + 'px';
             document.getElementById('settings-font-val').textContent = savedFontSize;
+            document.getElementById('settings-font-lbl').style.fontSize = savedFontSize + 'px';
         }
         if (localStorage.getItem('sliderVisible') === 'false') {
             document.getElementById('line-width-slider').classList.add('hidden');
@@ -3222,6 +3223,7 @@ document.addEventListener('mouseup', handleResizeEnd);
             this.#textarea.style.fontSize = sz + 'px';
             this.#gutter.style.fontSize = sz + 'px';
             document.getElementById('settings-font-val').textContent = sz;
+            document.getElementById('settings-font-lbl').style.fontSize = sz + 'px';
         };
         document.getElementById('settings-font-decrease').addEventListener('click', () => {
             const cur = parseInt(this.#textarea.style.fontSize) || DEFAULT_FONT_SIZE;
