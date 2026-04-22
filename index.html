@@ -3263,7 +3263,7 @@ document.addEventListener('mouseup', handleResizeEnd);
         });
         document.addEventListener('click', e => {
             if (!settingsPanel.classList.contains('hidden') &&
-                    !settingsPanel.contains(e.target) && e.target !== settingsBtn) {
+                    !settingsPanel.contains(e.target) && !settingsBtn.contains(e.target)) {
                 settingsPanel.classList.add('hidden');
                 settingsBtn.classList.remove('active');
             }
