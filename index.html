@@ -86,7 +86,7 @@ window.LEGEND = `<!--
                   │
                   ├── PermissionCoordinator (permission query / request / toast)
                   │     • hasPermission() — query current FS permission
-                  │     • handleLostPermission(onGranted) — action-toast flow
+                  │     • handleLostPermission(onGranted, onDone?) — persistent action-toast flow
                   │
                   ├── StateRestoreManager (wake / restore / snapshot)
                   │     • State machine: idle → snapshotting | restoring
@@ -962,13 +962,12 @@ class FileSystemManager {
                 const handle = req.result;
                 if (!handle) return resolve({ status: 'none' });
                 const perm = await this.queryPermission(handle);
-                if (perm === 'granted') return resolve({ status: 'granted', handle });
-                try {
-                    const granted = await handle.requestPermission({ mode: 'readwrite' });
-                    resolve(granted === 'granted' ? { status: 'granted', handle } : { status: 'needs-auth', handle });
-                } catch {
-                    resolve({ status: 'needs-auth', handle });
-                }
+                // Only report 'granted' when the browser already holds permission.
+                // requestPermission() requires a direct user gesture and will always
+                // fail here (we are deep inside an async IDB callback, far from any
+                // user event), so we skip it and let the caller's action-toast handle
+                // the re-auth step instead.
+                resolve(perm === 'granted' ? { status: 'granted', handle } : { status: 'needs-auth', handle });
             };
             req.onerror = () => resolve({ status: 'none' });
         });
@@ -2437,11 +2436,14 @@ class PermissionCoordinator {
     }
 
     /**
-     * Emits the permission-needed event and shows an action-toast.
+     * Emits the permission-needed event and shows a persistent action-toast.
      * When the user taps, calls onGranted() after a successful requestPermission.
+     * onDone() is always called after the tap (regardless of the permission outcome)
+     * so callers can reset any "toast showing" guard.
      * @param {() => Promise<void>} onGranted
+     * @param {() => void} [onDone]
      */
-    handleLostPermission(onGranted) {
+    handleLostPermission(onGranted, onDone = null) {
         bus.emit('restore:permission-needed');
         bus.emit('ui:action-toast', 'Tap to restore folder access', async () => {
             try {
@@ -2455,7 +2457,8 @@ class PermissionCoordinator {
             } catch {
                 bus.emit('ui:toast', 'Failed to restore access');
             }
-        });
+            if (onDone) onDone();
+        }, 0);  // 0 = persistent – toast stays until the user explicitly taps it
     }
 }
 
@@ -2472,6 +2475,10 @@ class StateRestoreManager {
 
     // ── Helpers ───────────────────────────────────────────
     #permCoord;
+    // Guard that prevents stacking multiple "Tap to restore folder access" toasts.
+    // A persistent toast is already on screen while this is true; new wake-events
+    // that reach the permission-needed branch will simply skip showing another one.
+    #permToastShowing = false;
 
     /** @param {ReactiveState} state @param {FileSystemManager} fs @param {TabManager} tabs @param {TreeManager} tree @param {ExtensionManager} extensions */
     constructor(state, fs, tabs, tree, extensions) {
@@ -2566,7 +2573,12 @@ class StateRestoreManager {
                 await this.#rebuildTree(saved.handle);
                 await this.#restoreTabs(saved.handle);
             } else if (saved.status === 'needs-auth') {
-                this.#handlePendingAuth(saved.handle);
+                // Only show the toast when there isn't already a persistent one on screen.
+                // Repeated wake events (visibilitychange + focus + pageshow) all converge
+                // here; without this guard each would add another "Tap to restore" banner.
+                if (!this.#permToastShowing) {
+                    this.#handlePendingAuth(saved.handle);
+                }
                 return;
             }
             if (!this.state.tabs.length) {
@@ -2578,13 +2590,20 @@ class StateRestoreManager {
         // Dir handle exists — re-validate permission before doing any FS work
         const permOk = await this.#permCoord.hasPermission();
         if (!permOk) {
-            // handleLostPermission() shows a toast and returns synchronously.
+            // Only show the toast when there isn't already one on screen.
+            // handleLostPermission() shows a persistent toast and returns synchronously.
             // #doRestore() returns immediately after via the `return` below, then
             // the finally block in ensureRestored() clears #restoreInProgress and
             // transitions back to 'idle'. When the user taps the toast, calling
             // ensureRestored() again is always safe — either it starts a fresh
             // restore (if idle) or queues behind any concurrent restore in progress.
-            this.#permCoord.handleLostPermission(() => this.ensureRestored('manual-permission-grant'));
+            if (!this.#permToastShowing) {
+                this.#permToastShowing = true;
+                this.#permCoord.handleLostPermission(
+                    () => this.ensureRestored('manual-permission-grant'),
+                    () => { this.#permToastShowing = false; }
+                );
+            }
             return;
         }
 
@@ -2664,7 +2683,11 @@ class StateRestoreManager {
 
     // ── Pending auth handler (cold-start, folder not yet authorized) ──
     #handlePendingAuth(handle) {
+        this.#permToastShowing = true;
         bus.emit('ui:action-toast', 'Tap to restore folder access', async () => {
+            // Reset the guard immediately so that, regardless of what happens next,
+            // the next focus/wake event can show a fresh toast if needed.
+            this.#permToastShowing = false;
             try {
                 if (await handle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
                     bus.emit('ui:toast', 'Access was not granted');
@@ -2677,7 +2700,7 @@ class StateRestoreManager {
             } catch {
                 bus.emit('ui:toast', 'Failed to restore access');
             }
-        }, CONSTANTS.TOAST_AUTH_MS);
+        }, 0);  // 0 = persistent – stays visible until the user taps it
     }
 
     // ── Expand previously saved folder paths ──────────────
@@ -2799,8 +2822,9 @@ class UIManager {
         t.className = 'toast';
         t.textContent = message;
         t.style.cssText += 'cursor:pointer;text-decoration:underline;';
-        const timer = setTimeout(() => t.remove(), duration);
-        t.addEventListener('click', () => { clearTimeout(timer); t.remove(); callback(); });
+        // duration === 0 means "persistent" – the toast stays until the user taps it.
+        const timer = duration > 0 ? setTimeout(() => t.remove(), duration) : null;
+        t.addEventListener('click', () => { if (timer) clearTimeout(timer); t.remove(); callback(); });
         document.body.appendChild(t);
     }
     showDialog({promptTitle, subtitle = '', defaultValue = '', isConfirm = false, confirmMessage = '', danger = false} = {}) {
