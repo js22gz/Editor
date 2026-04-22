@@ -94,7 +94,7 @@ window.LEGEND = `<!--
                   │     • ensureRestored(reason) — single public entry for all wake signals
                   │     • bindLifecycle() — event listeners: pageshow /
                   │       visibilitychange / freeze / resume / focus /
-                  │       blur / beforeunload
+                  │       document focus (capture) / blur / beforeunload
                   │     • #snapshotState() — capture before suspend
                   │
                   ├── UIManager
@@ -2516,8 +2516,8 @@ class StateRestoreManager {
 
     /** Bind all lifecycle event listeners — called once from UIManager.bindEvents() */
     bindLifecycle() {
-        window.addEventListener('pageshow', async (e) => {
-            if (e.persisted || document.wasDiscarded) await this.ensureRestored('pageshow');
+        window.addEventListener('pageshow', async () => {
+            await this.ensureRestored('pageshow');
         });
         document.addEventListener('freeze', () => {
             this.#snapshotState();
@@ -2536,6 +2536,9 @@ class StateRestoreManager {
         window.addEventListener('focus', async () => {
             await this.ensureRestored('focus');
         });
+        document.addEventListener('focus', async () => {
+            await this.ensureRestored('focus');
+        }, true);
         window.addEventListener('beforeunload', e => {
             // Snapshot only — never start a restore from beforeunload
             this.#snapshotState();
