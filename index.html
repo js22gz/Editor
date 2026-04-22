@@ -85,7 +85,7 @@ window.LEGEND = `<!--
                   │     • updateTabPaths() after rename/move
                   │
                   ├── PermissionCoordinator (permission query / request / toast)
-                  │     • ensurePermission() — query current FS permission
+                  │     • hasPermission() — query current FS permission
                   │     • handleLostPermission(onGranted) — action-toast flow
                   │
                   ├── StateRestoreManager (wake / restore / snapshot)
@@ -2368,7 +2368,7 @@ class PermissionCoordinator {
     constructor(fs, state) { this.#fs = fs; this.#state = state; }
 
     /** Returns true if the current dir handle has readwrite permission. */
-    async ensurePermission() {
+    async hasPermission() {
         if (!this.#state.currentDirHandle) return false;
         const perm = await this.#fs.queryPermission(this.#state.currentDirHandle);
         return perm === 'granted';
@@ -2495,7 +2495,6 @@ class StateRestoreManager {
 
         // No dir handle — attempt cold-start restore from the persisted folder
         if (!this.state.currentDirHandle) {
-            this.fs.loadExpandedState();
             const saved = await this.fs.loadSavedFolder();
             if (saved.status === 'granted') {
                 this.state.currentDirHandle = saved.handle;
@@ -2512,8 +2511,12 @@ class StateRestoreManager {
         }
 
         // Dir handle exists — re-validate permission before doing any FS work
-        const permOk = await this.#permCoord.ensurePermission();
+        const permOk = await this.#permCoord.hasPermission();
         if (!permOk) {
+            // handleLostPermission() shows a toast and returns synchronously.
+            // #doRestore() returns immediately after, the finally block clears
+            // #restoreInProgress, and ensureRestored() is safely callable again
+            // when the user taps the toast.
             this.#permCoord.handleLostPermission(() => this.ensureRestored('manual-permission-grant'));
             return;
         }
@@ -2525,6 +2528,7 @@ class StateRestoreManager {
     // ── Tree rebuild helpers ───────────────────────────────
     async #rebuildTree(handle) {
         await this.fs.build(handle);
+        this.fs.loadExpandedState(); // must load before expanding saved paths
         await this.#expandSavedFolders();
         this.tree.render();
         this.tree.updateHeader();
