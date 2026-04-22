@@ -11,7 +11,7 @@ window.LEGEND = `<!--
   browser compatibility: Chrome & Edge (File System Access API)
 
   ═══════════════════════════════════════════════════════════════════════
-  DOCUMENT MAP (updated March 2026):
+  DOCUMENT MAP:
   ─────────────────────────────────────────────────────────────────────
   <html lang="en">
     ├── <head>
@@ -2989,7 +2989,6 @@ class UIManager {
     rightResize.style.display = '';
     toggle.classList.add('active');
 
-    // Restore saved width (or default)
     const savedWidth = localStorage.getItem('sidebarRightWidth');
     rightSidebar.style.width = savedWidth || '280px';
 
@@ -3003,9 +3002,8 @@ class UIManager {
     this.#rightView.render();
     this.#rightView.updateHeader();
   } else {
-    // HIDE — this is the part that was missing
     rightSidebar.classList.add('hidden');
-    rightSidebar.style.width = '';        // ← clears the inline width so .hidden can take effect
+    rightSidebar.style.width = '';      
     rightResize.style.display = 'none';
     toggle.classList.remove('active');
   }
