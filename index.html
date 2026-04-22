@@ -2753,6 +2753,8 @@ class UIManager {
         } else {
             this.#sidebarEl.style.width = '';
             this.#sidebarEl.classList.add('hidden');
+            const rightSidebar = document.getElementById('sidebar-right');
+            if (!rightSidebar.classList.contains('hidden')) this.toggleDuplicateSidebar();
         }
         const btn = document.getElementById('sidebar-toggle');
         btn.textContent = this.#sidebarEl.classList.contains('hidden') ? '›' : '‹';
