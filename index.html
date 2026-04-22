@@ -1667,6 +1667,8 @@ class DirectoryTreeView {
                     showContextMenu(fakeEvent, null);
                 }
             }, CONSTANTS.LONG_PRESS_MS);
+        }, { passive: true });
+        this.container.addEventListener('touchend', e => {
             clearTimeout(longPressTimer);
             if (this.longPressTriggered) {
                 e.preventDefault();
@@ -2055,6 +2057,8 @@ class TabManager {
                         this.fs.saveOpenTabs(this.state.currentTabId);
                     }
                 }, CONSTANTS.LONG_PRESS_MS);
+            });
+            extToggle.addEventListener('pointerup', () => clearTimeout(longPressTimer));
             extToggle.addEventListener('pointercancel', () => clearTimeout(longPressTimer));
             const toggleHandler = this.#makeExtToggleHandler(tab, extToggle);
             extToggle.onclick = e => { if (longPressTriggered) { longPressTriggered = false; return; } toggleHandler(e); };
