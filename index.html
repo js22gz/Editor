@@ -353,7 +353,7 @@ header:fullscreen { display: none; }
 #settings-toggle-ext:not(.active) { text-decoration: line-through; }
 
 #settings-panel {
-  position: absolute; top: 100%; left: 100%; z-index: 200;
+  position: fixed; z-index: 200;
   background: var(--bg-surface); border: 1px solid var(--border-color);
   border-radius: 4px; padding: 16px;
   display: flex; flex-direction: column; gap: 16px;
@@ -3253,7 +3253,12 @@ document.addEventListener('mouseup', handleResizeEnd);
             e.stopPropagation();
             const nowHidden = settingsPanel.classList.toggle('hidden');
             settingsBtn.classList.toggle('active', !nowHidden);
-            if (!nowHidden) this.#refreshSettingsExtList();
+            if (!nowHidden) {
+                const r = settingsBtn.getBoundingClientRect();
+                settingsPanel.style.top = r.bottom + 4 + 'px';
+                settingsPanel.style.left = Math.max(0, r.right - 240) + 'px';
+                this.#refreshSettingsExtList();
+            }
         });
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape' && !settingsPanel.classList.contains('hidden')) {
