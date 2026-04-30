@@ -1077,7 +1077,7 @@ class FileSystemManager {
         try {
             const data = this.state.tabs
                 .filter(t => t.path)
-                .map(t => ({ path: t.path, name: t.name, type: t.type, extensionMode: t.extensionMode || null, active: t.id === currentId }));
+                .map(t => ({ path: t.path, name: t.name, type: t.type, extensionMode: t.extensionMode || null, extensionToggledOff: t._extensionToggledOff || false, active: t.id === currentId }));
             // Only persist when there are real file-backed tabs to save.
             // Clearing is handled explicitly by closeTab → localStorage.removeItem.
             if (data.length) {
@@ -2043,6 +2043,7 @@ class TabManager {
             if (tab.type === 'extension') {
                 tab.type = 'text';
                 tab.extensionMode = null;
+                tab._extensionToggledOff = true;
                 extToggle.className = 'ext-toggle inactive';
                 if (tab.extFrame) tab.extFrame.classList.add('hidden');
                 document.getElementById('extension-overlay').classList.add('hidden');
@@ -2052,6 +2053,7 @@ class TabManager {
                 if (this.state.currentTabId === tab.id) tab.content = this.textarea.value;
                 tab.type = 'extension';
                 tab.extensionMode = tab.extension ? (tab.extension.mode || 'full') : 'full';
+                tab._extensionToggledOff = false;
                 extToggle.className = 'ext-toggle active';
                 tab._pendingTypeSwitch = true;
                 this.switchToTab(tab.id);
@@ -2360,7 +2362,14 @@ class TabManager {
                 const file = await fileHandle.getFile();
                 if (file.size > this.fs.maxFileSize) { continue; }
                 const content = await file.text();
-                await this.createNewTab(fileHandle, st.name, content, st.path, st.type || 'text');
+                const newTab = await this.createNewTab(fileHandle, st.name, content, st.path, st.type || 'text');
+                if (st.extensionToggledOff && newTab) {
+                    newTab._extensionToggledOff = true;
+                    if (newTab.type === 'extension') {
+                        newTab.type = 'text';
+                        newTab.extensionMode = null;
+                    }
+                }
                 if (st.active) activeTabPath = st.path;
                 restored++;
             } catch (e) {
@@ -2396,9 +2405,11 @@ class TabManager {
             const ext = this.extensions.getForFile(tab.name);
             if (ext) {
                 tab.extension = ext;
-                tab.extensionMode = ext.mode || 'full';
-                if (tab.type !== 'extension') {
-                    tab.type = 'extension';
+                if (!tab._extensionToggledOff) {
+                    tab.extensionMode = ext.mode || 'full';
+                    if (tab.type !== 'extension') {
+                        tab.type = 'extension';
+                    }
                 }
                 this.#replaceExtToggle(tab);
             } else if (tab.type === 'extension') {
