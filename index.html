@@ -2063,7 +2063,7 @@ class TabManager {
     #createExtToggle(tab, ext) {
         const extToggle = document.createElement('span');
         if (ext) {
-            extToggle.className = 'ext-toggle active';
+            extToggle.className = tab._extensionToggledOff ? 'ext-toggle inactive' : 'ext-toggle active';
             extToggle.title = 'Toggle extension: ' + ext.name;
             extToggle.textContent = ext.name;
             let longPressTimer = null;
@@ -2369,6 +2369,7 @@ class TabManager {
                         newTab.type = 'text';
                         newTab.extensionMode = null;
                     }
+                    this.#replaceExtToggle(newTab);
                 }
                 if (st.active) activeTabPath = st.path;
                 restored++;
