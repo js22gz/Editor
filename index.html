@@ -31,6 +31,7 @@ window.LEGEND = `<!--
          │   └── .editor-area
          │       ├── #tabs (draggable tab strip)
          │       │   └── #tab-settings-wrap (⛭ button → settings popover)
+         │       ├── #extension-bar (optional per-extension toolbar, hidden when unused)
          │       ├── #line-width-slider (24–200 ch or ∞)
          │       ├── .editor-wrapper
          │       │   ├── button#sidebar-toggle
@@ -72,10 +73,13 @@ window.LEGEND = `<!--
                   │     • loadAll() / install() / uninstall()
                   │     • _parseMeta() + getForFile(filename)
                   │     • renderTab() → sandboxed iframe + postMessage
-                  │     • sendStateToExtension() – live state to overlay
+                  │     • sendStateToExtension() – live state to overlay/bar
                   │     • modes: full (replaces editor) | overlay (on top) | split (side-by-side)
+                  │     • bar: optional toolbar via <meta name="extension-bar" content="true">
+                  │           height = tab-bar height − 2 px; spans full editor width
                   │     • protocol:
                   │         editor → ext: {type:'editor:state', content, cursor, lineWidth, filename}
+                  │                       bar frame also receives context:'bar'
                   │         ext → editor: {type:'extension:updated', content, cursorLine?, cursorCol?}
                   │
                   ├── TabManager
@@ -575,6 +579,20 @@ header:fullscreen { display: none; }
   pointer-events: auto; background: transparent;
 }
 
+/* ── Extension bar – optional toolbar spanning the full editor width.
+      Height is tab-bar height (≈35 px) minus 2 px = 33 px.
+      Populated by a sandboxed iframe when the extension declares
+      <meta name="extension-bar" content="true">. ── */
+#extension-bar {
+  height: 33px; flex-shrink: 0; position: relative; overflow: hidden;
+  background: var(--bg-surface); border-bottom: 1px solid var(--border-color);
+  display: flex;
+}
+#extension-bar.hidden { display: none; }
+#extension-bar .ext-bar-frame {
+  width: 100%; height: 100%; border: none; background: transparent; display: block;
+}
+
 /* ── Split-mode extension layout ── */
 .editor-wrapper.split-mode #textarea {
   flex: none;
@@ -734,6 +752,7 @@ header:fullscreen { display: none; }
                     </div>
                 </div>
             </div>
+            <div id="extension-bar" class="hidden" role="toolbar" aria-label="Extension toolbar"></div>
             <div id="line-width-slider">
                 <input type="range" id="width-slider" min="24" max="200" value="200" aria-label="Line width in chars">
                 <span id="width-value">∞</span>
@@ -1850,10 +1869,12 @@ class ExtensionManager {
         const typesMatch = html.match(/<meta\s+name=["']extension-types["']\s+content=["']([^"']+)["']/i);
         if (!nameMatch || !typesMatch) return null;
         const modeMatch = html.match(/<meta\s+name=["']extension-mode["']\s+content=["'](overlay|full|split)["']/i);
+        const barMatch = html.match(/<meta\s+name=["']extension-bar["']\s+content=["']true["']/i);
         return {
             name: nameMatch[1],
             types: typesMatch[1].split(',').map(t => t.trim().toLowerCase()),
-            mode: modeMatch ? modeMatch[1] : 'full'
+            mode: modeMatch ? modeMatch[1] : 'full',
+            bar: !!barMatch
         };
     }
     getForFile(filename) {
@@ -1889,9 +1910,11 @@ class ExtensionManager {
         const isSplit = tab.extensionMode === 'split';
 
         const sendStateMessage = () => {
-            try {
-                tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), '*');
-            } catch (e) {}
+            const payload = this.#buildStatePayload(tab);
+            try { tab.extFrame.contentWindow.postMessage(payload, '*'); } catch (e) {}
+            if (tab.extBarFrame) {
+                try { tab.extBarFrame.contentWindow.postMessage({ ...payload, context: 'bar' }, '*'); } catch (e) {}
+            }
         };
 
         // Reuse existing iframe when possible (only recreate on type toggle or explicit reload)
@@ -1907,6 +1930,10 @@ class ExtensionManager {
                 tab._splitRight.style.display = '';
                 this.#applySplitRatio(wrapper);
             }
+            if (tab.extensionBar && tab.extBarFrame) {
+                document.getElementById('extension-bar').classList.remove('hidden');
+                tab.extBarFrame.classList.remove('hidden');
+            }
             sendStateMessage();
             tab._extTimers = [
                 setTimeout(sendStateMessage, CONSTANTS.EXT_STATE_DELAY_MS)
@@ -1918,6 +1945,7 @@ class ExtensionManager {
         if (tab.extFrame) { tab.extFrame.remove(); tab.extFrame = null; }
         if (tab._splitHandle) { tab._splitHandle.remove(); tab._splitHandle = null; }
         if (tab._splitRight) { tab._splitRight.remove(); tab._splitRight = null; }
+        if (tab.extBarFrame) { tab.extBarFrame.remove(); tab.extBarFrame = null; }
         const iframe = document.createElement('iframe');
         iframe.className = 'ext-frame';
         iframe.sandbox = 'allow-scripts';
@@ -1932,6 +1960,20 @@ class ExtensionManager {
         }
         tab.extFrame = iframe;
         iframe.srcdoc = tab.extension.html;
+
+        // Create bar iframe if the extension opts in
+        if (tab.extensionBar) {
+            const barEl = document.getElementById('extension-bar');
+            const barFrame = document.createElement('iframe');
+            barFrame.className = 'ext-bar-frame';
+            barFrame.sandbox = 'allow-scripts';
+            barFrame.srcdoc = tab.extension.html;
+            barEl.appendChild(barFrame);
+            barEl.classList.remove('hidden');
+            tab.extBarFrame = barFrame;
+            barFrame.onload = sendStateMessage;
+        }
+
         // Reliable delivery (srcdoc can be async)
         tab.extFrame.onload = sendStateMessage;
         tab._extTimers = [
@@ -1987,12 +2029,14 @@ class ExtensionManager {
         handle.addEventListener('pointerup', stop);
         handle.addEventListener('lostpointercapture', stop);
     }
-    /** Send updated editor:state to the active extension iframe */
+    /** Send updated editor:state to the active extension iframe(s) */
     sendStateToExtension(tab) {
         if (!tab || tab.type !== 'extension' || !tab.extFrame) return;
-        try {
-            tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), '*');
-        } catch (e) {}
+        const payload = this.#buildStatePayload(tab);
+        try { tab.extFrame.contentWindow.postMessage(payload, '*'); } catch (e) {}
+        if (tab.extBarFrame) {
+            try { tab.extBarFrame.contentWindow.postMessage({ ...payload, context: 'bar' }, '*'); } catch (e) {}
+        }
     }
 }
 // ────────────────────────────────────────────────────────
@@ -2031,9 +2075,11 @@ class TabManager {
             name, handle, content, path, type,
             extension: ext || null,
             extensionMode: ext ? (ext.mode || 'full') : null,
+            extensionBar: ext ? !!ext.bar : false,
             dirty: false,
             element: null,
             extFrame: null,
+            extBarFrame: null,
             scrollTop: 0,
         };
     }
@@ -2046,13 +2092,16 @@ class TabManager {
                 tab._extensionToggledOff = true;
                 extToggle.className = 'ext-toggle inactive';
                 if (tab.extFrame) tab.extFrame.classList.add('hidden');
+                if (tab.extBarFrame) tab.extBarFrame.classList.add('hidden');
                 document.getElementById('extension-overlay').classList.add('hidden');
+                document.getElementById('extension-bar').classList.add('hidden');
                 tab._pendingTypeSwitch = true;
                 this.switchToTab(tab.id);
             } else {
                 if (this.state.currentTabId === tab.id) tab.content = this.textarea.value;
                 tab.type = 'extension';
                 tab.extensionMode = tab.extension ? (tab.extension.mode || 'full') : 'full';
+                tab.extensionBar = tab.extension ? !!tab.extension.bar : false;
                 tab._extensionToggledOff = false;
                 extToggle.className = 'ext-toggle active';
                 tab._pendingTypeSwitch = true;
@@ -2081,9 +2130,11 @@ class TabManager {
                             if (t.type === 'extension' && t.id === currentTabId) currentTabWasExtension = true;
                             t.extension = null;
                             t.extensionMode = null;
+                            t.extensionBar = false;
                             if (t.type === 'extension') t.type = 'text';
                             if (t._splitHandle) { t._splitHandle.remove(); t._splitHandle = null; }
                             if (t._splitRight) { t._splitRight.remove(); t._splitRight = null; }
+                            if (t.extBarFrame) { t.extBarFrame.remove(); t.extBarFrame = null; }
 							this.#replaceExtToggle(t);
 						}
                     }
@@ -2150,6 +2201,7 @@ class TabManager {
                             tab.type = newType;
                             tab.extension = ext || null;
                             tab.extensionMode = ext ? (ext.mode || 'full') : null;
+                            tab.extensionBar = ext ? !!ext.bar : false;
                             if (tab.extFrame && newType === 'text') {
                                 tab.extFrame.remove();
                                 tab.extFrame = null;
@@ -2159,6 +2211,9 @@ class TabManager {
                             }
                             if (tab._splitRight && newType === 'text') {
                                 tab._splitRight.remove(); tab._splitRight = null;
+                            }
+                            if (tab.extBarFrame && newType === 'text') {
+                                tab.extBarFrame.remove(); tab.extBarFrame = null;
                             }
                             if (tab.element) {
                                 const existingToggle = tab.element.querySelector('.ext-toggle');
@@ -2272,9 +2327,11 @@ class TabManager {
                 if (cur.dirty) this.fs.saveTab(cur);
             }
         }
-        // Hide all per-tab extension iframes and overlay
+        // Hide all per-tab extension iframes, overlay, and bar
         this.state.tabs.forEach(t => { if (t.extFrame) t.extFrame.classList.add('hidden'); });
         document.getElementById('extension-overlay').classList.add('hidden');
+        document.getElementById('extension-bar').classList.add('hidden');
+        this.state.tabs.forEach(t => { if (t.extBarFrame) t.extBarFrame.classList.add('hidden'); });
         // Clean up split layout from any previous tab
         const editorWrapper = document.querySelector('.editor-wrapper');
         editorWrapper.classList.remove('split-mode');
@@ -2323,6 +2380,10 @@ class TabManager {
         if (tab.extFrame) {
             tab.extFrame.remove();
             tab.extFrame = null;
+        }
+        if (tab.extBarFrame) {
+            tab.extBarFrame.remove();
+            tab.extBarFrame = null;
         }
         if (tab._splitHandle) { tab._splitHandle.remove(); tab._splitHandle = null; }
         if (tab._splitRight) { tab._splitRight.remove(); tab._splitRight = null; }
@@ -2408,6 +2469,7 @@ class TabManager {
                 tab.extension = ext;
                 if (!tab._extensionToggledOff) {
                     tab.extensionMode = ext.mode || 'full';
+                    tab.extensionBar = !!ext.bar;
                     if (tab.type !== 'extension') {
                         tab.type = 'extension';
                     }
@@ -2417,8 +2479,10 @@ class TabManager {
                 // Extension no longer available — fall back to text
                 tab.extension = null;
                 tab.extensionMode = null;
+                tab.extensionBar = false;
                 tab.type = 'text';
                 if (tab.extFrame) { tab.extFrame.remove(); tab.extFrame = null; }
+                if (tab.extBarFrame) { tab.extBarFrame.remove(); tab.extBarFrame = null; }
                 this.#replaceExtToggle(tab);
             }
         }
@@ -3230,8 +3294,8 @@ document.addEventListener('mouseup', handleResizeEnd);
                         this.fs.scheduleSave();
                     }
                     bus.emit('tab:status-update', tab);
-                    // Send updated state to overlay/split extensions on every input
-                    if (tab.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split')) {
+                    // Send updated state to overlay/split/bar extensions on every input
+                    if (tab.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split' || tab.extensionBar)) {
                         tab.content = this.#textarea.value;
                         this.extensions.sendStateToExtension(tab);
                     }
@@ -3268,10 +3332,10 @@ document.addEventListener('mouseup', handleResizeEnd);
                 overlayEl.scrollTop = this.#textarea.scrollTop;
             }
         });
-        // Send state to overlay/split extension on cursor position changes
+        // Send state to extension on cursor position changes (overlay/split modes, or any bar extension)
         const sendOverlayState = () => {
             const tab = this.state.getActiveTab();
-            if (tab?.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split')) {
+            if (tab?.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split' || tab.extensionBar)) {
                 this.extensions.sendStateToExtension(tab);
             }
         };
@@ -3315,9 +3379,9 @@ document.addEventListener('mouseup', handleResizeEnd);
                 this.#textarea.style.whiteSpace = 'pre-wrap';
                 this.#textarea.style.wordWrap = 'break-word';
             }
-            // Notify overlay/split extension of line-width change
+            // Notify overlay/split/bar extension of line-width change
             const tab = this.state.getActiveTab();
-            if (tab?.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split')) {
+            if (tab?.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split' || tab.extensionBar)) {
                 this.extensions.sendStateToExtension(tab);
             }
         });
