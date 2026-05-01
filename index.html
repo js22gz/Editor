@@ -1815,7 +1815,7 @@ class ExtensionManager {
                         const html = await file.text();
                         const meta = this.#parseMeta(html);
                         if (meta) {
-                            this.extensions.push({ key: keys[i], name: meta.name, types: meta.types, mode: meta.mode, handle, html });
+                            this.extensions.push({ key: keys[i], name: meta.name, types: meta.types, mode: meta.mode, bar: meta.bar, handle, html });
                         }
                     } catch { }
                 }
@@ -1846,9 +1846,9 @@ class ExtensionManager {
                 existing.html = html;
                 existing.types = meta.types;
                 existing.mode = meta.mode;
-				existing.bar = !!barMatch;
+				existing.bar = meta.bar;
             } else {
-                this.extensions.push({ key: meta.name, name: meta.name, types: meta.types, mode: meta.mode, handle: fileHandle, html });
+                this.extensions.push({ key: meta.name, name: meta.name, types: meta.types, mode: meta.mode, bar: meta.bar, handle: fileHandle, html });
             }
             await this.fs.initDB();
             const tx = this.fs.db.transaction('extensions', 'readwrite');
