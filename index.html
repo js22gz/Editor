@@ -580,7 +580,9 @@ header:fullscreen { display: none; }
 }
 
 /* ── Extension bar – optional toolbar spanning the full editor width.
-      Height is tab-bar height (≈35 px) minus 2 px = 33 px.
+      Height is tab-bar height minus 2 px.
+      Tab-bar height: 10px (top pad) + 13px font × 1.2 lh ≈ 16px + 8px (btm pad) + 1px border = 35px.
+      Extension bar height: 35 − 2 = 33 px.
       Populated by a sandboxed iframe when the extension declares
       <meta name="extension-bar" content="true">. ── */
 #extension-bar {
@@ -1902,6 +1904,9 @@ class ExtensionManager {
             filename: tab.name
         };
     }
+    #buildBarPayload(tab) {
+        return { ...this.#buildStatePayload(tab), context: 'bar' };
+    }
     renderTab(tab) {
         // Cancel stale fallback timers from a previous render
         if (tab._extTimers) tab._extTimers.forEach(t => clearTimeout(t));
@@ -1910,10 +1915,9 @@ class ExtensionManager {
         const isSplit = tab.extensionMode === 'split';
 
         const sendStateMessage = () => {
-            const payload = this.#buildStatePayload(tab);
-            try { tab.extFrame.contentWindow.postMessage(payload, '*'); } catch (e) {}
+            try { tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), '*'); } catch (e) {}
             if (tab.extBarFrame) {
-                try { tab.extBarFrame.contentWindow.postMessage({ ...payload, context: 'bar' }, '*'); } catch (e) {}
+                try { tab.extBarFrame.contentWindow.postMessage(this.#buildBarPayload(tab), '*'); } catch (e) {}
             }
         };
 
@@ -2032,10 +2036,9 @@ class ExtensionManager {
     /** Send updated editor:state to the active extension iframe(s) */
     sendStateToExtension(tab) {
         if (!tab || tab.type !== 'extension' || !tab.extFrame) return;
-        const payload = this.#buildStatePayload(tab);
-        try { tab.extFrame.contentWindow.postMessage(payload, '*'); } catch (e) {}
+        try { tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), '*'); } catch (e) {}
         if (tab.extBarFrame) {
-            try { tab.extBarFrame.contentWindow.postMessage({ ...payload, context: 'bar' }, '*'); } catch (e) {}
+            try { tab.extBarFrame.contentWindow.postMessage(this.#buildBarPayload(tab), '*'); } catch (e) {}
         }
     }
 }
@@ -2327,7 +2330,9 @@ class TabManager {
                 if (cur.dirty) this.fs.saveTab(cur);
             }
         }
-        // Hide all per-tab extension iframes, overlay, and bar
+        // Hide all per-tab extension iframes, overlay, and bar container.
+        // Individual extBarFrame elements are also marked hidden so the reuse path in
+        // renderTab() can selectively un-hide only the correct bar frame.
         this.state.tabs.forEach(t => { if (t.extFrame) t.extFrame.classList.add('hidden'); });
         document.getElementById('extension-overlay').classList.add('hidden');
         document.getElementById('extension-bar').classList.add('hidden');
