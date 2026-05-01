@@ -1846,6 +1846,7 @@ class ExtensionManager {
                 existing.html = html;
                 existing.types = meta.types;
                 existing.mode = meta.mode;
+				existing.bar = !!barMatch;
             } else {
                 this.extensions.push({ key: meta.name, name: meta.name, types: meta.types, mode: meta.mode, handle: fileHandle, html });
             }
