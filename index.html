@@ -80,6 +80,8 @@ window.LEGEND = `<!--
                   │     • protocol:
                   │         editor → ext: {type:'editor:state', content, cursor, lineWidth, filename}
                   │                       bar frame also receives context:'bar'
+                  │                       bar frame srcdoc is pre-seeded with window.__editorContext='bar'
+                  │                       so extensions can branch at init time (before postMessage arrives)
                   │         ext → editor: {type:'extension:updated', content, cursorLine?, cursorCol?}
                   │
                   ├── TabManager
@@ -1990,7 +1992,7 @@ class ExtensionManager {
             const barFrame = document.createElement('iframe');
             barFrame.className = 'ext-bar-frame';
             barFrame.sandbox = 'allow-scripts';
-            barFrame.srcdoc = tab.extension.html;
+            barFrame.srcdoc = ExtensionManager.#injectBarContext(tab.extension.html);
             barEl.appendChild(barFrame);
             barEl.classList.remove('hidden');
             tab.extBarFrame = barFrame;
@@ -2056,9 +2058,24 @@ class ExtensionManager {
     sendStateToExtension(tab) {
         if (!tab || tab.type !== 'extension' || !tab.extFrame) return;
         try { tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), 'null'); } catch (e) {}
-        if (tab.extBarFrame) {
-            try { tab.extBarFrame.contentWindow.postMessage(this.#buildBarPayload(tab), 'null'); } catch (e) {}
-        }
+        this.notifyBar(tab);
+    }
+    /** Send an updated editor:state (with context:'bar') only to the bar frame */
+    notifyBar(tab) {
+        if (!tab || !tab.extBarFrame) return;
+        try { tab.extBarFrame.contentWindow.postMessage(this.#buildBarPayload(tab), 'null'); } catch (e) {}
+    }
+    /**
+     * Inject `window.__editorContext = 'bar'` into the bar frame's srcdoc so that
+     * extension scripts can branch at init time, before the first postMessage arrives.
+     * Note: if the extension HTML carries a strict CSP meta tag that forbids inline
+     * scripts, this injected script will be blocked. Well-formed extension HTML without
+     * an explicit CSP will not be affected.
+     */
+    static #injectBarContext(html) {
+        const script = '<script>window.__editorContext="bar";<\/script>';
+        const m = html.match(/<head[^>]*>/i);
+        return m ? html.replace(m[0], m[0] + script) : script + html;
     }
 }
 // ────────────────────────────────────────────────────────
@@ -3579,6 +3596,8 @@ window.addEventListener('message', async e => {
     }
 
     bus.emit('tab:status-update', activeTab);
+    // Keep the bar frame in sync after any content change from the extension
+    this.extensions.notifyBar(activeTab);
   }
   // Silently ignore old extension:save messages for backward compatibility
 });
