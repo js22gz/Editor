@@ -1930,7 +1930,7 @@ class ExtensionManager {
     #buildBarPayload(tab) {
         return { ...this.#buildStatePayload(tab), context: 'bar' };
     }
-    renderTab(tab) {
+    renderTab(tab, forceRecreate = false) {
         // Cancel stale fallback timers from a previous render
         if (tab._extTimers) tab._extTimers.forEach(t => clearTimeout(t));
 
@@ -1945,7 +1945,7 @@ class ExtensionManager {
         };
 
         // Reuse existing iframe when possible (only recreate on type toggle or explicit reload)
-        if (tab.extFrame && !tab._pendingTypeSwitch) {
+        if (tab.extFrame && !forceRecreate) {
             tab.extFrame.classList.remove('hidden');
             if (isOverlay) {
                 document.getElementById('extension-overlay').classList.remove('hidden');
@@ -2114,7 +2114,7 @@ class TabManager {
         this.textarea = null;
         this.gutter = null;
         this.tabsContainer = null;
-        bus.on('extension:changed', () => this.reattachExtensions());
+        bus.on('extension:changed', () => this.reattachExtensions(true));
     }
     static #moveArrayItem(arr, fromIdx, toIdx) {
         arr.splice(toIdx, 0, arr.splice(fromIdx, 1)[0]);
@@ -2215,6 +2215,7 @@ class TabManager {
                 if (newExt) {
                     tab.extension = newExt;
                     tab.extensionMode = newExt.mode || 'full';
+                    tab.extensionBar = !!newExt.bar;
                     if (this.state.currentTabId === tab.id) tab.content = this.textarea.value;
                     tab.type = 'extension';
 					this.#replaceExtToggle(tab);					
@@ -2403,13 +2404,13 @@ class TabManager {
         if (tab.type === 'extension' && tab.extensionMode === 'full') {
             this.textarea.style.display = 'none';
             if (!gutterUserHidden) this.gutter.style.display = 'none';
-            this.extensions.renderTab(tab);
+            this.extensions.renderTab(tab, skipSave);
         } else if (tab.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split')) {
             this.textarea.style.display = '';
             if (!gutterUserHidden) this.gutter.style.display = '';
             this.textarea.value = tab.content || '';
             this.textarea.readOnly = false;
-            this.extensions.renderTab(tab);
+            this.extensions.renderTab(tab, skipSave);
         } else {
             this.textarea.style.display = '';
             if (!gutterUserHidden) this.gutter.style.display = '';
@@ -2517,10 +2518,30 @@ class TabManager {
      * type 'extension'; tabs whose extension was uninstalled are
      * demoted to 'text'.
      */
-    reattachExtensions() {
+    reattachExtensions(forceReload = false) {
+        // Capture the active tab's current textarea content before we change any tab types.
+        // This ensures the extension receives up-to-date content when a text (or overlay/split)
+        // tab is promoted to extension mode by this call.
+        const activeTab = this.state.getActiveTab();
+        if (activeTab && this.textarea &&
+            (activeTab.type !== 'extension' ||
+             activeTab.extensionMode === 'overlay' ||
+             activeTab.extensionMode === 'split')) {
+            activeTab.content = this.textarea.value;
+        }
         for (const tab of this.state.tabs) {
             const ext = this.extensions.getForFile(tab.name);
             if (ext) {
+                // When reloading (e.g. extension installed/updated), destroy the existing
+                // iframe so renderTab() creates a fresh one with the latest extension HTML.
+                if (forceReload && tab.extFrame) {
+                    tab.extFrame.remove();
+                    tab.extFrame = null;
+                }
+                if (forceReload && tab.extBarFrame) {
+                    tab.extBarFrame.remove();
+                    tab.extBarFrame = null;
+                }
                 tab.extension = ext;
                 if (!tab._extensionToggledOff) {
                     tab.extensionMode = ext.mode || 'full';
