@@ -199,7 +199,7 @@ header {
   align-items: center; padding: 0 12px; flex-shrink: 0; gap: 6px;
   position: relative;
 }
-header:fullscreen { display: none; }
+:fullscreen header, :-webkit-full-screen header { display: none; }
 
 #title-area {
   position: absolute; left: 50%; transform: translateX(-50%);
@@ -633,7 +633,7 @@ header:fullscreen { display: none; }
   display: flex; align-items: center; justify-content: center; z-index: 10001;
 }
 #create-item-dialog {
-  background: #18181b; border: 1px solid #27272a; border-radius: 8px;
+  background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px;
   min-width: 320px; overflow: hidden;
 }
 #create-item-dialog > * {
@@ -642,22 +642,22 @@ header:fullscreen { display: none; }
 }
 #create-item-dialog .cid-title {
   font-size: 1rem; font-weight: 600; color: var(--text-strong);
-  border-bottom: 1px solid #27272a;
+  border-bottom: 1px solid var(--border-color);
 }
 #create-item-dialog .cid-type {
-  gap: 0; padding: 0; border-bottom: 1px solid #27272a;
+  gap: 0; padding: 0; border-bottom: 1px solid var(--border-color);
 }
 .cid-type-btn {
   flex: 1; padding: 10px; background: none; border: none; cursor: pointer;
   font-size: 13px; color: var(--text-secondary); transition: background 0.15s, color 0.15s;
 }
-.cid-type-btn + .cid-type-btn { border-left: 1px solid #27272a; }
+.cid-type-btn + .cid-type-btn { border-left: 1px solid var(--border-color); }
 .cid-type-btn.active { background: var(--bg-active); color: var(--text-strong); }
 .cid-type-btn:hover:not(.active) { background: var(--bg-hover); color: var(--text-primary); }
-#create-item-dialog .cid-name { border-bottom: 1px solid #27272a; }
+#create-item-dialog .cid-name { border-bottom: 1px solid var(--border-color); }
 #create-item-name {
-  width: 100%; padding: 10px; background: #27272a; border: 1px solid #3f3f46;
-  color: #e4e4e7; border-radius: 4px; font-size: 14px; box-sizing: border-box;
+  width: 100%; padding: 10px; background: var(--border-color); border: 1px solid var(--border-subtle);
+  color: var(--text-primary); border-radius: 4px; font-size: 14px; box-sizing: border-box;
   font-family: ui-monospace, monospace;
 }
 #create-item-dialog .cid-actions { gap: 0; padding: 0; }
@@ -665,7 +665,7 @@ header:fullscreen { display: none; }
   flex: 1; padding: 12px; background: none; border: none; cursor: pointer;
   font-size: 13px; color: var(--text-secondary); transition: background 0.15s, color 0.15s;
 }
-.cid-action-btn + .cid-action-btn { border-left: 1px solid #27272a; }
+.cid-action-btn + .cid-action-btn { border-left: 1px solid var(--border-color); }
 .cid-action-btn.ok { color: var(--text-strong); }
 .cid-action-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 #sidebar-add-btn {
@@ -859,7 +859,12 @@ const bus = (() => {
             return () => listeners.get(event)?.delete(fn);
         },
         emit(event, ...args) {
-            let r; listeners.get(event)?.forEach(fn => { r = fn(...args); }); return r;
+            // Return the first non-undefined result so RPC-style events (ui:confirm,
+            // ui:prompt) work correctly even if multiple listeners are registered.
+            // All listeners are still called so fire-and-forget events are unaffected.
+            let r;
+            listeners.get(event)?.forEach(fn => { const v = fn(...args); if (r === undefined && v !== undefined) r = v; });
+            return r;
         }
     });
 })();
@@ -962,7 +967,7 @@ class FileSystemManager {
                 if (!db.objectStoreNames.contains('extensions')) db.createObjectStore('extensions');
             };
             req.onsuccess = e => { this.db = e.target.result; resolve(); };
-            req.onerror = () => resolve();
+            req.onerror = () => { this.db = null; resolve(); };
         });
     }
     async queryPermission(handle) {
@@ -971,11 +976,13 @@ class FileSystemManager {
     }
     async saveFolderHandle(handle) {
         await this.initDB();
+        if (!this.db) return;
         const tx = this.db.transaction('handles', 'readwrite');
         tx.objectStore('handles').put(handle, 'main');
     }
     async loadSavedFolder() {
         await this.initDB();
+        if (!this.db) return { status: 'none' };
         return new Promise(resolve => {
             const tx = this.db.transaction('handles');
             const req = tx.objectStore('handles').get('main');
@@ -1027,7 +1034,9 @@ class FileSystemManager {
                 this.tree.registerNode(path, node);
                 dirNode.children.push(node);
             }
-        } catch {}
+        } catch (e) {
+            if (e.name === 'NotAllowedError') bus.emit('ui:toast', 'Folder access denied – re-open folder to grant access');
+        }
         dirNode.childrenLoaded = true;
     }
     async build(rootHandle) {
@@ -1306,7 +1315,10 @@ async openFileFromNode(node) {
     }
     async deleteFolder(target) {
         if (!target || target.kind !== 'directory') return;
-        const isNonEmpty = target.children?.length > 0;
+        // Check the actual filesystem rather than the in-memory children array,
+        // so unexpanded folders are correctly identified as non-empty.
+        let isNonEmpty = false;
+        try { for await (const _ of target.handle.values()) { isNonEmpty = true; break; } } catch {}
         const confirmed = isNonEmpty
             ? (await bus.emit('ui:prompt', { promptTitle: `Type "remove" to delete non-empty folder "${target.name}":` }) || '').trim().toLowerCase() === 'remove'
             : await bus.emit('ui:confirm', { confirmMessage: `Delete folder "${target.name}"?`, danger: true });
@@ -1349,7 +1361,9 @@ async renameItem(target) {
                 throw new Error('Folder rename needs latest Chrome/Edge (directory.move not supported yet)');
             }
         } else {
-            const content = await (await target.handle.getFile()).text();
+            // Prefer in-memory content for any open dirty tab so unsaved changes are not lost.
+            const openTab = this.state.tabs.find(t => t.handle && t.path === target.path);
+            const content = (openTab && openTab.dirty) ? openTab.content : await (await target.handle.getFile()).text();
             updatedHandle = await parent.getFileHandle(trimmed, { create: true });
             await this.#write(updatedHandle, content);
             await parent.removeEntry(target.name);
@@ -1403,9 +1417,11 @@ async renameItem(target) {
         if (srcNode.handle.move) {
             await srcNode.handle.move(destHandle, srcNode.name);
         } else {
-            const file = await srcNode.handle.getFile();
+            // Prefer in-memory content for any open dirty tab so unsaved changes are not lost.
+            const openTab = this.state.tabs.find(t => t.handle && t.path === srcNode.path);
+            const content = (openTab && openTab.dirty) ? openTab.content : await (await srcNode.handle.getFile()).text();
             const newHandle = await destHandle.getFileHandle(srcNode.name, { create: true });
-            await this.#write(newHandle, file);
+            await this.#write(newHandle, content);
             await srcParent.removeEntry(srcNode.name);
         }
         const newPath = destFolderPath ? `${destFolderPath}/${srcNode.name}` : srcNode.name;
@@ -1625,7 +1641,7 @@ class DirectoryTreeView {
         const fileTree = this.treeManager ? this.treeManager.fileTree : null;
         if (!fileTree) {
             const msg = document.createElement('div');
-            msg.style.cssText = 'padding:20px;color:#52525b;text-align:center;font-size:12px';
+            msg.style.cssText = 'padding:20px;color:var(--text-secondary);text-align:center;font-size:12px';
             msg.textContent = 'No folder open';
             this.container.appendChild(msg);
             return;
@@ -1795,6 +1811,7 @@ class ExtensionManager {
     }
     async loadAll() {
         await this.fs.initDB();
+        if (!this.fs.db) return;
         return new Promise(resolve => {
             const tx = this.fs.db.transaction('extensions');
             const store = tx.objectStore('extensions');
@@ -1851,8 +1868,8 @@ class ExtensionManager {
                 this.extensions.push({ key: meta.name, name: meta.name, types: meta.types, mode: meta.mode, bar: meta.bar, handle: fileHandle, html });
             }
             await this.fs.initDB();
+            if (!this.fs.db) { bus.emit('ui:toast', 'Storage unavailable'); return; }
             const tx = this.fs.db.transaction('extensions', 'readwrite');
-            tx.objectStore('extensions').put(fileHandle, meta.name);
             bus.emit('ui:toast', `Extension "${meta.name}" installed (${meta.types.join(', ')})`);
             // Re-attach the new/updated extension to any matching open tabs
             bus.emit('extension:changed');
@@ -1863,6 +1880,7 @@ class ExtensionManager {
     async uninstall(name) {
         this.extensions = this.extensions.filter(e => e.name !== name);
         await this.fs.initDB();
+        if (!this.fs.db) return;
         const tx = this.fs.db.transaction('extensions', 'readwrite');
         tx.objectStore('extensions').delete(name);
         bus.emit('ui:toast', `Extension "${name}" removed`);
@@ -1916,9 +1934,9 @@ class ExtensionManager {
         const isSplit = tab.extensionMode === 'split';
 
         const sendStateMessage = () => {
-            try { tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), '*'); } catch (e) {}
+            try { tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), 'null'); } catch (e) {}
             if (tab.extBarFrame) {
-                try { tab.extBarFrame.contentWindow.postMessage(this.#buildBarPayload(tab), '*'); } catch (e) {}
+                try { tab.extBarFrame.contentWindow.postMessage(this.#buildBarPayload(tab), 'null'); } catch (e) {}
             }
         };
 
@@ -2037,9 +2055,9 @@ class ExtensionManager {
     /** Send updated editor:state to the active extension iframe(s) */
     sendStateToExtension(tab) {
         if (!tab || tab.type !== 'extension' || !tab.extFrame) return;
-        try { tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), '*'); } catch (e) {}
+        try { tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), 'null'); } catch (e) {}
         if (tab.extBarFrame) {
-            try { tab.extBarFrame.contentWindow.postMessage(this.#buildBarPayload(tab), '*'); } catch (e) {}
+            try { tab.extBarFrame.contentWindow.postMessage(this.#buildBarPayload(tab), 'null'); } catch (e) {}
         }
     }
 }
@@ -2889,7 +2907,6 @@ class UIManager {
             if (r) r.checked = true;
         }
         await this.fs.initDB();
-        await this.extensions.loadAll();
         await this.restoreManager.ensureRestored('cold');
     }
     showToast(message, duration = CONSTANTS.TOAST_DEFAULT_MS) {
@@ -3352,9 +3369,27 @@ document.addEventListener('mouseup', handleResizeEnd);
                 e.preventDefault();
                 const start = this.#textarea.selectionStart;
                 const end = this.#textarea.selectionEnd;
-                this.#textarea.value = this.#textarea.value.substring(0, start) + '\t' + this.#textarea.value.substring(end);
-                this.#textarea.selectionStart = this.#textarea.selectionEnd = start + 1;
-                this.#textarea.dispatchEvent(new Event('input'));
+                const val = this.#textarea.value;
+
+                // Multi-line selection: block indent (Tab) or de-indent (Shift+Tab)
+                if (start !== end && val.lastIndexOf('\n', end - 1) >= start) {
+                    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+                    const region = val.substring(lineStart, end);
+                    const newRegion = e.shiftKey
+                        ? region.replace(/^\t/mg, '')
+                        : region.replace(/^/mg, '\t');
+                    const delta = newRegion.length - region.length;
+                    this.#textarea.setRangeText(newRegion, lineStart, end, 'end');
+                    this.#textarea.selectionStart = e.shiftKey
+                        ? Math.max(lineStart, start - (val[lineStart] === '\t' ? 1 : 0))
+                        : start + 1;
+                    this.#textarea.selectionEnd = end + delta;
+                    this.#textarea.dispatchEvent(new Event('input'));
+                    return;
+                }
+
+                // Single-cursor insertion: use execCommand to preserve the browser undo stack
+                document.execCommand('insertText', false, '\t');
             }
         });
         const slider = document.getElementById('width-slider');
