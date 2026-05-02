@@ -2071,6 +2071,10 @@ class ExtensionManager {
     /** Send updated editor:state to the active extension iframe(s) */
     sendStateToExtension(tab) {
         if (!tab || tab.type !== 'extension' || !tab.extFrame) return;
+        // '*' is required: extension iframes use sandbox="allow-scripts" (no allow-same-origin),
+        // giving them the null origin. postMessage(…,'null') is unreliable across browsers for
+        // null-origin targets. Using '*' is safe because the message is targeted at a specific
+        // contentWindow, not broadcast; sandboxed iframes also cannot navigate away from their srcdoc.
         try { tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), '*'); } catch (e) {}
         this.notifyBar(tab);
     }
