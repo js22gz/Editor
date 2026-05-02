@@ -215,12 +215,13 @@
   
   <div class="ext-footer" id="status">Ready • Toolbar is in the top bar</div>
   
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
   <script>
     // === Shared State (updated by editor:state for BOTH bar and main) ===
     let currentContent = '';
     let currentLine = 1;
     let currentCol = 1;
+    let stateInitialized = false; // true once the first editor:state is received
     
     // === Core Helpers ===
     function getCharIndex(content, line, col) {
@@ -241,6 +242,7 @@
     }
     
     function postUpdate(newContent, newLine, newCol) {
+      if (!stateInitialized) return; // guard: never send until we have real state
       window.parent.postMessage({
         type: 'extension:updated',
         content: newContent,
@@ -355,9 +357,7 @@
         marked.setOptions({
           gfm: true,
           breaks: true,
-          pedantic: false,
-          smartLists: true,
-          smartypants: false
+          pedantic: false
         });
         
         const html = marked.parse(content);
@@ -377,6 +377,7 @@
       currentContent = content || '';
       currentLine = cursorLine || 1;
       currentCol = cursorCol || 1;
+      stateInitialized = true;
       
       if (context === 'bar') {
         return; // bar only needs state for insert position

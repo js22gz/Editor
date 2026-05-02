@@ -3625,8 +3625,8 @@ window.addEventListener('message', async e => {
     }
 
     bus.emit('tab:status-update', activeTab);
-    // Keep the bar frame in sync after any content change from the extension
-    this.extensions.notifyBar(activeTab);
+    // Keep both the preview pane and bar frame in sync after any content change from the extension
+    this.extensions.sendStateToExtension(activeTab);
   }
   // Silently ignore old extension:save messages for backward compatibility
 });
