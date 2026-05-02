@@ -2596,6 +2596,11 @@ class StateRestoreManager {
     // A persistent toast is already on screen while this is true; new wake-events
     // that reach the permission-needed branch will simply skip showing another one.
     #permToastShowing = false;
+    // Tracks whether the browser window currently has focus so the document-level
+    // focus-capture listener can skip intra-page element-focus events (e.g. the
+    // user clicking the textarea in split mode) and only trigger a restore when
+    // the window is genuinely coming back from an unfocused state.
+    #windowHasFocus = document.hasFocus();
 
     /** @param {ReactiveState} state @param {FileSystemManager} fs @param {TabManager} tabs @param {TreeManager} tree @param {ExtensionManager} extensions */
     constructor(state, fs, tabs, tree, extensions) {
@@ -2655,12 +2660,22 @@ class StateRestoreManager {
             }
         });
         window.addEventListener('blur', () => {
+            this.#windowHasFocus = false;
             this.#snapshotState();
         });
         window.addEventListener('focus', async () => {
+            this.#windowHasFocus = true;
             await this.ensureRestored('focus');
         });
         document.addEventListener('focus', async () => {
+            // This capture-phase listener exists as a cross-platform fallback for
+            // browsers where window.focus does not fire reliably (e.g. iOS Safari).
+            // Guard against intra-page element-focus events (e.g. clicking the textarea
+            // while the window is already focused) which must NOT trigger a restore —
+            // that would call loadAll() + reattachExtensions() and could tear down the
+            // active split-mode extension.
+            if (this.#windowHasFocus) return;
+            this.#windowHasFocus = true;
             await this.ensureRestored('focus');
         }, true);
         window.addEventListener('beforeunload', e => {
