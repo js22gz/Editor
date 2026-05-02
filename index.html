@@ -1938,9 +1938,9 @@ class ExtensionManager {
         const isSplit = tab.extensionMode === 'split';
 
         const sendStateMessage = () => {
-            try { tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), 'null'); } catch (e) {}
+            try { tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), '*'); } catch (e) {}
             if (tab.extBarFrame) {
-                try { tab.extBarFrame.contentWindow.postMessage(this.#buildBarPayload(tab), 'null'); } catch (e) {}
+                try { tab.extBarFrame.contentWindow.postMessage(this.#buildBarPayload(tab), '*'); } catch (e) {}
             }
         };
 
@@ -2071,13 +2071,13 @@ class ExtensionManager {
     /** Send updated editor:state to the active extension iframe(s) */
     sendStateToExtension(tab) {
         if (!tab || tab.type !== 'extension' || !tab.extFrame) return;
-        try { tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), 'null'); } catch (e) {}
+        try { tab.extFrame.contentWindow.postMessage(this.#buildStatePayload(tab), '*'); } catch (e) {}
         this.notifyBar(tab);
     }
     /** Send an updated editor:state (with context:'bar') only to the bar frame */
     notifyBar(tab) {
         if (!tab || !tab.extBarFrame) return;
-        try { tab.extBarFrame.contentWindow.postMessage(this.#buildBarPayload(tab), 'null'); } catch (e) {}
+        try { tab.extBarFrame.contentWindow.postMessage(this.#buildBarPayload(tab), '*'); } catch (e) {}
     }
     /**
      * Inject `window.__editorContext = 'bar'` into the bar frame's srcdoc so that
