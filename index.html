@@ -1872,6 +1872,7 @@ class ExtensionManager {
             await this.fs.initDB();
             if (!this.fs.db) { bus.emit('ui:toast', 'Storage unavailable'); return; }
             const tx = this.fs.db.transaction('extensions', 'readwrite');
+            tx.objectStore('extensions').put(fileHandle, meta.name);
             bus.emit('ui:toast', `Extension "${meta.name}" installed (${meta.types.join(', ')})`);
             // Re-attach the new/updated extension to any matching open tabs
             bus.emit('extension:changed');
