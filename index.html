@@ -1956,8 +1956,20 @@ class ExtensionManager {
                 tab._splitRight.style.display = '';
                 this.#applySplitRatio(wrapper);
             }
-            if (tab.extensionBar && tab.extBarFrame) {
-                document.getElementById('extension-bar').classList.remove('hidden');
+            if (tab.extensionBar) {
+                const barEl = document.getElementById('extension-bar');
+                if (!tab.extBarFrame) {
+                    // Bar frame was never created (e.g. extension was updated to add bar support
+                    // while this tab's extFrame was already live). Create it lazily now.
+                    const barFrame = document.createElement('iframe');
+                    barFrame.className = 'ext-bar-frame';
+                    barFrame.sandbox = 'allow-scripts';
+                    barFrame.srcdoc = ExtensionManager.#injectBarContext(tab.extension.html);
+                    barEl.appendChild(barFrame);
+                    tab.extBarFrame = barFrame;
+                    barFrame.onload = sendStateMessage;
+                }
+                barEl.classList.remove('hidden');
                 tab.extBarFrame.classList.remove('hidden');
             }
             sendStateMessage();
