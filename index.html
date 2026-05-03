@@ -3093,9 +3093,9 @@ class UIManager {
         // Append is O(delta); removal scans backwards O(delta) to find the cut point.
         const applyDelta = (lineCount) => {
             if (lineCount > this.#lastLineCount) {
-                const parts = [];
-                for (let i = this.#lastLineCount + 1; i <= lineCount; i++) parts.push(i);
-                this.#gutter.textContent += '\n' + parts.join('\n');
+                let addition = '';
+                for (let i = this.#lastLineCount + 1; i <= lineCount; i++) addition += '\n' + i;
+                this.#gutter.textContent += addition;
             } else {
                 const text = this.#gutter.textContent;
                 let pos = text.length;
@@ -3104,7 +3104,7 @@ class UIManager {
                     pos = text.lastIndexOf('\n', pos - 1);
                     if (pos < 0) { pos = 0; break; }
                 }
-                this.#gutter.textContent = pos > 0 ? text.slice(0, pos) : String(lineCount);
+                this.#gutter.textContent = pos > 0 ? text.slice(0, pos) : buildFull(lineCount);
             }
             this.#lastLineCount = lineCount;
         };
