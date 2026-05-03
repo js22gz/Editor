@@ -1816,6 +1816,7 @@ class ExtensionManager {
         this.state = state;
         this.fs = fs;
         this.textarea = null;         // set by UIManager.init()
+        this.gutter = null;           // set by UIManager.init()
         this.widthSlider = null;      // set by UIManager.init()
         this.extensionOverlay = null; // set by UIManager.init()
         this.extensionBar = null;     // set by UIManager.init()
@@ -2050,7 +2051,7 @@ class ExtensionManager {
     #applySplitRatio(wrapper) {
         const textarea = this.textarea;
         const gutter = this.gutter;
-        const gutterW = gutter.offsetWidth || 0;
+        const gutterW = gutter ? gutter.offsetWidth || 0 : 0;
         const totalW = wrapper.clientWidth;
         const savedRatio = parseFloat(localStorage.getItem('splitPaneRatio'));
         const ratio = (!isNaN(savedRatio) && savedRatio > CONSTANTS.SPLIT_RATIO_MIN && savedRatio < CONSTANTS.SPLIT_RATIO_MAX) ? savedRatio : CONSTANTS.SPLIT_RATIO_DEFAULT;
@@ -2923,6 +2924,7 @@ class UIManager {
         this.tabs.extensionOverlay = extensionOverlay;
         this.tabs.extensionBar = extensionBar;
         this.extensions.textarea = this.#textarea;
+        this.extensions.gutter = this.#gutter;
         this.extensions.widthSlider = widthSlider;
         this.extensions.extensionOverlay = extensionOverlay;
         this.extensions.extensionBar = extensionBar;
