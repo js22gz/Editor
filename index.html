@@ -1815,6 +1815,10 @@ class ExtensionManager {
     constructor(state, fs) {
         this.state = state;
         this.fs = fs;
+        this.textarea = null;         // set by UIManager.init()
+        this.widthSlider = null;      // set by UIManager.init()
+        this.extensionOverlay = null; // set by UIManager.init()
+        this.extensionBar = null;     // set by UIManager.init()
     }
     async loadAll() {
         await this.fs.initDB();
@@ -1916,11 +1920,11 @@ class ExtensionManager {
         return null;
     }
     #buildStatePayload(tab) {
-        const textarea = document.getElementById('textarea');
+        const textarea = this.textarea;
         const pos = textarea ? textarea.selectionStart || 0 : 0;
         const before = textarea ? textarea.value.substring(0, pos) : '';
         const lines = before.split('\n');
-        const slider = document.getElementById('width-slider');
+        const slider = this.widthSlider;
         const atMax = slider ? +slider.value >= +slider.max : true;
         return {
             type: 'editor:state',
@@ -1952,7 +1956,7 @@ class ExtensionManager {
         if (tab.extFrame && !tab._pendingTypeSwitch) {
             tab.extFrame.classList.remove('hidden');
             if (isOverlay) {
-                document.getElementById('extension-overlay').classList.remove('hidden');
+                this.extensionOverlay.classList.remove('hidden');
             }
             if (isSplit && tab._splitHandle && tab._splitRight) {
                 const wrapper = document.querySelector('.editor-wrapper');
@@ -1962,7 +1966,7 @@ class ExtensionManager {
                 this.#applySplitRatio(wrapper);
             }
             if (tab.extensionBar) {
-                const barEl = document.getElementById('extension-bar');
+                const barEl = this.extensionBar;
                 if (!tab.extBarFrame) {
                     // Bar frame was never created (e.g. extension was updated to add bar support
                     // while this tab's extFrame was already live). Create it lazily now.
@@ -1993,7 +1997,7 @@ class ExtensionManager {
         iframe.className = 'ext-frame';
         iframe.sandbox = 'allow-scripts';
         if (isOverlay) {
-            const overlay = document.getElementById('extension-overlay');
+            const overlay = this.extensionOverlay;
             overlay.classList.remove('hidden');
             overlay.appendChild(iframe);
         } else if (isSplit) {
@@ -2006,7 +2010,7 @@ class ExtensionManager {
 
         // Create bar iframe if the extension opts in
         if (tab.extensionBar) {
-            const barEl = document.getElementById('extension-bar');
+            const barEl = this.extensionBar;
             const barFrame = document.createElement('iframe');
             barFrame.className = 'ext-bar-frame';
             barFrame.sandbox = 'allow-scripts';
@@ -2044,8 +2048,8 @@ class ExtensionManager {
         this.#bindSplitDrag(handle, wrapper);
     }
     #applySplitRatio(wrapper) {
-        const textarea = document.getElementById('textarea');
-        const gutter = document.getElementById('gutter');
+        const textarea = this.textarea;
+        const gutter = this.gutter;
         const gutterW = gutter.offsetWidth || 0;
         const totalW = wrapper.clientWidth;
         const savedRatio = parseFloat(localStorage.getItem('splitPaneRatio'));
@@ -2118,6 +2122,8 @@ class TabManager {
         this.textarea = null;
         this.gutter = null;
         this.tabsContainer = null;
+        this.extensionOverlay = null; // set by UIManager.init()
+        this.extensionBar = null;     // set by UIManager.init()
         bus.on('extension:changed', () => this.reattachExtensions());
     }
     static #moveArrayItem(arr, fromIdx, toIdx) {
@@ -2150,8 +2156,8 @@ class TabManager {
                 extToggle.className = 'ext-toggle inactive';
                 if (tab.extFrame) tab.extFrame.classList.add('hidden');
                 if (tab.extBarFrame) tab.extBarFrame.classList.add('hidden');
-                document.getElementById('extension-overlay').classList.add('hidden');
-                document.getElementById('extension-bar').classList.add('hidden');
+                this.extensionOverlay.classList.add('hidden');
+                this.extensionBar.classList.add('hidden');
                 tab._pendingTypeSwitch = true;
                 this.switchToTab(tab.id);
             } else {
@@ -2388,8 +2394,8 @@ class TabManager {
         // Individual extBarFrame elements are also marked hidden so the reuse path in
         // renderTab() can selectively un-hide only the correct bar frame.
         this.state.tabs.forEach(t => { if (t.extFrame) t.extFrame.classList.add('hidden'); });
-        document.getElementById('extension-overlay').classList.add('hidden');
-        document.getElementById('extension-bar').classList.add('hidden');
+        this.extensionOverlay.classList.add('hidden');
+        this.extensionBar.classList.add('hidden');
         this.state.tabs.forEach(t => { if (t.extBarFrame) t.extBarFrame.classList.add('hidden'); });
         // Clean up split layout from any previous tab
         const editorWrapper = document.querySelector('.editor-wrapper');
@@ -2447,7 +2453,7 @@ class TabManager {
         if (tab._splitHandle) { tab._splitHandle.remove(); tab._splitHandle = null; }
         if (tab._splitRight) { tab._splitRight.remove(); tab._splitRight = null; }
         if (tab.extensionMode === 'overlay') {
-            document.getElementById('extension-overlay').classList.add('hidden');
+            this.extensionOverlay.classList.add('hidden');
         }
         if (tab.extensionMode === 'split') {
             document.querySelector('.editor-wrapper').classList.remove('split-mode');
@@ -2622,6 +2628,7 @@ class StateRestoreManager {
         this.tabs = tabs;
         this.tree = tree;
         this.extensions = extensions;
+        this.textarea = null; // set by UIManager.init()
         this.#permCoord = new PermissionCoordinator(fs, state);
     }
 
@@ -2778,7 +2785,7 @@ class StateRestoreManager {
         this.tabs.reattachExtensions();
 
         // Sync active tab content from disk (if clean)
-        const textarea = document.getElementById('textarea');
+        const textarea = this.textarea;
         const activeTab = this.state.getActiveTab();
         if (activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty && textarea) {
             try {
@@ -2813,7 +2820,7 @@ class StateRestoreManager {
         this.#transition('snapshotting');
         bus.emit('restore:snapshot');
         this.#lastSnapshotAt = Date.now();
-        const textarea = document.getElementById('textarea');
+        const textarea = this.textarea;
         const activeTab = this.state.getActiveTab();
         if (activeTab && activeTab.type !== 'extension' && textarea) {
             activeTab.content = textarea.value;
@@ -2910,6 +2917,16 @@ class UIManager {
         this.tabs.textarea = this.#textarea;
         this.tabs.gutter = this.#gutter;
         this.tabs.tabsContainer = this.#tabsContainer;
+        const extensionOverlay = document.getElementById('extension-overlay');
+        const extensionBar = document.getElementById('extension-bar');
+        const widthSlider = document.getElementById('width-slider');
+        this.tabs.extensionOverlay = extensionOverlay;
+        this.tabs.extensionBar = extensionBar;
+        this.extensions.textarea = this.#textarea;
+        this.extensions.widthSlider = widthSlider;
+        this.extensions.extensionOverlay = extensionOverlay;
+        this.extensions.extensionBar = extensionBar;
+        this.restoreManager.textarea = this.#textarea;
         // Create the primary (left) DirectoryTreeView
         this.#leftView = new DirectoryTreeView('tree-container', this.state, this.fs, 'left');
         this.#leftView.rootDirNameEl = this.#rootDirNameEl;
