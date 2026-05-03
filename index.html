@@ -1,121 +1,3 @@
-<script>
-	window.WELCOME = `EDITOR
-	══════
-	This is a text editor for the web browser.
-	`;
-
-window.LEGEND = `<!--
-  name: EDITOR
-  type: progressive web app
-  description: No-dependency single-file text editor
-  browser compatibility: Chrome & Edge (File System Access API)
-
-  ═══════════════════════════════════════════════════════════════════════
-  DOCUMENT MAP:
-  ─────────────────────────────────────────────────────────────────────
-  <html lang="en">
-    ├── <head>
-    │   ├── <meta> charset · viewport · title · manifest · theme-color
-    │   └── <style> (minimal dark theme, fluid layout, CSS variables)
-    └── <body>
-         ├── <header>
-         │   └── #title-area (centered)
-         │       └── #title-label (EDITOR)
-         │
-         ├── <main>
-         │   ├── <aside id="sidebar">
-         │   │   ├── #sidebar-header (ROOT: + ACTIVE: + refresh/clear)
-         │   │   └── #tree-container (lazy TreeManager)
-         │   │
-         │   ├── #sidebar-resize (draggable)
-         │   └── .editor-area
-         │       ├── #tabs (draggable tab strip)
-         │       │   └── #tab-settings-wrap (⛭ button → settings popover)
-         │       ├── #extension-bar (optional per-extension toolbar, hidden when unused)
-         │       ├── #line-width-slider (24–200 ch or ∞)
-         │       ├── .editor-wrapper
-         │       │   ├── button#sidebar-toggle
-         │       │   ├── #gutter (live line numbers)
-         │       │   ├── #textarea (core editing surface)
-         │       │   └── #extension-overlay (overlay-mode extension layer)
-         │       └── .status (cursor position + file info)
-         │
-         └── <script> (class-based architecture)
-                  │
-                  ├── ReactiveState – Proxy<EventTarget>
-                  │     • currentDirHandle, tabs[], currentTabId,
-                  │       expandedFolders, activeFilePath, activeDirectoryPath,
-                  │       copiedNode
-                  │     • getTab() / getActiveTab()
-                  │     • auto-dispatches <prop>Changed events
-                  │
-                  ├── EventBus (const bus)
-                  │     • on(event, fn) / off(event, fn) / emit(event, ...args)
-                  │     • Namespaces: ui: tab: editor: extension: restore:
-                  │     • Decouples cross-component notifications
-                  │
-                  ├── FileSystemManager (FSA + persistence)
-                  │     • IndexedDB (handles + extensions)
-                  │     • Lazy tree (loadChildren + mutateAndRebuild)
-                  │     • Full CRUD + drag & drop (move/copy/rename)
-                  │     • Auto-save (debounce 750 ms) + flush
-                  │     • #newItem() shared helper (newFile / newFolder)
-                  │     • #guard() + #resolve() — permission & path helpers
-                  │
-                  ├── TreeManager
-                  │     • nodeByPath Map + fileTree root
-                  │     • recursive _renderTreeItem() + lazy loading
-                  │     • Drag & drop 
-                  │     • highlightActive() + updateHeader()
-                  │     • registerNode / getNode / clear
-                  │
-                  ├── ExtensionManager
-                  │     • loadAll() / install() / uninstall()
-                  │     • _parseMeta() + getForFile(filename)
-                  │     • renderTab() → sandboxed iframe + postMessage
-                  │     • sendStateToExtension() – live state to overlay/bar
-                  │     • modes: full (replaces editor) | overlay (on top) | split (side-by-side)
-                  │     • bar: optional toolbar via <meta name="extension-bar" content="true">
-                  │           height = tab-bar height − 2 px; spans full editor width
-                  │     • protocol:
-                  │         editor → ext: {type:'editor:state', content, cursor, lineWidth, filename}
-                  │                       bar frame also receives context:'bar'
-                  │                       bar frame srcdoc is pre-seeded with window.__editorContext='bar'
-                  │                       so extensions can branch at init time (before postMessage arrives)
-                  │         ext → editor: {type:'extension:updated', content, cursorLine?, cursorCol?}
-                  │
-                  ├── TabManager
-                  │     • static TAB_TYPES (welcome · legend · text · extension)
-                  │     • createNewTab() + switchToTab() + closeTab()
-                  │     • Drag-to-reorder tabs
-                  │     • updateTabPaths() after rename/move
-                  │
-                  ├── PermissionCoordinator (permission query / request / toast)
-                  │     • hasPermission() — query current FS permission
-                  │     • handleLostPermission(onGranted, onDone?) — persistent action-toast flow
-                  │
-                  ├── StateRestoreManager (wake / restore / snapshot)
-                  │     • State machine: idle → snapshotting | restoring
-                  │     • Bus: restore:started / :completed / :snapshot / :permission-needed
-                  │     • ensureRestored(reason) — single public entry for all wake signals
-                  │     • bindLifecycle() — event listeners: pageshow /
-                  │       visibilitychange / freeze / resume / focus /
-                  │       document focus (capture) / blur / beforeunload
-                  │     • #snapshotState() — capture before suspend
-                  │
-                  ├── UIManager
-                  │     • DOM wiring, context menu, long-press (mobile)
-                  │     • showToast / showDialog / updateLineNumbers
-                  │     • bindKeyboard() · bindTreeEvents() · bindTabEvents()
-                  │       bindSettings()
-                  │
-                  └── EditorApp (orchestrator)
-                        • wires all classes together
-                        • launches on window.onload
-
-  copyright © 2026 Jonatan Skäryd. All rights reserved.
--->`;
-</script>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -124,9 +6,131 @@ window.LEGEND = `<!--
     <title>EDITOR</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#18181b">
+
+	<script>
+		window.WELCOME = `EDITOR
+		══════
+		This is a text editor for the web browser.
+		`;
+
+		window.LEGEND = `<!--
+  		name: EDITOR
+  		type: progressive web app
+  		description: No-dependency single-file text editor
+  		browser compatibility: Chrome & Edge (File System Access API)
+		
+		  ═══════════════════════════════════════════════════════════════════════
+		  DOCUMENT MAP:
+		  ─────────────────────────────────────────────────────────────────────
+		  <html lang="en">
+		    ├── <head>
+		    │   ├── <meta> charset · viewport · title · manifest · theme-color
+		    │   └── <style> (minimal dark theme, fluid layout, CSS variables)
+		    └── <body>
+		         ├── <header>
+		         │   └── #title-area (centered)
+		         │       └── #title-label (EDITOR)
+		         │
+		         ├── <main>
+		         │   ├── <aside id="sidebar">
+		         │   │   ├── #sidebar-header (ROOT: + ACTIVE: + refresh/clear)
+		         │   │   └── #tree-container (lazy TreeManager)
+		         │   │
+		         │   ├── #sidebar-resize (draggable)
+		         │   └── .editor-area
+		         │       ├── #tabs (draggable tab strip)
+		         │       │   └── #tab-settings-wrap (⛭ button → settings popover)
+		         │       ├── #extension-bar (optional per-extension toolbar, hidden when unused)
+		         │       ├── #line-width-slider (24–200 ch or ∞)
+		         │       ├── .editor-wrapper
+		         │       │   ├── button#sidebar-toggle
+		         │       │   ├── #gutter (live line numbers)
+		         │       │   ├── #textarea (core editing surface)
+		         │       │   └── #extension-overlay (overlay-mode extension layer)
+		         │       └── .status (cursor position + file info)
+		         │
+		         └── <script> (class-based architecture)
+		                  │
+		                  ├── ReactiveState – Proxy<EventTarget>
+		                  │     • currentDirHandle, tabs[], currentTabId,
+		                  │       expandedFolders, activeFilePath, activeDirectoryPath,
+		                  │       copiedNode
+		                  │     • getTab() / getActiveTab()
+		                  │     • auto-dispatches <prop>Changed events
+		                  │
+		                  ├── EventBus (const bus)
+		                  │     • on(event, fn) / off(event, fn) / emit(event, ...args)
+		                  │     • Namespaces: ui: tab: editor: extension: restore:
+		                  │     • Decouples cross-component notifications
+		                  │
+		                  ├── FileSystemManager (FSA + persistence)
+		                  │     • IndexedDB (handles + extensions)
+		                  │     • Lazy tree (loadChildren + mutateAndRebuild)
+		                  │     • Full CRUD + drag & drop (move/copy/rename)
+		                  │     • Auto-save (debounce 750 ms) + flush
+		                  │     • #newItem() shared helper (newFile / newFolder)
+		                  │     • #guard() + #resolve() — permission & path helpers
+		                  │
+		                  ├── TreeManager
+		                  │     • nodeByPath Map + fileTree root
+		                  │     • recursive _renderTreeItem() + lazy loading
+		                  │     • Drag & drop 
+		                  │     • highlightActive() + updateHeader()
+		                  │     • registerNode / getNode / clear
+		                  │
+		                  ├── ExtensionManager
+		                  │     • loadAll() / install() / uninstall()
+		                  │     • _parseMeta() + getForFile(filename)
+		                  │     • renderTab() → sandboxed iframe + postMessage
+		                  │     • sendStateToExtension() – live state to overlay/bar
+		                  │     • modes: full (replaces editor) | overlay (on top) | split (side-by-side)
+		                  │     • bar: optional toolbar via <meta name="extension-bar" content="true">
+		                  │           height = tab-bar height − 2 px; spans full editor width
+		                  │     • protocol:
+		                  │         editor → ext: {type:'editor:state', content, cursor, lineWidth, filename}
+		                  │                       bar frame also receives context:'bar'
+		                  │                       bar frame srcdoc is pre-seeded with window.__editorContext='bar'
+		                  │                       so extensions can branch at init time (before postMessage arrives)
+		                  │         ext → editor: {type:'extension:updated', content, cursorLine?, cursorCol?}
+		                  │
+		                  ├── TabManager
+		                  │     • static TAB_TYPES (welcome · legend · text · extension)
+		                  │     • createNewTab() + switchToTab() + closeTab()
+		                  │     • Drag-to-reorder tabs
+		                  │     • updateTabPaths() after rename/move
+		                  │
+		                  ├── PermissionCoordinator (permission query / request / toast)
+		                  │     • hasPermission() — query current FS permission
+		                  │     • handleLostPermission(onGranted, onDone?) — persistent action-toast flow
+		                  │
+		                  ├── StateRestoreManager (wake / restore / snapshot)
+		                  │     • State machine: idle → snapshotting | restoring
+		                  │     • Bus: restore:started / :completed / :snapshot / :permission-needed
+		                  │     • ensureRestored(reason) — single public entry for all wake signals
+		                  │     • bindLifecycle() — event listeners: pageshow /
+		                  │       visibilitychange / freeze / resume / focus /
+		                  │       document focus (capture) / blur / beforeunload
+		                  │     • #snapshotState() — capture before suspend
+		                  │
+		                  ├── UIManager
+		                  │     • DOM wiring, context menu, long-press (mobile)
+		                  │     • showToast / showDialog / updateLineNumbers
+		                  │     • bindKeyboard() · bindTreeEvents() · bindTabEvents()
+		                  │       bindSettings()
+		                  │
+		                  └── EditorApp (orchestrator)
+		                        • wires all classes together
+		                        • launches on window.onload
+		
+		  copyright © 2026 Jonatan Skäryd. All rights reserved.
+		-->`;
+</script>
+
+	
+	
 <style>
 /* ────────────────────────────────────────────────────────
-   1. VARIABLES & THEME
+   1a. DARK THEME
 ──────────────────────────────────────────────────────── */
 :root {
   --bg-base: #09090b;
@@ -267,17 +271,12 @@ header {
   user-select: none;
 }
 	
-.tree-row {
-  display: flex; align-items: center; padding: 6px 10px; border-radius: 3px;
-  transition: background 0.1s ease; position: relative; z-index: 2;
-}
+.tree-row { display: flex; align-items: center; padding: 6px 10px; border-radius: 3px;transition: background 0.1s ease; position: relative; z-index: 2;}
 .tree-row:hover { background: var(--bg-item-hover); color: var(--text-hover); }
 .dir-row { cursor: pointer; }
 
 .prefix {
-  color: var(--text-dim); font-family: monospace; white-space: pre; flex-shrink: 0;
-  min-width: 26px; position: relative; align-self: stretch; overflow: visible;
-}
+  color: var(--text-dim); font-family: monospace; white-space: pre; flex-shrink: 0; min-width: 26px; position: relative; align-self: stretch; overflow: visible;}
 .tree-vline, .tree-tee, .tree-elbow { position: absolute; top: -6px; pointer-events: none; }
 .tree-vline, .tree-tee { bottom: -6px; border-left: 1px solid var(--text-dim); }
 .tree-tee::after { content: ''; position: absolute; top: 50%; left: 0; width: 4ch; border-top: 1px solid var(--text-dim); }
@@ -285,8 +284,7 @@ header {
 
 .name { padding-left: 4px; color: var(--text-primary); }
 .name.dir { color: var(--text-strong); font-weight: 600; }
-.file-square {
-  display: inline-block; width: 11px; height: 11px; border: 1.6px solid var(--text-dim);
+.file-square { display: inline-block; width: 11px; height: 11px; border: 1.6px solid var(--text-dim);
   margin-right: 7px; flex-shrink: 0; position: relative; top: 0px;
 }
 
@@ -297,8 +295,6 @@ header {
 }
 .tree-row.active-dir::before { top: 0; }
 .tree-row.active-dir::after { bottom: 0; }
-
-/* Drag & drop */
 .tree-row.dragging { opacity: 0.45; }
 .tree-row.drop-target, #tree-container.drop-target, #tree-container-right.drop-target { background: var(--border-color); outline: 1px dashed var(--text-dim); }
 .children { display: block; }
