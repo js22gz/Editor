@@ -3435,7 +3435,7 @@ document.addEventListener('mouseup', handleResizeEnd);
 
                 // Single-cursor insertion: use setRangeText + InputEvent to replace deprecated execCommand
                 this.#textarea.setRangeText('\t', start, end, 'end');
-                this.#textarea.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: '\t', bubbles: true }));
+                this.#textarea.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: '\t', bubbles: true, cancelable: true }));
             }
         });
         const slider = document.getElementById('width-slider');
