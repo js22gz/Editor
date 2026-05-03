@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="extension-name"  content="HTML Syntax">
+	<meta name="extension-types" content="html,htm,xhtml">
+	<meta name="extension-mode"  content="overlay">
+	<style>
+	*, *::before, *::after { box-sizing: border-box; }
+	html, body {
+		margin: 0; padding: 0;
+		width: 100%; height: 100%;
+		overflow: hidden;
+		background: transparent;
+	}
+
+	/*
+	 * Overlay layer — sits on top of the textarea.
+	 * Background is transparent so the textarea beneath is visible through
+	 * any uncolored (transparent-text) areas. overflow:auto lets the layer
+	 * scroll, and pointer-events:none lets all interaction fall through to
+	 * the textarea.
+	 *
+	 * Left-offset note: the editor-wrapper flex layout places the gutter
+	 * (60 px) to the left of the textarea. The overlay covers both, so the
+	 * code block needs padding-left = gutter(60px) + textarea-padding(16px).
+	 * When the gutter is hidden by the user the offset is 16 px shorter;
+	 * the coloured tokens will still be readable, just shifted slightly left.
+	 */
+	#overlay {
+		position: absolute;
+		top: 0; left: 0;
+		width: 100%; height: 100%;
+		overflow: auto;
+		pointer-events: none;
+		background: transparent;
+		/* hide scrollbars — the textarea's own scrollbar is used */
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+	}
+	#overlay::-webkit-scrollbar { display: none; }
+
+	/* Match textarea metrics exactly */
+	pre#code-block {
+		margin: 0;
+		/* gutter(60px) + textarea padding-left(16px) */
+		padding: 12px 16px 12px 76px;
+		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+		             "Liberation Mono", "Courier New", monospace;
+		font-size: 14px;
+		line-height: 1.6;
+		white-space: pre;
+		tab-size: 4;
+		-moz-tab-size: 4;
+		word-spacing: normal;
+		word-break: normal;
+		word-wrap: normal;
+		/* transparent: only syntax-coloured tokens will be visible; plain text
+		   shows through via the underlying textarea */
+		color: transparent;
+		background: transparent;
+		border: 0;
+		border-radius: 0;
+		/* allow long lines to extend (matches textarea overflow:auto) */
+		min-width: max-content;
+	}
+
+	code { font-family: inherit; font-size: inherit; }
+
+	/* ─── Syntax token colours (VSCode Dark+ palette) ─────────────────── */
+
+	/* Comments */
+	.token.comment,
+	.token.prolog,
+	.token.cdata { color: #6A9955; }
+
+	/* Doctype */
+	.token.doctype { color: #808080; }
+
+	/* HTML punctuation: <  >  =  /  quotes */
+	.token.tag > .token.punctuation { color: #808080; }
+
+	/* HTML tag names  e.g. div, span, html */
+	.token.tag > .token.tag { color: #4EC9B0; }
+
+	/* Attribute names  e.g. class, id, href */
+	.token.attr-name { color: #9CDCFE; }
+
+	/* Attribute values  e.g. "container", 'https://…' */
+	.token.attr-value,
+	.token.attr-value > .token.punctuation { color: #CE9178; }
+
+	/* Entities  e.g. &amp; */
+	.token.entity { color: #D7BA7D; }
+
+	/* ── CSS (inside <style> tags) ─── */
+	/* Selectors  e.g. body, .class, #id, :hover */
+	.token.selector { color: #D7BA7D; }
+
+	/* Property names  e.g. color, background */
+	.token.property { color: #9CDCFE; }
+
+	/* CSS at-rules  e.g. @media, @keyframes */
+	.token.atrule > .token.rule { color: #C586C0; }
+
+	/* CSS units and number literals */
+	.token.unit { color: #B5CEA8; }
+
+	/* Generic punctuation (: ; { }) in CSS — keep subtle */
+	.token.punctuation { color: #808080; }
+
+	/* ── JavaScript (inside <script> tags) ─── */
+	/* Keywords  e.g. function, const, let, return, if */
+	.token.keyword { color: #569CD6; }
+
+	/* Strings and template literals */
+	.token.string,
+	.token.template-string > .token.string { color: #CE9178; }
+
+	/* Template-literal interpolation delimiters ${  } */
+	.token.template-string > .token.interpolation > .token.interpolation-punctuation { color: #569CD6; }
+
+	/* Number literals */
+	.token.number { color: #B5CEA8; }
+
+	/* Booleans and null/undefined */
+	.token.boolean,
+	.token.null,
+	.token.nil { color: #569CD6; }
+
+	/* Regular expressions */
+	.token.regex { color: #D16969; }
+
+	/* Operators  + - * = === etc. */
+	.token.operator { color: #D4D4D4; }
+
+	/* Function calls */
+	.token.function { color: #DCDCAA; }
+
+	/* Class names */
+	.token.class-name { color: #4EC9B0; }
+
+	/* Variables (generic) */
+	.token.variable { color: #9CDCFE; }
+
+	/* Namespace / module tokens */
+	.token.namespace { opacity: 0.8; }
+
+	/* Bold/italic inside comments (JSDoc etc.) */
+	.token.important,
+	.token.bold { font-weight: bold; }
+	.token.italic { font-style: italic; }
+	</style>
+</head>
+<body>
+
+<div id="overlay">
+	<pre id="code-block"><code id="code" class="language-html"></code></pre>
+</div>
+
+<!-- Prism default bundle includes: core + markup(HTML) + CSS + JS -->
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+<script>
+'use strict';
+
+const overlay   = document.getElementById('overlay');
+const codeEl    = document.getElementById('code');
+
+// Metrics that match the textarea (must stay in sync with index.html)
+const FONT_SIZE   = 14;      // px
+const LINE_HEIGHT = 1.6;     // unitless multiplier
+const PAD_TOP     = 12;      // px  (textarea padding-top)
+
+const LINE_PX = FONT_SIZE * LINE_HEIGHT; // 22.4 px
+
+let lastContent  = null;
+let lastLine     = 1;
+
+// Highlight the code element in place.
+// Prism reads textContent and writes innerHTML with escaped, coloured spans.
+function highlight(src) {
+	if (src === lastContent) return;
+	lastContent = src;
+	codeEl.textContent = src;
+	if (typeof Prism !== 'undefined') {
+		Prism.highlightElement(codeEl);
+	}
+}
+
+// Scroll the overlay so that the cursor line stays visible.
+// Called after every editor:state message.
+function syncScroll(line) {
+	lastLine = line;
+
+	const cursorTop     = PAD_TOP + (line - 1) * LINE_PX;
+	const viewH         = overlay.clientHeight || 400;
+	const currentTop    = overlay.scrollTop;
+	const currentBottom = currentTop + viewH;
+	const margin        = LINE_PX * 3; // keep a few lines of context
+
+	if (cursorTop < currentTop + margin) {
+		overlay.scrollTop = Math.max(0, cursorTop - margin);
+	} else if (cursorTop + LINE_PX > currentBottom - margin) {
+		overlay.scrollTop = cursorTop + LINE_PX - viewH + margin;
+	}
+}
+
+window.addEventListener('message', (e) => {
+	if (!e.data || e.data.type !== 'editor:state') return;
+
+	const { content, cursorLine } = e.data;
+	const line = cursorLine || 1;
+
+	highlight(content || '');
+	syncScroll(line);
+});
+
+// Prism may not be loaded yet on first state message (race between CDN load
+// and the editor's initial postMessage). Re-highlight once Prism is ready.
+// Stop polling after 10 seconds to avoid a memory leak on CDN failure.
+if (typeof Prism === 'undefined') {
+	let attempts = 0;
+	const MAX_ATTEMPTS = 200; // 200 × 50 ms = 10 s
+	const interval = setInterval(() => {
+		attempts++;
+		if (typeof Prism !== 'undefined') {
+			clearInterval(interval);
+			if (lastContent !== null) {
+				const saved = lastContent;
+				lastContent = null; // force re-highlight
+				highlight(saved);
+			}
+		} else if (attempts >= MAX_ATTEMPTS) {
+			clearInterval(interval);
+		}
+	}, 50);
+}
+</script>
+</body>
+</html>
