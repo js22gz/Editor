@@ -1,447 +1,447 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="extension-name" content="Markdown Preview">
-  <meta name="extension-types" content="md,markdown,mkd">
-  <meta name="extension-mode" content="split">
-  <meta name="extension-bar" content="true">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    html, body {
-      margin: 0; height: 100%;
-      background: #0a0a0b;
-      color: #e4e4e7;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      font-size: 14px;
-      line-height: 1.5;
-    }
-    body { 
-      display: flex; 
-      flex-direction: column; 
-      overflow: hidden;
-    }
-    
-    /* === MAIN PANE (preview) styles === */
-    .ext-header {
-      height: 44px;
-      background: #18181b;
-      border-bottom: 1px solid #27272a;
-      display: flex;
-      align-items: center;
-      padding: 0 16px;
-      font-size: 13px;
-      flex-shrink: 0;
-      gap: 12px;
-    }
-    .ext-header #filename {
-      font-weight: 600;
-      color: #f4f4f5;
-    }
-    .ext-header .mode-label {
-      color: #71717a;
-      font-size: 12px;
-      margin-left: auto;
-    }
-    
-    .ext-main {
-      flex: 1;
-      overflow: auto;
-      background: #0a0a0b;
-    }
-    #preview {
-      padding: 20px 24px;
-      max-width: 720px;
-      margin: 0 auto;
-      color: #e4e4e7;
-      line-height: 1.75;
-      font-size: 15px;
-    }
-    #preview.empty {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      color: #71717a;
-      font-style: italic;
-      text-align: center;
-      padding: 60px 20px;
-    }
-    #preview h1, #preview h2, #preview h3, #preview h4 {
-      color: #f4f4f5;
-      margin-top: 1.5em;
-      margin-bottom: 0.5em;
-      font-weight: 600;
-    }
-    #preview h1 { font-size: 1.75em; border-bottom: 1px solid #27272a; padding-bottom: 0.3em; }
-    #preview h2 { font-size: 1.4em; border-bottom: 1px solid #27272a; padding-bottom: 0.2em; }
-    #preview h3 { font-size: 1.2em; }
-    #preview p { margin: 0.8em 0; }
-    #preview ul, #preview ol { padding-left: 1.5em; margin: 0.6em 0; }
-    #preview li { margin: 0.3em 0; }
-    #preview blockquote {
-      border-left: 4px solid #52525b;
-      margin: 1em 0;
-      padding: 0.5em 0 0.5em 1.2em;
-      color: #a1a1aa;
-    }
-    #preview code {
-      background: #18181b;
-      padding: 0.1em 0.4em;
-      border-radius: 4px;
-      font-size: 0.92em;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    }
-    #preview pre {
-      background: #18181b;
-      padding: 14px 16px;
-      border-radius: 8px;
-      overflow-x: auto;
-      margin: 1em 0;
-      border: 1px solid #27272a;
-    }
-    #preview pre code {
-      background: none;
-      padding: 0;
-      border-radius: 0;
-    }
-    #preview a { color: #60a5fa; text-decoration: none; }
-    #preview a:hover { text-decoration: underline; }
-    #preview img { max-width: 100%; border-radius: 6px; }
-    #preview table {
-      border-collapse: collapse;
-      width: 100%;
-      margin: 1em 0;
-    }
-    #preview th, #preview td {
-      border: 1px solid #27272a;
-      padding: 8px 12px;
-      text-align: left;
-    }
-    #preview th { background: #18181b; font-weight: 600; }
-    #preview hr { border: none; border-top: 1px solid #27272a; margin: 1.5em 0; }
-    
-    .ext-footer {
-      height: 28px;
-      background: #18181b;
-      border-top: 1px solid #27272a;
-      font-size: 12px;
-      color: #71717a;
-      padding: 0 16px;
-      display: flex;
-      align-items: center;
-      flex-shrink: 0;
-    }
-    
-    /* === EXTENSION BAR (33px toolbar) styles === */
-    .bar-toolbar {
-      height: 100%;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 0 12px;
-      background: #18181b;
-      overflow-x: auto;
-      white-space: nowrap;
-      -webkit-overflow-scrolling: touch;
-    }
-    .bar-toolbar::-webkit-scrollbar { height: 3px; }
-    .bar-toolbar::-webkit-scrollbar-thumb { background: #3f3f46; }
-    
-    .btn-group {
-      display: flex;
-      gap: 3px;
-      background: #27272a;
-      border-radius: 6px;
-      padding: 2px;
-      flex-shrink: 0;
-    }
-    button.md-btn {
-      height: 26px;
-      min-width: 28px;
-      padding: 0 7px;
-      border-radius: 4px;
-      background: #18181b;
-      border: 1px solid #3f3f46;
-      color: #e4e4e7;
-      font-size: 12px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      line-height: 1;
-      transition: background 0.1s ease;
-      flex-shrink: 0;
-    }
-    button.md-btn:hover {
-      background: #27272a;
-      border-color: #52525b;
-    }
-    button.md-btn:active {
-      background: #1c1c20;
-    }
-    button.md-btn strong, 
-    button.md-btn em, 
-    button.md-btn s,
-    button.md-btn code {
-      font-size: 12px;
-      line-height: 1;
-    }
-    
-    /* Slightly more compact buttons inside the bar */
-    .bar-toolbar button.md-btn {
-      height: 24px;
-      min-width: 26px;
-      padding: 0 6px;
-      font-size: 11.5px;
-    }
-  </style>
+	<meta charset="UTF-8">
+	<meta name="extension-name" content="Markdown Preview">
+	<meta name="extension-types" content="md,markdown,mkd">
+	<meta name="extension-mode" content="split">
+	<meta name="extension-bar" content="true">
+	<style>
+	*, *::before, *::after { box-sizing: border-box; }
+	html, body {
+		margin: 0; height: 100%;
+		background: #0a0a0b;
+		color: #e4e4e7;
+		font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+		font-size: 14px;
+		line-height: 1.5;
+	}
+	body { 
+		display: flex; 
+		flex-direction: column; 
+		overflow: hidden;
+	}
+	
+	/* === MAIN PANE (preview) styles === */
+	.ext-header {
+		height: 44px;
+		background: #18181b;
+		border-bottom: 1px solid #27272a;
+		display: flex;
+		align-items: center;
+		padding: 0 16px;
+		font-size: 13px;
+		flex-shrink: 0;
+		gap: 12px;
+	}
+	.ext-header #filename {
+		font-weight: 600;
+		color: #f4f4f5;
+	}
+	.ext-header .mode-label {
+		color: #71717a;
+		font-size: 12px;
+		margin-left: auto;
+	}
+	
+	.ext-main {
+		flex: 1;
+		overflow: auto;
+		background: #0a0a0b;
+	}
+	#preview {
+		padding: 20px 24px;
+		max-width: 720px;
+		margin: 0 auto;
+		color: #e4e4e7;
+		line-height: 1.75;
+		font-size: 15px;
+	}
+	#preview.empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 100%;
+		color: #71717a;
+		font-style: italic;
+		text-align: center;
+		padding: 60px 20px;
+	}
+	#preview h1, #preview h2, #preview h3, #preview h4 {
+		color: #f4f4f5;
+		margin-top: 1.5em;
+		margin-bottom: 0.5em;
+		font-weight: 600;
+	}
+	#preview h1 { font-size: 1.75em; border-bottom: 1px solid #27272a; padding-bottom: 0.3em; }
+	#preview h2 { font-size: 1.4em; border-bottom: 1px solid #27272a; padding-bottom: 0.2em; }
+	#preview h3 { font-size: 1.2em; }
+	#preview p { margin: 0.8em 0; }
+	#preview ul, #preview ol { padding-left: 1.5em; margin: 0.6em 0; }
+	#preview li { margin: 0.3em 0; }
+	#preview blockquote {
+		border-left: 4px solid #52525b;
+		margin: 1em 0;
+		padding: 0.5em 0 0.5em 1.2em;
+		color: #a1a1aa;
+	}
+	#preview code {
+		background: #18181b;
+		padding: 0.1em 0.4em;
+		border-radius: 4px;
+		font-size: 0.92em;
+		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+	}
+	#preview pre {
+		background: #18181b;
+		padding: 14px 16px;
+		border-radius: 8px;
+		overflow-x: auto;
+		margin: 1em 0;
+		border: 1px solid #27272a;
+	}
+	#preview pre code {
+		background: none;
+		padding: 0;
+		border-radius: 0;
+	}
+	#preview a { color: #60a5fa; text-decoration: none; }
+	#preview a:hover { text-decoration: underline; }
+	#preview img { max-width: 100%; border-radius: 6px; }
+	#preview table {
+		border-collapse: collapse;
+		width: 100%;
+		margin: 1em 0;
+	}
+	#preview th, #preview td {
+		border: 1px solid #27272a;
+		padding: 8px 12px;
+		text-align: left;
+	}
+	#preview th { background: #18181b; font-weight: 600; }
+	#preview hr { border: none; border-top: 1px solid #27272a; margin: 1.5em 0; }
+	
+	.ext-footer {
+		height: 28px;
+		background: #18181b;
+		border-top: 1px solid #27272a;
+		font-size: 12px;
+		color: #71717a;
+		padding: 0 16px;
+		display: flex;
+		align-items: center;
+		flex-shrink: 0;
+	}
+	
+	/* === EXTENSION BAR (33px toolbar) styles === */
+	.bar-toolbar {
+		height: 100%;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 0 12px;
+		background: #18181b;
+		overflow-x: auto;
+		white-space: nowrap;
+		-webkit-overflow-scrolling: touch;
+	}
+	.bar-toolbar::-webkit-scrollbar { height: 3px; }
+	.bar-toolbar::-webkit-scrollbar-thumb { background: #3f3f46; }
+	
+	.btn-group {
+		display: flex;
+		gap: 3px;
+		background: #27272a;
+		border-radius: 6px;
+		padding: 2px;
+		flex-shrink: 0;
+	}
+	button.md-btn {
+		height: 26px;
+		min-width: 28px;
+		padding: 0 7px;
+		border-radius: 4px;
+		background: #18181b;
+		border: 1px solid #3f3f46;
+		color: #e4e4e7;
+		font-size: 12px;
+		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		line-height: 1;
+		transition: background 0.1s ease;
+		flex-shrink: 0;
+	}
+	button.md-btn:hover {
+		background: #27272a;
+		border-color: #52525b;
+	}
+	button.md-btn:active {
+		background: #1c1c20;
+	}
+	button.md-btn strong, 
+	button.md-btn em, 
+	button.md-btn s,
+	button.md-btn code {
+		font-size: 12px;
+		line-height: 1;
+	}
+	
+	/* Slightly more compact buttons inside the bar */
+	.bar-toolbar button.md-btn {
+		height: 24px;
+		min-width: 26px;
+		padding: 0 6px;
+		font-size: 11.5px;
+	}
+	</style>
 </head>
 <body>
-  <!-- Default structure for MAIN PANE (preview). 
-       When context === 'bar', JS will replace body content with compact toolbar. -->
-  <div class="ext-header">
-    <span id="filename">—</span>
-    <span class="mode-label">Live Preview</span>
-  </div>
-  
-  <div class="ext-main">
-    <div id="preview" class="empty">
-      Start typing in the editor.<br>
-      Use the toolbar above for quick Markdown syntax.
-    </div>
-  </div>
-  
-  <div class="ext-footer" id="status">Ready • Toolbar is in the top bar</div>
-  
-  <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
-  <script>
-    // === Shared State (updated by editor:state for BOTH bar and main) ===
-    let currentContent = '';
-    let currentLine = 1;
-    let currentCol = 1;
-    let stateInitialized = false; // true once the first editor:state is received
-    
-    // === Core Helpers ===
-    function getCharIndex(content, line, col) {
-      if (!content) return 0;
-      const lines = content.split('\n');
-      let index = 0;
-      for (let i = 0; i < Math.min(line - 1, lines.length); i++) {
-        index += lines[i].length + 1;
-      }
-      if (line - 1 < lines.length) {
-        index += Math.min(col - 1, lines[line - 1].length);
-      }
-      return index;
-    }
-    
-    function insertTextAt(content, index, text) {
-      return content.slice(0, index) + text + content.slice(index);
-    }
-    
-    function postUpdate(newContent, newLine, newCol) {
-      if (!stateInitialized) return; // guard: never send until we have real state
-      window.parent.postMessage({
-        type: 'extension:updated',
-        content: newContent,
-        cursorLine: newLine,
-        cursorCol: newCol
-      }, '*');
-    }
-    
-    // === Insert Functions (used by both bar and main) ===
-    function insertAtLineStart(prefix) {
-      const pos = getCharIndex(currentContent, currentLine, 1);
-      const newContent = insertTextAt(currentContent, pos, prefix);
-      postUpdate(newContent, currentLine, 1 + prefix.length);
-    }
-    
-    function insertHeading(level) {
-      const prefix = '#'.repeat(level) + ' ';
-      insertAtLineStart(prefix);
-    }
-    
-    function insertBold() {
-      const insert = '**text**';
-      const pos = getCharIndex(currentContent, currentLine, currentCol);
-      const newContent = insertTextAt(currentContent, pos, insert);
-      postUpdate(newContent, currentLine, currentCol + 2);
-    }
-    
-    function insertItalic() {
-      const insert = '*text*';
-      const pos = getCharIndex(currentContent, currentLine, currentCol);
-      const newContent = insertTextAt(currentContent, pos, insert);
-      postUpdate(newContent, currentLine, currentCol + 1);
-    }
-    
-    function insertStrike() {
-      const insert = '~~text~~';
-      const pos = getCharIndex(currentContent, currentLine, currentCol);
-      const newContent = insertTextAt(currentContent, pos, insert);
-      postUpdate(newContent, currentLine, currentCol + 2);
-    }
-    
-    function insertInlineCode() {
-      const insert = '`code`';
-      const pos = getCharIndex(currentContent, currentLine, currentCol);
-      const newContent = insertTextAt(currentContent, pos, insert);
-      postUpdate(newContent, currentLine, currentCol + 1);
-    }
-    
-    function insertLink() {
-      const insert = '[Link text](https://example.com)';
-      const pos = getCharIndex(currentContent, currentLine, currentCol);
-      const newContent = insertTextAt(currentContent, pos, insert);
-      postUpdate(newContent, currentLine, currentCol + 1);
-    }
-    
-    function insertImage() {
-      const insert = '![alt text](https://example.com)';
-      const pos = getCharIndex(currentContent, currentLine, currentCol);
-      const newContent = insertTextAt(currentContent, pos, insert);
-      postUpdate(newContent, currentLine, currentCol + 2);
-    }
-    
-    function insertQuote() {
-      insertAtLineStart('> ');
-    }
-    
-    function insertBulletList() {
-      insertAtLineStart('- ');
-    }
-    
-    function insertNumberedList() {
-      insertAtLineStart('1. ');
-    }
-    
-    function insertTaskList() {
-      insertAtLineStart('- [ ] ');
-    }
-    
-    function insertCodeBlock() {
-      const insert = '```\n\n```';
-      const pos = getCharIndex(currentContent, currentLine, currentCol);
-      const newContent = insertTextAt(currentContent, pos, insert);
-      postUpdate(newContent, currentLine + 1, 1);
-    }
-    
-    function insertHR() {
-      const insert = '---\n';
-      const pos = getCharIndex(currentContent, currentLine, currentCol);
-      const newContent = insertTextAt(currentContent, pos, insert);
-      postUpdate(newContent, currentLine + 1, 1);
-    }
-    
-    // === Preview Rendering (MAIN PANE ONLY) ===
-    function renderPreview(content) {
-      const previewEl = document.getElementById('preview');
-      if (!previewEl) return;
-      
-      if (!content || !content.trim()) {
-        previewEl.className = 'empty';
-        previewEl.innerHTML = 'Start typing in the editor.<br>Use the toolbar above for quick Markdown syntax.';
-        return;
-      }
-      
-      previewEl.className = '';
-      
-      try {
-        if (typeof marked === 'undefined') {
-          previewEl.innerHTML = '<div style="color:#ef4444">Error: Markdown renderer failed to load.</div>';
-          return;
-        }
-        
-        marked.setOptions({
-          gfm: true,
-          breaks: true,
-          pedantic: false
-        });
-        
-        const html = marked.parse(content);
-        previewEl.innerHTML = html;
-        
-      } catch (err) {
-        previewEl.innerHTML = '<div style="color:#ef4444; font-family:monospace">Render error: ' + err.message + '</div>';
-      }
-    }
-    
-    // === Message Handler (receives editor:state for BOTH contexts) ===
-    window.addEventListener('message', (e) => {
-      if (!e.data || e.data.type !== 'editor:state') return;
-      
-      const { content, cursorLine, cursorCol, filename, context } = e.data;
-      
-      currentContent = content || '';
-      currentLine = cursorLine || 1;
-      currentCol = cursorCol || 1;
-      stateInitialized = true;
-      
-      if (context === 'bar') {
-        return; // bar only needs state for insert position
-      }
-      
-      // MAIN PANE UPDATES
-      const fnEl = document.getElementById('filename');
-      if (fnEl) fnEl.textContent = filename || '—';
-      
-      const statusEl = document.getElementById('status');
-      if (statusEl) {
-        statusEl.textContent = `Ln ${currentLine}, Col ${currentCol} • ${currentContent.split('\n').length} lines`;
-      }
-      
-      renderPreview(currentContent);
-    });
-    
-    // === Boot ===
-    const isBar = window.__editorContext === 'bar';
-    
-    if (isBar) {
-      document.body.innerHTML = `
-        <div class="bar-toolbar">
-          <div class="btn-group">
-            <button class="md-btn" onclick="insertHeading(1)" title="Heading 1">H1</button>
-            <button class="md-btn" onclick="insertHeading(2)" title="Heading 2">H2</button>
-            <button class="md-btn" onclick="insertHeading(3)" title="Heading 3">H3</button>
-          </div>
-          
-          <div class="btn-group">
-            <button class="md-btn" onclick="insertBold()" title="Bold"><strong>B</strong></button>
-            <button class="md-btn" onclick="insertItalic()" title="Italic"><em>I</em></button>
-            <button class="md-btn" onclick="insertStrike()" title="Strikethrough"><s>S</s></button>
-          </div>
-          
-          <div class="btn-group">
-            <button class="md-btn" onclick="insertInlineCode()" title="Inline Code"><code>\`</code></button>
-            <button class="md-btn" onclick="insertLink()" title="Insert Link">🔗</button>
-            <button class="md-btn" onclick="insertImage()" title="Insert Image">🖼️</button>
-          </div>
-          
-          <div class="btn-group">
-            <button class="md-btn" onclick="insertQuote()" title="Blockquote">❞</button>
-            <button class="md-btn" onclick="insertBulletList()" title="Bullet List">•</button>
-            <button class="md-btn" onclick="insertNumberedList()" title="Numbered List">1.</button>
-            <button class="md-btn" onclick="insertTaskList()" title="Task List">☐</button>
-          </div>
-          
-          <div class="btn-group">
-            <button class="md-btn" onclick="insertCodeBlock()" title="Fenced Code Block">\`\`\`</button>
-            <button class="md-btn" onclick="insertHR()" title="Horizontal Rule">—</button>
-          </div>
-        </div>
-      `;
-      
-      document.body.style.borderBottom = '1px solid #27272a';
-      console.log('%c[Markdown Preview] Extension bar ready — buttons always clickable', 'color:#71717a');
-    } else {
-      console.log('%c[Markdown Preview] Main preview pane ready (split mode)', 'color:#71717a');
-    }
-    
-    if (typeof marked === 'undefined') {
-      console.error('Marked.js failed to load from CDN');
-    }
-  </script>
+	<!-- Default structure for MAIN PANE (preview). 
+		 When context === 'bar', JS will replace body content with compact toolbar. -->
+	<div class="ext-header">
+	<span id="filename">—</span>
+	<span class="mode-label">Live Preview</span>
+	</div>
+	
+	<div class="ext-main">
+	<div id="preview" class="empty">
+		Start typing in the editor.<br>
+		Use the toolbar above for quick Markdown syntax.
+	</div>
+	</div>
+	
+	<div class="ext-footer" id="status">Ready • Toolbar is in the top bar</div>
+	
+	<script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+	<script>
+	// === Shared State (updated by editor:state for BOTH bar and main) ===
+	let currentContent = '';
+	let currentLine = 1;
+	let currentCol = 1;
+	let stateInitialized = false; // true once the first editor:state is received
+	
+	// === Core Helpers ===
+	function getCharIndex(content, line, col) {
+		if (!content) return 0;
+		const lines = content.split('\n');
+		let index = 0;
+		for (let i = 0; i < Math.min(line - 1, lines.length); i++) {
+		index += lines[i].length + 1;
+		}
+		if (line - 1 < lines.length) {
+		index += Math.min(col - 1, lines[line - 1].length);
+		}
+		return index;
+	}
+	
+	function insertTextAt(content, index, text) {
+		return content.slice(0, index) + text + content.slice(index);
+	}
+	
+	function postUpdate(newContent, newLine, newCol) {
+		if (!stateInitialized) return; // guard: never send until we have real state
+		window.parent.postMessage({
+		type: 'extension:updated',
+		content: newContent,
+		cursorLine: newLine,
+		cursorCol: newCol
+		}, '*');
+	}
+	
+	// === Insert Functions (used by both bar and main) ===
+	function insertAtLineStart(prefix) {
+		const pos = getCharIndex(currentContent, currentLine, 1);
+		const newContent = insertTextAt(currentContent, pos, prefix);
+		postUpdate(newContent, currentLine, 1 + prefix.length);
+	}
+	
+	function insertHeading(level) {
+		const prefix = '#'.repeat(level) + ' ';
+		insertAtLineStart(prefix);
+	}
+	
+	function insertBold() {
+		const insert = '**text**';
+		const pos = getCharIndex(currentContent, currentLine, currentCol);
+		const newContent = insertTextAt(currentContent, pos, insert);
+		postUpdate(newContent, currentLine, currentCol + 2);
+	}
+	
+	function insertItalic() {
+		const insert = '*text*';
+		const pos = getCharIndex(currentContent, currentLine, currentCol);
+		const newContent = insertTextAt(currentContent, pos, insert);
+		postUpdate(newContent, currentLine, currentCol + 1);
+	}
+	
+	function insertStrike() {
+		const insert = '~~text~~';
+		const pos = getCharIndex(currentContent, currentLine, currentCol);
+		const newContent = insertTextAt(currentContent, pos, insert);
+		postUpdate(newContent, currentLine, currentCol + 2);
+	}
+	
+	function insertInlineCode() {
+		const insert = '`code`';
+		const pos = getCharIndex(currentContent, currentLine, currentCol);
+		const newContent = insertTextAt(currentContent, pos, insert);
+		postUpdate(newContent, currentLine, currentCol + 1);
+	}
+	
+	function insertLink() {
+		const insert = '[Link text](https://example.com)';
+		const pos = getCharIndex(currentContent, currentLine, currentCol);
+		const newContent = insertTextAt(currentContent, pos, insert);
+		postUpdate(newContent, currentLine, currentCol + 1);
+	}
+	
+	function insertImage() {
+		const insert = '![alt text](https://example.com)';
+		const pos = getCharIndex(currentContent, currentLine, currentCol);
+		const newContent = insertTextAt(currentContent, pos, insert);
+		postUpdate(newContent, currentLine, currentCol + 2);
+	}
+	
+	function insertQuote() {
+		insertAtLineStart('> ');
+	}
+	
+	function insertBulletList() {
+		insertAtLineStart('- ');
+	}
+	
+	function insertNumberedList() {
+		insertAtLineStart('1. ');
+	}
+	
+	function insertTaskList() {
+		insertAtLineStart('- [ ] ');
+	}
+	
+	function insertCodeBlock() {
+		const insert = '```\n\n```';
+		const pos = getCharIndex(currentContent, currentLine, currentCol);
+		const newContent = insertTextAt(currentContent, pos, insert);
+		postUpdate(newContent, currentLine + 1, 1);
+	}
+	
+	function insertHR() {
+		const insert = '---\n';
+		const pos = getCharIndex(currentContent, currentLine, currentCol);
+		const newContent = insertTextAt(currentContent, pos, insert);
+		postUpdate(newContent, currentLine + 1, 1);
+	}
+	
+	// === Preview Rendering (MAIN PANE ONLY) ===
+	function renderPreview(content) {
+		const previewEl = document.getElementById('preview');
+		if (!previewEl) return;
+		
+		if (!content || !content.trim()) {
+		previewEl.className = 'empty';
+		previewEl.innerHTML = 'Start typing in the editor.<br>Use the toolbar above for quick Markdown syntax.';
+		return;
+		}
+		
+		previewEl.className = '';
+		
+		try {
+		if (typeof marked === 'undefined') {
+			previewEl.innerHTML = '<div style="color:#ef4444">Error: Markdown renderer failed to load.</div>';
+			return;
+		}
+		
+		marked.setOptions({
+			gfm: true,
+			breaks: true,
+			pedantic: false
+		});
+		
+		const html = marked.parse(content);
+		previewEl.innerHTML = html;
+		
+		} catch (err) {
+		previewEl.innerHTML = '<div style="color:#ef4444; font-family:monospace">Render error: ' + err.message + '</div>';
+		}
+	}
+	
+	// === Message Handler (receives editor:state for BOTH contexts) ===
+	window.addEventListener('message', (e) => {
+		if (!e.data || e.data.type !== 'editor:state') return;
+		
+		const { content, cursorLine, cursorCol, filename, context } = e.data;
+		
+		currentContent = content || '';
+		currentLine = cursorLine || 1;
+		currentCol = cursorCol || 1;
+		stateInitialized = true;
+		
+		if (context === 'bar') {
+		return; // bar only needs state for insert position
+		}
+		
+		// MAIN PANE UPDATES
+		const fnEl = document.getElementById('filename');
+		if (fnEl) fnEl.textContent = filename || '—';
+		
+		const statusEl = document.getElementById('status');
+		if (statusEl) {
+		statusEl.textContent = `Ln ${currentLine}, Col ${currentCol} • ${currentContent.split('\n').length} lines`;
+		}
+		
+		renderPreview(currentContent);
+	});
+	
+	// === Boot ===
+	const isBar = window.__editorContext === 'bar';
+	
+	if (isBar) {
+		document.body.innerHTML = `
+		<div class="bar-toolbar">
+			<div class="btn-group">
+			<button class="md-btn" onclick="insertHeading(1)" title="Heading 1">H1</button>
+			<button class="md-btn" onclick="insertHeading(2)" title="Heading 2">H2</button>
+			<button class="md-btn" onclick="insertHeading(3)" title="Heading 3">H3</button>
+			</div>
+			
+			<div class="btn-group">
+			<button class="md-btn" onclick="insertBold()" title="Bold"><strong>B</strong></button>
+			<button class="md-btn" onclick="insertItalic()" title="Italic"><em>I</em></button>
+			<button class="md-btn" onclick="insertStrike()" title="Strikethrough"><s>S</s></button>
+			</div>
+			
+			<div class="btn-group">
+			<button class="md-btn" onclick="insertInlineCode()" title="Inline Code"><code>\`</code></button>
+			<button class="md-btn" onclick="insertLink()" title="Insert Link">🔗</button>
+			<button class="md-btn" onclick="insertImage()" title="Insert Image">🖼️</button>
+			</div>
+			
+			<div class="btn-group">
+			<button class="md-btn" onclick="insertQuote()" title="Blockquote">❞</button>
+			<button class="md-btn" onclick="insertBulletList()" title="Bullet List">•</button>
+			<button class="md-btn" onclick="insertNumberedList()" title="Numbered List">1.</button>
+			<button class="md-btn" onclick="insertTaskList()" title="Task List">☐</button>
+			</div>
+			
+			<div class="btn-group">
+			<button class="md-btn" onclick="insertCodeBlock()" title="Fenced Code Block">\`\`\`</button>
+			<button class="md-btn" onclick="insertHR()" title="Horizontal Rule">—</button>
+			</div>
+		</div>
+		`;
+		
+		document.body.style.borderBottom = '1px solid #27272a';
+		console.log('%c[Markdown Preview] Extension bar ready — buttons always clickable', 'color:#71717a');
+	} else {
+		console.log('%c[Markdown Preview] Main preview pane ready (split mode)', 'color:#71717a');
+	}
+	
+	if (typeof marked === 'undefined') {
+		console.error('Marked.js failed to load from CDN');
+	}
+	</script>
 </body>
 </html>
