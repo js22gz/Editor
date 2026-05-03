@@ -1819,6 +1819,7 @@ class ExtensionManager {
 		this.widthSlider = null;      // set by UIManager.init()
 		this.extensionOverlay = null; // set by UIManager.init()
 		this.extensionBar = null;     // set by UIManager.init()
+		this.editorWrapper = null;    // set by UIManager.init()
 	}
 	async loadAll() {
 		await this.fs.initDB();
@@ -1959,7 +1960,7 @@ class ExtensionManager {
 				this.extensionOverlay.classList.remove('hidden');
 			}
 			if (isSplit && tab._splitHandle && tab._splitRight) {
-				const wrapper = document.querySelector('.editor-wrapper');
+				const wrapper = this.editorWrapper;
 				wrapper.classList.add('split-mode');
 				tab._splitHandle.style.display = '';
 				tab._splitRight.style.display = '';
@@ -2003,7 +2004,7 @@ class ExtensionManager {
 		} else if (isSplit) {
 			this.#setupSplitLayout(tab, iframe);
 		} else {
-			document.querySelector('.editor-wrapper').appendChild(iframe);
+			this.editorWrapper.appendChild(iframe);
 		}
 		tab.extFrame = iframe;
 		iframe.srcdoc = tab.extension.html;
@@ -2029,7 +2030,7 @@ class ExtensionManager {
 		];
 	}
 	#setupSplitLayout(tab, iframe) {
-		const wrapper = document.querySelector('.editor-wrapper');
+		const wrapper = this.editorWrapper;
 		wrapper.classList.add('split-mode');
 
 		const handle = document.createElement('div');
@@ -2124,6 +2125,7 @@ class TabManager {
 		this.tabsContainer = null;
 		this.extensionOverlay = null; // set by UIManager.init()
 		this.extensionBar = null;     // set by UIManager.init()
+		this.editorWrapper = null;    // set by UIManager.init()
 		bus.on('extension:changed', () => this.reattachExtensions());
 	}
 	static #moveArrayItem(arr, fromIdx, toIdx) {
@@ -2398,7 +2400,7 @@ class TabManager {
 		this.extensionBar.classList.add('hidden');
 		this.state.tabs.forEach(t => { if (t.extBarFrame) t.extBarFrame.classList.add('hidden'); });
 		// Clean up split layout from any previous tab
-		const editorWrapper = document.querySelector('.editor-wrapper');
+		const editorWrapper = this.editorWrapper;
 		editorWrapper.classList.remove('split-mode');
 		this.textarea.style.width = '';
 		this.state.tabs.forEach(t => {
@@ -2456,7 +2458,7 @@ class TabManager {
 			this.extensionOverlay.classList.add('hidden');
 		}
 		if (tab.extensionMode === 'split') {
-			document.querySelector('.editor-wrapper').classList.remove('split-mode');
+			this.editorWrapper.classList.remove('split-mode');
 			this.textarea.style.width = '';
 		}
 		clearTimeout(tab._saveTimer);
@@ -2874,6 +2876,7 @@ class UIManager {
 	#rootDirNameEl = null;
 	#sidebarHeaderActionsEl = null;
 	#sidebarEl = null;
+	#editorWrapperEl = null;
 	#statusEl = null;
 	#editorStatusEl = null;
 	#contextMenu = null;
@@ -2908,6 +2911,7 @@ class UIManager {
 		this.#tabsContainer = document.getElementById('tabs');
 		this.#treeContainer = document.getElementById('tree-container');
 		this.#sidebarEl = document.getElementById('sidebar');
+		this.#editorWrapperEl = document.querySelector('.editor-wrapper');
 		if (this.#isMobile) this.#sidebarEl.classList.add('hidden');
 		this.#statusEl = document.getElementById('status');
 		this.#editorStatusEl = document.getElementById('editor-status');
@@ -2922,11 +2926,13 @@ class UIManager {
 		const widthSlider = document.getElementById('width-slider');
 		this.tabs.extensionOverlay = extensionOverlay;
 		this.tabs.extensionBar = extensionBar;
+		this.tabs.editorWrapper = this.#editorWrapperEl;
 		this.extensions.textarea = this.#textarea;
 		this.extensions.gutter = this.#gutter;
 		this.extensions.widthSlider = widthSlider;
 		this.extensions.extensionOverlay = extensionOverlay;
 		this.extensions.extensionBar = extensionBar;
+		this.extensions.editorWrapper = this.#editorWrapperEl;
 		this.restoreManager.textarea = this.#textarea;
 		// Create the primary (left) DirectoryTreeView
 		this.#leftView = new DirectoryTreeView('tree-container', this.state, this.fs, 'left');
@@ -2959,7 +2965,7 @@ class UIManager {
 			document.getElementById('settings-toggle-ext').classList.add('active');
 		}
 		if (localStorage.getItem('layoutAlign') === 'center') {
-			document.querySelector('.editor-wrapper').classList.add('centered');
+			this.#editorWrapperEl.classList.add('centered');
 			const r = document.querySelector('input[name="layout-align"][value="center"]');
 			if (r) r.checked = true;
 		}
@@ -3599,7 +3605,7 @@ document.addEventListener('mouseup', handleResizeEnd);
 		// Layout alignment
 		document.querySelectorAll('input[name="layout-align"]').forEach(r => {
 			r.addEventListener('change', e => {
-				document.querySelector('.editor-wrapper').classList.toggle('centered', e.target.value === 'center');
+				this.#editorWrapperEl.classList.toggle('centered', e.target.value === 'center');
 				localStorage.setItem('layoutAlign', e.target.value);
 			});
 		});
