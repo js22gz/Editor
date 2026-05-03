@@ -574,7 +574,7 @@ header {
 }
 #extension-overlay.hidden { display: none; }
 #extension-overlay .ext-frame {
-	pointer-events: auto; background: transparent;
+	pointer-events: none; background: transparent;
 }
 
 /* ── Extension bar – optional toolbar spanning the full editor width.
@@ -1933,7 +1933,9 @@ class ExtensionManager {
 			cursorLine: lines.length,
 			cursorCol: (lines[lines.length - 1] || '').length + 1,
 			lineWidthChars: atMax ? '∞' : +slider.value,
-			filename: tab.name
+			filename: tab.name,
+			scrollTop: textarea ? textarea.scrollTop : 0,
+			scrollLeft: textarea ? textarea.scrollLeft : 0
 		};
 	}
 	#buildBarPayload(tab) {
@@ -3446,12 +3448,12 @@ document.addEventListener('mouseup', handleResizeEnd);
 		this.#textarea.addEventListener('paste', () => {
 			setTimeout(() => bus.emit('editor:lines-changed'), 0);
 		});
-		const overlayEl = document.getElementById('extension-overlay');
 		this.#textarea.addEventListener('scroll', () => {
 			this.#gutter.scrollTop = this.#textarea.scrollTop;
-			// Sync overlay extension scroll
-			if (!overlayEl.classList.contains('hidden')) {
-				overlayEl.scrollTop = this.#textarea.scrollTop;
+			// Notify overlay/split/bar extension of scroll position change
+			const tab = this.state.getActiveTab();
+			if (tab?.type === 'extension' && (tab.extensionMode === 'overlay' || tab.extensionMode === 'split' || tab.extensionBar)) {
+				this.extensions.sendStateToExtension(tab);
 			}
 		});
 		// Send state to extension on cursor position changes (overlay/split modes, or any bar extension)
