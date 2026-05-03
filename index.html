@@ -1303,7 +1303,6 @@ async openFileFromNode(node) {
             for (const tab of this.state.tabs) {
                 if (tab.handle && await this.isSameEntry(tab.handle, target.handle)) {
                     await this.tabs.closeTab(tab.id);
-                    break;
                 }
             }
             const { parent, name } = await this.#resolve(this.state.currentDirHandle, target.path);
