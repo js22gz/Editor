@@ -3082,13 +3082,44 @@ class UIManager {
     }
     /** @param {boolean} [force] - when true, always rerender even if line count unchanged */
     updateLineNumbers(force = false) {
+        // Build the full gutter string for lineCount lines using a for-loop
+        // (avoids allocating an n-element array on every call)
+        const buildFull = (lineCount) => {
+            let s = '1';
+            for (let i = 2; i <= lineCount; i++) s += '\n' + i;
+            return s;
+        };
+        // Apply an incremental delta rather than rebuilding the entire string.
+        // Append is O(delta); removal scans backwards O(delta) to find the cut point.
+        const applyDelta = (lineCount) => {
+            if (lineCount > this.#lastLineCount) {
+                const parts = [];
+                for (let i = this.#lastLineCount + 1; i <= lineCount; i++) parts.push(i);
+                this.#gutter.textContent += '\n' + parts.join('\n');
+            } else {
+                const text = this.#gutter.textContent;
+                let pos = text.length;
+                const delta = this.#lastLineCount - lineCount;
+                for (let i = 0; i < delta; i++) {
+                    pos = text.lastIndexOf('\n', pos - 1);
+                    if (pos < 0) { pos = 0; break; }
+                }
+                this.#gutter.textContent = pos > 0 ? text.slice(0, pos) : String(lineCount);
+            }
+            this.#lastLineCount = lineCount;
+        };
         if (force) {
             // Synchronous update when explicitly forced (e.g. tab switch)
             cancelAnimationFrame(this.#lineNumberRafId);
             this.#lineNumberRafId = null;
             const lineCount = (this.#textarea.value.match(/\n/g) || []).length + 1;
-            this.#lastLineCount = lineCount;
-            this.#gutter.textContent = Array.from({length: lineCount}, (_, i) => i + 1).join('\n');
+            if (!this.#gutter.textContent) {
+                // Gutter was cleared (e.g. all tabs closed) – build from scratch
+                this.#gutter.textContent = buildFull(lineCount);
+                this.#lastLineCount = lineCount;
+            } else {
+                applyDelta(lineCount);
+            }
             return;
         }
         // Batch rapid keystroke updates into a single animation frame
@@ -3097,8 +3128,7 @@ class UIManager {
             this.#lineNumberRafId = null;
             const lineCount = (this.#textarea.value.match(/\n/g) || []).length + 1;
             if (lineCount === this.#lastLineCount) return;
-            this.#lastLineCount = lineCount;
-            this.#gutter.textContent = Array.from({length: lineCount}, (_, i) => i + 1).join('\n');
+            applyDelta(lineCount);
         });
     }
     updateEditorStatus(tab) {
