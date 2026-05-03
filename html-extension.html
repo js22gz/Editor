@@ -166,15 +166,7 @@
 const overlay   = document.getElementById('overlay');
 const codeEl    = document.getElementById('code');
 
-// Metrics that match the textarea (must stay in sync with index.html)
-const FONT_SIZE   = 14;      // px
-const LINE_HEIGHT = 1.6;     // unitless multiplier
-const PAD_TOP     = 12;      // px  (textarea padding-top)
-
-const LINE_PX = FONT_SIZE * LINE_HEIGHT; // 22.4 px
-
 let lastContent  = null;
-let lastLine     = 1;
 
 // Highlight the code element in place.
 // Prism reads textContent and writes innerHTML with escaped, coloured spans.
@@ -187,32 +179,14 @@ function highlight(src) {
 	}
 }
 
-// Scroll the overlay so that the cursor line stays visible.
-// Called after every editor:state message.
-function syncScroll(line) {
-	lastLine = line;
-
-	const cursorTop     = PAD_TOP + (line - 1) * LINE_PX;
-	const viewH         = overlay.clientHeight || 400;
-	const currentTop    = overlay.scrollTop;
-	const currentBottom = currentTop + viewH;
-	const margin        = LINE_PX * 3; // keep a few lines of context
-
-	if (cursorTop < currentTop + margin) {
-		overlay.scrollTop = Math.max(0, cursorTop - margin);
-	} else if (cursorTop + LINE_PX > currentBottom - margin) {
-		overlay.scrollTop = cursorTop + LINE_PX - viewH + margin;
-	}
-}
-
 window.addEventListener('message', (e) => {
 	if (!e.data || e.data.type !== 'editor:state') return;
 
-	const { content, cursorLine } = e.data;
-	const line = cursorLine || 1;
+	const { content, scrollTop, scrollLeft } = e.data;
 
 	highlight(content || '');
-	syncScroll(line);
+	overlay.scrollTop  = scrollTop  || 0;
+	overlay.scrollLeft = scrollLeft || 0;
 });
 
 // Prism may not be loaded yet on first state message (race between CDN load
