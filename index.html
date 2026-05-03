@@ -808,6 +808,7 @@ const CONSTANTS = Object.freeze({
     MAX_FILE_SIZE:         3 * 1024 * 1024,
     MAX_COPY_DEPTH:        100,
 });
+
 // ────────────────────────────────────────────────────────
 // ReactiveState – observable state container
 // ────────────────────────────────────────────────────────
@@ -867,6 +868,14 @@ const bus = (() => {
         }
     });
 })();
+
+// ────────────────────────────────────────────────────────
+// DEBUG flag — set localStorage.DEBUG_RESTORE = '1' to enable
+// ────────────────────────────────────────────────────────
+const DEBUG_RESTORE = localStorage.getItem('DEBUG_RESTORE') === '1';
+function logRestore(...args) { if (DEBUG_RESTORE) console.log('[restore]', ...args); }
+
+	
 // ────────────────────────────────────────────────────────
 // FileSystemManager 
 // ────────────────────────────────────────────────────────
@@ -2541,11 +2550,6 @@ class TabManager {
         if (active) this.switchToTab(active.id);
     }
 }
-// ────────────────────────────────────────────────────────
-// DEBUG flag — set localStorage.DEBUG_RESTORE = '1' to enable
-// ────────────────────────────────────────────────────────
-const DEBUG_RESTORE = localStorage.getItem('DEBUG_RESTORE') === '1';
-function logRestore(...args) { if (DEBUG_RESTORE) console.log('[restore]', ...args); }
 
 // ────────────────────────────────────────────────────────
 // PermissionCoordinator – single place for FS permission flow
