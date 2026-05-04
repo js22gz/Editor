@@ -153,6 +153,9 @@
 	--text-dim: #78787f;
 	--danger: #ef4444;
 	--danger-bg: #7f1d1d;
+	--font-mono: ui-monospace, monospace;
+	--font-size-default: 14px;
+	--sidebar-width-default: 280px;
 }
 
 /* ────────────────────────────────────────────────────────
@@ -221,7 +224,7 @@ header {
 	 4. SIDEBAR & TREE (DUAL-PANE – DEDUPLICATED)
 ──────────────────────────────────────────────────────── */
 #sidebar, #sidebar-right {
-	width: 280px;
+	width: var(--sidebar-width-default);
 	background: var(--bg-sidebar);
 	border-right: 1px solid var(--border-color);
 	display: flex;
@@ -265,7 +268,7 @@ header {
 	flex: 1;
 	overflow-y: auto;
 	padding: 8px 12px 30px 8px;
-	font-family: ui-monospace, monospace;
+	font-family: var(--font-mono);
 	font-size: 14px;
 	line-height: 1.38;
 	user-select: none;
@@ -319,7 +322,7 @@ header {
 .tab[draggable]:active { cursor: grabbing; }
 
 .tab .ext-toggle {
-	font-size: 10px; font-family: ui-monospace, monospace; color: var(--text-dim);
+	font-size: 10px; font-family: var(--font-mono); color: var(--text-dim);
 	cursor: pointer; padding: 1px 4px; border-radius: 3px; user-select: none;
 	line-height: 1; border: 1px solid transparent; flex-shrink: 0;
 }
@@ -339,7 +342,7 @@ header {
 #gutter {
 	width: 60px; background: var(--bg-gutter); color: var(--text-dim);
 	text-align: right; padding: 12px 10px 0 0; user-select: none;
-	font-family: ui-monospace, monospace; font-size: 14px; line-height: 1.6;
+	font-family: var(--font-mono); font-size: var(--font-size-default); line-height: 1.6;
 	overflow: hidden; border-right: 1px solid var(--border-gutter);
 	flex-shrink: 0; white-space: pre;
 }
@@ -347,7 +350,7 @@ header {
 
 #textarea {
 	flex: 1; width: 100%; min-width: 0; background: transparent; border: none; outline: none;
-	color: var(--text-primary); font-family: ui-monospace, monospace; font-size: 14px;
+	color: var(--text-primary); font-family: var(--font-mono); font-size: var(--font-size-default);
 	line-height: 1.6; padding: 12px 16px; resize: none; overflow: auto;
 	white-space: pre; word-wrap: normal; tab-size: 4;
 }
@@ -371,7 +374,7 @@ header {
 
 .settings-btn {
 	background: var(--bg-base); border: 1px solid var(--border-color);
-	color: var(--text-secondary); font-size: 11px; font-family: ui-monospace, monospace;
+	color: var(--text-secondary); font-size: 11px; font-family: var(--font-mono);
 	cursor: pointer; width: 28px; height: 28px; display: flex; align-items: center;
 	justify-content: center; border-radius: 3px; transition: background 0.15s, color 0.15s;
 	flex-shrink: 0;
@@ -390,27 +393,27 @@ header {
 }
 #settings-panel.hidden { display: none; }
 .settings-section-hd {
-	font-size: 10px; font-family: ui-monospace, monospace; color: var(--text-muted);
+	font-size: 10px; font-family: var(--font-mono); color: var(--text-muted);
 	text-transform: uppercase; letter-spacing: 0.08em;
 	padding-bottom: 6px; border-bottom: 1px solid var(--border-color); margin-bottom: 6px;
 }
 .settings-row { display: flex; align-items: center; gap: 6px; padding: 5px 0; }
-.settings-lbl { font-size: 12px; font-family: ui-monospace, monospace; color: var(--text-secondary); }
+.settings-lbl { font-size: 12px; font-family: var(--font-mono); color: var(--text-secondary); }
 .settings-ext-row {
 	display: flex; align-items: center; justify-content: space-between;
 	padding: 7px 0; border-bottom: 1px solid var(--border-color);
 }
 .settings-ext-info { display: flex; flex-direction: column; gap: 2px; }
-.settings-ext-name { font-size: 12px; font-family: ui-monospace, monospace; color: var(--text-primary); }
-.settings-ext-types { font-size: 11px; font-family: ui-monospace, monospace; color: var(--text-muted); }
+.settings-ext-name { font-size: 12px; font-family: var(--font-mono); color: var(--text-primary); }
+.settings-ext-types { font-size: 11px; font-family: var(--font-mono); color: var(--text-muted); }
 .settings-ext-uninstall {
 	background: none; border: 1px solid var(--border-color);
-	color: var(--text-secondary); font-size: 11px; font-family: ui-monospace, monospace;
+	color: var(--text-secondary); font-size: 11px; font-family: var(--font-mono);
 	cursor: pointer; padding: 3px 10px; border-radius: 3px;
 	transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .settings-ext-uninstall:hover { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
-.settings-ext-empty { font-size: 12px; font-family: ui-monospace, monospace; color: var(--text-muted); padding: 8px 0; }
+.settings-ext-empty { font-size: 12px; font-family: var(--font-mono); color: var(--text-muted); padding: 8px 0; }
 
 /* ── Line width slider – reliable downward triangle thumb (Chrome-first) ── */
 #line-width-slider {
@@ -484,7 +487,7 @@ header {
 }
 
 #width-value {
-		font-family: ui-monospace, monospace;
+		font-family: var(--font-mono);
 		color: var(--text-secondary);
 		width: 84px;           /* fixed width — stable forever */
 		font-size: 0.7rem;
@@ -498,7 +501,7 @@ header {
 .status {
 	height: 28px; background: var(--bg-surface); border-top: 1px solid var(--border-color);
 	font-size: 12px; color: var(--text-dim); display: flex; align-items: center;
-	padding: 0 16px; font-family: ui-monospace, monospace;
+	padding: 0 16px; font-family: var(--font-mono);
 }
 
 .sidebar-toggle {
@@ -657,7 +660,7 @@ header {
 #create-item-name {
 	width: 100%; padding: 10px; background: var(--border-color); border: 1px solid var(--border-subtle);
 	color: var(--text-primary); border-radius: 4px; font-size: 14px; box-sizing: border-box;
-	font-family: ui-monospace, monospace;
+	font-family: var(--font-mono);
 }
 #create-item-dialog .cid-actions { gap: 0; padding: 0; }
 .cid-action-btn {
@@ -2949,8 +2952,7 @@ class UIManager {
 		// Restore settings
 		const savedFontSize = parseInt(localStorage.getItem('editorFontSize'));
 		if (savedFontSize) {
-			this.#textarea.style.fontSize = savedFontSize + 'px';
-			this.#gutter.style.fontSize = savedFontSize + 'px';
+			document.documentElement.style.setProperty('--font-size-default', savedFontSize + 'px');
 			document.getElementById('settings-font-val').textContent = savedFontSize;
 			document.getElementById('settings-font-lbl').style.fontSize = savedFontSize + 'px';
 		}
@@ -3579,13 +3581,12 @@ document.addEventListener('mouseup', handleResizeEnd);
 		});
 		// Font size
 		const applyFontSize = sz => {
-			this.#textarea.style.fontSize = sz + 'px';
-			this.#gutter.style.fontSize = sz + 'px';
+			document.documentElement.style.setProperty('--font-size-default', sz + 'px');
 			document.getElementById('settings-font-val').textContent = sz;
 			document.getElementById('settings-font-lbl').style.fontSize = sz + 'px';
 		};
 		document.getElementById('settings-font-decrease').addEventListener('click', () => {
-			const cur = parseInt(this.#textarea.style.fontSize) || CONSTANTS.FONT_SIZE_DEFAULT;
+			const cur = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--font-size-default')) || CONSTANTS.FONT_SIZE_DEFAULT;
 			if (cur > CONSTANTS.FONT_SIZE_MIN) {
 				const next = cur - 1;
 				applyFontSize(next);
@@ -3593,7 +3594,7 @@ document.addEventListener('mouseup', handleResizeEnd);
 			}
 		});
 		document.getElementById('settings-font-increase').addEventListener('click', () => {
-			const cur = parseInt(this.#textarea.style.fontSize) || CONSTANTS.FONT_SIZE_DEFAULT;
+			const cur = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--font-size-default')) || CONSTANTS.FONT_SIZE_DEFAULT;
 			if (cur < CONSTANTS.FONT_SIZE_MAX) {
 				const next = cur + 1;
 				applyFontSize(next);
