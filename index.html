@@ -660,7 +660,7 @@ header {
 	background: var(--bg-hover); color: var(--text-primary);
 }
 .cid-kind-option input[type="radio"] {
-	margin: 0; accent-color: var(--text-secondary); cursor: pointer;
+	margin: 0; accent-color: var(--text-strong); cursor: pointer;
 }
 .cid-kind-option.active {
 	background: var(--bg-active); color: var(--text-strong);
@@ -3213,9 +3213,8 @@ class UIManager {
 			const kindOptions = overlay.querySelectorAll('.cid-kind-option');
 			const kindRadios = overlay.querySelectorAll('input[name="cid-kind"]');
 			kindRadios.forEach(radio => radio.addEventListener('change', () => {
-				kindOptions.forEach(opt => {
-					opt.classList.toggle('active', opt.querySelector('input').checked);
-				});
+				kindOptions.forEach(opt => opt.classList.remove('active'));
+				radio.closest('.cid-kind-option')?.classList.add('active');
 				selectedKind = radio.value;
 				overlay.querySelector('#create-item-name').focus();
 			}));
