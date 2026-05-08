@@ -660,7 +660,7 @@ header {
 	background: var(--bg-hover); color: var(--text-primary);
 }
 .cid-kind-option input[type="radio"] {
-	margin: 0; width: 16px; height: 16px; accent-color: var(--text-strong); cursor: pointer;
+	margin: 0; width: 20px; height: 20px; accent-color: var(--text-strong); cursor: pointer;
 }
 .cid-kind-option.active {
 	background: var(--bg-active); color: var(--text-strong);
@@ -3198,9 +3198,9 @@ class UIManager {
 				`<div id="create-item-dialog">` +
 				`<div class="cid-title">` +
 				`<h3 style="margin:0;font-size:1rem;">Create</h3>` +
-				`<div class="cid-kind-inline">` +
-				`<label class="cid-kind-option"><input type="radio" name="cid-kind" value="file">file</label>` +
-				`<label class="cid-kind-option"><input type="radio" name="cid-kind" value="directory">directory</label>` +
+				`<div class="cid-kind-inline" role="radiogroup" aria-label="Create item type">` +
+				`<label class="cid-kind-option"><input type="radio" name="cid-kind" value="file" aria-label="File">File</label>` +
+				`<label class="cid-kind-option"><input type="radio" name="cid-kind" value="directory" aria-label="Directory">Directory</label>` +
 				`</div>` +
 				`</div>` +
 				`<div class="cid-name"><textarea id="create-item-name" rows="2" placeholder="Name…" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea></div>` +
