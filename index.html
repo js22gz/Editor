@@ -645,17 +645,27 @@ header {
 #create-item-dialog .cid-title {
 	font-size: 1rem; font-weight: 600; color: var(--text-strong);
 	border-bottom: 1px solid var(--border-color);
+	justify-content: space-between; gap: 12px;
 }
-#create-item-dialog .cid-type {
-	gap: 0; padding: 0; border-bottom: 1px solid var(--border-color);
+.cid-kind-inline {
+	display: flex; align-items: center; gap: 8px;
 }
-.cid-type-btn {
-	flex: 1; padding: 10px; background: none; border: none; cursor: pointer;
-	font-size: 13px; color: var(--text-secondary); transition: background 0.15s, color 0.15s;
+.cid-kind-option {
+	display: inline-flex; align-items: center; gap: 6px;
+	min-height: 40px; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 4px;
+	background: transparent; color: var(--text-secondary); font-size: 12px;
+	cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.cid-type-btn + .cid-type-btn { border-left: 1px solid var(--border-color); }
-.cid-type-btn.active { background: var(--bg-active); color: var(--text-strong); }
-.cid-type-btn:hover:not(.active) { background: var(--bg-hover); color: var(--text-primary); }
+.cid-kind-option:hover {
+	background: var(--bg-hover); color: var(--text-primary);
+}
+.cid-kind-option input[type="radio"] {
+	margin: 0; width: 20px; height: 20px; accent-color: var(--text-strong); cursor: pointer;
+}
+.cid-kind-option.active {
+	background: var(--bg-active); color: var(--text-strong);
+	border-color: var(--text-secondary);
+}
 #create-item-dialog .cid-name { border-bottom: 1px solid var(--border-color); }
 #create-item-name {
 	width: 100%; padding: 10px; background: var(--border-color); border: 1px solid var(--border-subtle);
@@ -3186,10 +3196,12 @@ class UIManager {
 			overlay.id = 'create-item-dialog-overlay';
 			overlay.innerHTML =
 				`<div id="create-item-dialog">` +
-				`<div class="cid-title"><h3 style="margin:0;font-size:1rem;">Create</h3></div>` +
-				`<div class="cid-type">` +
-				`<button class="cid-type-btn" data-kind="file">file</button>` +
-				`<button class="cid-type-btn" data-kind="directory">directory</button>` +
+				`<div class="cid-title">` +
+				`<h3 style="margin:0;font-size:1rem;">Create</h3>` +
+				`<div class="cid-kind-inline" role="radiogroup" aria-label="Create item type">` +
+				`<label class="cid-kind-option"><input type="radio" name="cid-kind" value="file" aria-label="File">File</label>` +
+				`<label class="cid-kind-option"><input type="radio" name="cid-kind" value="directory" aria-label="Directory">Directory</label>` +
+				`</div>` +
 				`</div>` +
 				`<div class="cid-name"><textarea id="create-item-name" rows="2" placeholder="Name…" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea></div>` +
 				`<div class="cid-actions">` +
@@ -3198,11 +3210,12 @@ class UIManager {
 				`</div></div>`;
 			document.body.appendChild(overlay);
 			let selectedKind = null;
-			const typeButtons = overlay.querySelectorAll('.cid-type-btn');
-			typeButtons.forEach(btn => btn.addEventListener('click', () => {
-				typeButtons.forEach(b => b.classList.remove('active'));
-				btn.classList.add('active');
-				selectedKind = btn.dataset.kind;
+			const kindOptions = overlay.querySelectorAll('.cid-kind-option');
+			const kindRadios = overlay.querySelectorAll('input[name="cid-kind"]');
+			kindRadios.forEach(radio => radio.addEventListener('change', () => {
+				kindOptions.forEach(opt => opt.classList.remove('active'));
+				radio.closest('.cid-kind-option')?.classList.add('active');
+				selectedKind = radio.value;
 				overlay.querySelector('#create-item-name').focus();
 			}));
 			const nameInput = overlay.querySelector('#create-item-name');
