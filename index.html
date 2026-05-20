@@ -870,6 +870,9 @@ const bus = (() => {
 			listeners.get(event).add(fn);
 			return () => listeners.get(event)?.delete(fn);
 		},
+		off(event, fn) {
+			listeners.get(event)?.delete(fn);
+		},
 		emit(event, ...args) {
 			// Return the first non-undefined result so RPC-style events (ui:confirm,
 			// ui:prompt) work correctly even if multiple listeners are registered.
@@ -1526,6 +1529,7 @@ async renameItem(target) {
 // ────────────────────────────────────────────────────────
 class DirectoryTreeView {
 	#activeDirectoryPath = null;
+	#onActiveFilePathChanged = null;
 	/** @param {string} containerId @param {ReactiveState} state @param {FileSystemManager} fs @param {string} paneName */
 	constructor(containerId, state, fs, paneName = 'left') {
 		this.container = document.getElementById(containerId);
@@ -1536,7 +1540,13 @@ class DirectoryTreeView {
 		this.rootDirNameEl = null;
 		this.sidebarHeaderActionsEl = null;
 		this.treeManager = null; // set when added to TreeManager
-		this.state.addEventListener('activeFilePathChanged', () => this.highlightActive());
+		this.#onActiveFilePathChanged = () => this.highlightActive();
+		this.state.addEventListener('activeFilePathChanged', this.#onActiveFilePathChanged);
+	}
+
+	destroy() {
+		this.state.removeEventListener('activeFilePathChanged', this.#onActiveFilePathChanged);
+		if (this.treeManager) this.treeManager.removeView(this);
 	}
 
 	get activeDirectoryPath() { return this.#activeDirectoryPath; }
@@ -2130,6 +2140,7 @@ class TabManager {
 	static canTabBeDirty(type) { return TabManager.#TAB_TYPES[type]?.canDirty ?? false; }
 	#nextTabId = 1;
 	#tabCreateQueue = Promise.resolve();
+	#onExtensionChanged = null;
 	/** @param {ReactiveState} state @param {FileSystemManager} fs @param {ExtensionManager} extensions */
 	constructor(state, fs, extensions) {
 		this.state = state;
@@ -2141,7 +2152,11 @@ class TabManager {
 		this.extensionOverlay = null; // set by UIManager.init()
 		this.extensionBar = null;     // set by UIManager.init()
 		this.editorWrapper = null;    // set by UIManager.init()
-		bus.on('extension:changed', () => this.reattachExtensions());
+		this.#onExtensionChanged = () => this.reattachExtensions();
+		bus.on('extension:changed', this.#onExtensionChanged);
+	}
+	destroy() {
+		bus.off('extension:changed', this.#onExtensionChanged);
 	}
 	static #moveArrayItem(arr, fromIdx, toIdx) {
 		arr.splice(toIdx, 0, arr.splice(fromIdx, 1)[0]);
@@ -2902,6 +2917,7 @@ class UIManager {
 	#creatingUntitled = false;
 	#leftView = null;
 	#rightView = null;
+	#busUnsubs = [];
 		/** @param {ReactiveState} state @param {TabManager} tabs @param {TreeManager} tree @param {FileSystemManager} fs @param {ExtensionManager} extensions @param {StateRestoreManager} restoreManager */
 	constructor(state, tabs, tree, fs, extensions, restoreManager) {
 		this.state = state;
@@ -3635,19 +3651,21 @@ document.addEventListener('mouseup', handleResizeEnd);
 	}
 bindEvents() {
 	// Bus listeners — central nervous system for cross-component messages
-	bus.on('ui:toast', (msg, dur) => this.showToast(msg, dur));
-	bus.on('ui:action-toast', (msg, cb, dur) => this.showActionToast(msg, cb, dur));
-	bus.on('ui:close-context-menu', () => this.closeContextMenu());
-	bus.on('ui:sidebar-auto-close', () => {
-		if (this.#isMobile && !this.#sidebarEl.classList.contains('hidden')) this.toggleSidebar();
-	});
-	bus.on('tab:status-update', tab => {
-		if (tab) this.updateEditorStatus(tab);
-		else this.#editorStatusEl.textContent = 'No file open';
-	});
-	bus.on('editor:lines-changed', force => this.updateLineNumbers(force));
-	bus.on('ui:confirm', opts => this.showDialog({ ...opts, isConfirm: true }));
-	bus.on('ui:prompt', opts => this.showDialog(opts));
+	this.#busUnsubs = [
+		bus.on('ui:toast', (msg, dur) => this.showToast(msg, dur)),
+		bus.on('ui:action-toast', (msg, cb, dur) => this.showActionToast(msg, cb, dur)),
+		bus.on('ui:close-context-menu', () => this.closeContextMenu()),
+		bus.on('ui:sidebar-auto-close', () => {
+			if (this.#isMobile && !this.#sidebarEl.classList.contains('hidden')) this.toggleSidebar();
+		}),
+		bus.on('tab:status-update', tab => {
+			if (tab) this.updateEditorStatus(tab);
+			else this.#editorStatusEl.textContent = 'No file open';
+		}),
+		bus.on('editor:lines-changed', force => this.updateLineNumbers(force)),
+		bus.on('ui:confirm', opts => this.showDialog({ ...opts, isConfirm: true })),
+		bus.on('ui:prompt', opts => this.showDialog(opts)),
+	];
 
 	this.bindKeyboard();
 	this.bindTreeEvents();
@@ -3702,6 +3720,13 @@ window.addEventListener('message', async e => {
 	// Silently ignore old extension:save messages for backward compatibility
 });
 }
+
+	destroy() {
+		this.#busUnsubs.forEach(unsub => unsub());
+		this.#busUnsubs = [];
+		if (this.#rightView) { this.#rightView.destroy(); this.#rightView = null; }
+		if (this.#leftView) { this.#leftView.destroy(); this.#leftView = null; }
+	}
 }	
 // ────────────────────────────────────────────────────────
 // EditorApp – orchestrator
