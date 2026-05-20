@@ -2788,8 +2788,9 @@ class StateRestoreManager {
 				this.state.notify('currentDirHandle');
 			} else if (saved.status === 'needs-auth') {
 				// Only show the toast when there isn't already a persistent one on screen.
-				// Repeated wake events (visibilitychange + focus + pageshow) all converge
-				// here; without this guard each would add another "Tap to restore" banner.
+				// Wake events are debounced into a single restore pass, but guard here
+				// as a safety net in case ensureRestored() is called directly (e.g. via
+				// manual-permission-grant) while a toast is already on screen.
 				if (!this.#permToastShowing) {
 					this.#handlePendingAuth(saved.handle);
 				}
