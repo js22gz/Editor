@@ -787,9 +787,12 @@ header {
 // ────────────────────────────────────────────────────────
 const CONSTANTS = Object.freeze({
 	// Timing
-	AUTOSAVE_DEBOUNCE_MS:  750,
-	LONG_PRESS_MS:         600,
-	PAGE_DISCARD_DELAY_MS: 300,
+	AUTOSAVE_DEBOUNCE_MS:    750,
+	LONG_PRESS_MS:           600,
+	PAGE_DISCARD_DELAY_MS:   300,
+	WAKE_DEBOUNCE_MS:         75,
+	STORAGE_RETRY_ATTEMPTS:    3,
+	STORAGE_RETRY_DELAY_MS:  100,
 	URL_REVOKE_DELAY_MS:   60_000,
 	EXT_STATE_DELAY_MS:    60,
 	EXT_STATE_SAFETY_MS:   180,
@@ -2641,6 +2644,10 @@ class StateRestoreManager {
 	#lastSnapshotAt = 0;
 	#restoreInProgress = null; // Promise | null — ensures re-entrant calls queue safely
 
+	// ── Wake debounce ──────────────────────────────────────
+	#wakeTimer = null;
+	#pendingWakeReason = null;
+
 	// ── Helpers ───────────────────────────────────────────
 	#permCoord;
 	// Guard that prevents stacking multiple "Tap to restore folder access" toasts.
@@ -2670,6 +2677,19 @@ class StateRestoreManager {
 		this.#state = to;
 	}
 
+	// ── Wake debounce ──────────────────────────────────────
+	// Collapse rapid, overlapping browser wake signals (pageshow + visibilitychange
+	// + focus all fire within milliseconds of each other) into a single delayed
+	// restore call, and give IndexedDB a moment to fully re-initialize its connection.
+	#scheduleWake(reason) {
+		this.#pendingWakeReason = reason;
+		clearTimeout(this.#wakeTimer);
+		this.#wakeTimer = setTimeout(() => {
+			this.#wakeTimer = null;
+			this.ensureRestored(this.#pendingWakeReason);
+		}, CONSTANTS.WAKE_DEBOUNCE_MS);
+	}
+
 	// ── Public API (single entry point) ───────────────────
 	/**
 	 * Single public entry point for ALL wake and cold-start restore signals.
@@ -2697,16 +2717,16 @@ class StateRestoreManager {
 
 	/** Bind all lifecycle event listeners — called once from UIManager.bindEvents() */
 	bindLifecycle() {
-		window.addEventListener('pageshow', async () => {
-			await this.ensureRestored('pageshow');
+		window.addEventListener('pageshow', () => {
+			this.#scheduleWake('pageshow');
 		});
 		document.addEventListener('freeze', () => {
 			this.#snapshotState();
 		});
-		document.addEventListener('resume', () => this.ensureRestored('resume'));
-		document.addEventListener('visibilitychange', async () => {
+		document.addEventListener('resume', () => this.#scheduleWake('resume'));
+		document.addEventListener('visibilitychange', () => {
 			if (document.visibilityState === 'visible') {
-				await this.ensureRestored('visibility');
+				this.#scheduleWake('visibility');
 			} else {
 				this.#snapshotState();
 			}
@@ -2715,11 +2735,11 @@ class StateRestoreManager {
 			this.#windowHasFocus = false;
 			this.#snapshotState();
 		});
-		window.addEventListener('focus', async () => {
+		window.addEventListener('focus', () => {
 			this.#windowHasFocus = true;
-			await this.ensureRestored('focus');
+			this.#scheduleWake('focus');
 		});
-		document.addEventListener('focus', async () => {
+		document.addEventListener('focus', () => {
 			// This capture-phase listener exists as a cross-platform fallback for
 			// browsers where window.focus does not fire reliably (e.g. iOS Safari).
 			// Guard against intra-page element-focus events (e.g. clicking the textarea
@@ -2728,7 +2748,7 @@ class StateRestoreManager {
 			// active split-mode extension.
 			if (this.#windowHasFocus) return;
 			this.#windowHasFocus = true;
-			await this.ensureRestored('focus');
+			this.#scheduleWake('focus');
 		}, true);
 		window.addEventListener('beforeunload', e => {
 			// Snapshot only — never start a restore from beforeunload
@@ -2751,11 +2771,21 @@ class StateRestoreManager {
 
 		// No dir handle — attempt cold-start restore from the persisted folder
 		if (!this.state.currentDirHandle) {
-			const saved = await this.fs.loadSavedFolder();
+			let saved = await this.fs.loadSavedFolder();
+			// Retry a few times in case IndexedDB hasn't fully re-initialized yet
+			// (e.g. rapid tab resume can produce a transient false-empty DB read).
+			for (let attempt = 0; attempt < CONSTANTS.STORAGE_RETRY_ATTEMPTS && saved.status === 'none'; attempt++) {
+				logRestore(`loadSavedFolder returned none — retry ${attempt + 1}`);
+				await new Promise(r => setTimeout(r, CONSTANTS.STORAGE_RETRY_DELAY_MS * (attempt + 1)));
+				saved = await this.fs.loadSavedFolder();
+			}
 			if (saved.status === 'granted') {
 				this.state.currentDirHandle = saved.handle;
 				await this.#rebuildTree(saved.handle);
 				await this.#restoreTabs(saved.handle);
+				// Force a sync broadcast so reactive views that missed the initial
+				// proxy mutation during the wake sequence update immediately.
+				this.state.notify('currentDirHandle');
 			} else if (saved.status === 'needs-auth') {
 				// Only show the toast when there isn't already a persistent one on screen.
 				// Repeated wake events (visibilitychange + focus + pageshow) all converge
