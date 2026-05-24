@@ -109,7 +109,8 @@
 		                  │     • ensureRestored(reason) — single public entry for all wake signals
 		                  │     • bindLifecycle() — event listeners: pageshow /
 		                  │       visibilitychange / freeze / resume / focus /
-		                  │       document focus (capture) / blur / beforeunload
+		                  │       document focus (capture) / blur / beforeunload /
+		                  │       online (Background Sync registration + fallback)
 		                  │     • #snapshotState() — capture before suspend
 		                  │
 		                  ├── UIManager
@@ -2758,6 +2759,27 @@ class StateRestoreManager {
 				return e.returnValue = 'Unsaved changes will be lost';
 			}
 		});
+		// Background Sync: when connectivity is restored the SW fires a 'sync'
+		// event and posts SW_SYNC_REFRESH to all clients.  For browsers that do
+		// not support the Background Sync API we fall back to a direct wake.
+		if ('serviceWorker' in navigator) {
+			navigator.serviceWorker.addEventListener('message', e => {
+				if (e.data?.type === 'SW_SYNC_REFRESH') {
+					this.#scheduleWake('background-sync');
+				}
+			});
+			window.addEventListener('online', async () => {
+				try {
+					const reg = await navigator.serviceWorker.ready;
+					if (reg.sync) {
+						await reg.sync.register('state-refresh');
+						return;
+					}
+				} catch {}
+				// Fallback for browsers without Background Sync support
+				this.#scheduleWake('online');
+			});
+		}
 	}
 
 	// ── Core restore sequence ─────────────────────────────
