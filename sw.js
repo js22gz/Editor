@@ -27,6 +27,15 @@ self.addEventListener('activate', e => {
 	);
 });
 
+self.addEventListener('sync', e => {
+	if (e.tag === 'state-refresh') {
+		e.waitUntil(
+			self.clients.matchAll({ includeUncontrolled: true, type: 'window' })
+				.then(clients => clients.forEach(c => c.postMessage({ type: 'SW_SYNC_REFRESH' })))
+		);
+	}
+});
+
 self.addEventListener('fetch', e => {
 	if (e.request.mode === 'navigate') {
 		e.respondWith(
