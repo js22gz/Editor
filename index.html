@@ -2775,7 +2775,9 @@ class StateRestoreManager {
 						await reg.sync.register('state-refresh');
 						return;
 					}
-				} catch {}
+				} catch (err) {
+					logRestore('Background Sync registration failed:', err);
+				}
 				// Fallback for browsers without Background Sync support
 				this.#scheduleWake('online');
 			});
