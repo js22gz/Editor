@@ -1130,11 +1130,19 @@ class FileSystemManager {
 	saveExpandedState() {
 		try { localStorage.setItem('expandedFolders', JSON.stringify([...this.state.expandedFolders])); } catch {}
 	}
-	saveOpenTabs(currentId) {
+	saveOpenTabs(currentId, { includeDirtyBackup = false } = {}) {
 		try {
 			const data = this.state.tabs
 				.filter(t => t.path)
-				.map(t => ({ path: t.path, name: t.name, type: t.type, extensionMode: t.extensionMode || null, extensionToggledOff: t._extensionToggledOff || false, active: t.id === currentId }));
+				.map(t => {
+					const entry = { path: t.path, name: t.name, type: t.type, extensionMode: t.extensionMode || null, extensionToggledOff: t._extensionToggledOff || false, active: t.id === currentId };
+					if (includeDirtyBackup && t.dirty) {
+						entry.dirty = true;
+						entry.content = t.content;
+						entry.scrollTop = t.scrollTop || 0;
+					}
+					return entry;
+				});
 			// Only persist when there are real file-backed tabs to save.
 			// Clearing is handled explicitly by closeTab → localStorage.removeItem.
 			if (data.length) {
@@ -1837,6 +1845,7 @@ class TreeManager {
 // ────────────────────────────────────────────────────────
 class ExtensionManager {
 	extensions = [];
+	#extAuthToastShowing = false;
 	/** @param {ReactiveState} state @param {FileSystemManager} fs */
 	constructor(state, fs) {
 		this.state = state;
@@ -1857,21 +1866,36 @@ class ExtensionManager {
 			const req = store.getAll();
 			const keyReq = store.getAllKeys();
 			tx.oncomplete = async () => {
-				const handles = req.result;
+				const entries = req.result;
 				const keys = keyReq.result;
 				this.extensions = [];
-				for (let i = 0; i < handles.length; i++) {
+				for (let i = 0; i < entries.length; i++) {
 					try {
-						const handle = handles[i];
-						const perm = await this.fs.queryPermission(handle);
-						if (perm !== 'granted') {
-							try { await handle.requestPermission({ mode: 'read' }); } catch { continue; }
+						let handle, cachedHtml;
+						const entry = entries[i];
+						if (entry && typeof entry === 'object' && entry.handle) {
+							handle = entry.handle;
+							cachedHtml = entry.html;
+						} else {
+							handle = entry;
 						}
-						const file = await handle.getFile();
-						const html = await file.text();
+						const perm = await this.fs.queryPermission(handle);
+						let html;
+						if (perm === 'granted') {
+							html = await (await handle.getFile()).text();
+						} else if (cachedHtml) {
+							html = cachedHtml;
+						} else {
+							try { html = await (await handle.getFile()).text(); } catch { continue; }
+						}
 						const meta = this.#parseMeta(html);
 						if (meta) {
-							this.extensions.push({ key: keys[i], name: meta.name, types: meta.types, mode: meta.mode, bar: meta.bar, handle, html });
+							const ext = {
+								key: keys[i], name: meta.name, types: meta.types, mode: meta.mode, bar: meta.bar,
+								handle, html, needsAuth: perm !== 'granted'
+							};
+							this.extensions.push(ext);
+							if (perm === 'granted') await this.#persistExtensionCache(ext);
 						}
 					} catch { }
 				}
@@ -1903,13 +1927,14 @@ class ExtensionManager {
 				existing.types = meta.types;
 				existing.mode = meta.mode;
 				existing.bar = meta.bar;
+				existing.needsAuth = false;
 			} else {
-				this.extensions.push({ key: meta.name, name: meta.name, types: meta.types, mode: meta.mode, bar: meta.bar, handle: fileHandle, html });
+				this.extensions.push({ key: meta.name, name: meta.name, types: meta.types, mode: meta.mode, bar: meta.bar, handle: fileHandle, html, needsAuth: false });
 			}
 			await this.fs.initDB();
 			if (!this.fs.db) { bus.emit('ui:toast', 'Storage unavailable'); return; }
 			const tx = this.fs.db.transaction('extensions', 'readwrite');
-			tx.objectStore('extensions').put(fileHandle, meta.name);
+			tx.objectStore('extensions').put({ handle: fileHandle, html }, meta.name);
 			bus.emit('ui:toast', `Extension "${meta.name}" installed (${meta.types.join(', ')})`);
 			// Re-attach the new/updated extension to any matching open tabs
 			bus.emit('extension:changed');
@@ -1924,6 +1949,57 @@ class ExtensionManager {
 		const tx = this.fs.db.transaction('extensions', 'readwrite');
 		tx.objectStore('extensions').delete(name);
 		bus.emit('ui:toast', `Extension "${name}" removed`);
+	}
+	get needsAuthExtensions() {
+		return this.extensions.some(e => e.needsAuth);
+	}
+	async #persistExtensionCache(ext) {
+		await this.fs.initDB();
+		if (!this.fs.db) return;
+		const tx = this.fs.db.transaction('extensions', 'readwrite');
+		tx.objectStore('extensions').put({ handle: ext.handle, html: ext.html }, ext.key);
+	}
+	async restorePendingAuth() {
+		let changed = false;
+		for (const ext of this.extensions) {
+			if (!ext.needsAuth) continue;
+			try {
+				let perm = await this.fs.queryPermission(ext.handle);
+				if (perm !== 'granted') {
+					perm = await ext.handle.requestPermission({ mode: 'read' });
+					if (perm !== 'granted') continue;
+				}
+				ext.html = await (await ext.handle.getFile()).text();
+				const meta = this.#parseMeta(ext.html);
+				if (meta) {
+					ext.types = meta.types;
+					ext.mode = meta.mode;
+					ext.bar = meta.bar;
+				}
+				ext.needsAuth = false;
+				await this.#persistExtensionCache(ext);
+				changed = true;
+			} catch { }
+		}
+		return changed;
+	}
+	showAuthToastIfNeeded(onGranted) {
+		if (!this.needsAuthExtensions || this.#extAuthToastShowing) return;
+		this.#extAuthToastShowing = true;
+		bus.emit('ui:action-toast', 'Tap to restore extension access', async () => {
+			this.#extAuthToastShowing = false;
+			try {
+				if (await this.restorePendingAuth()) {
+					bus.emit('extension:changed');
+					if (onGranted) await onGranted();
+					bus.emit('ui:toast', 'Extension access restored ✓');
+				} else {
+					bus.emit('ui:toast', 'Access was not granted');
+				}
+			} catch {
+				bus.emit('ui:toast', 'Failed to restore extension access');
+			}
+		}, 0);
 	}
 	#parseMeta(html) {
 		const nameMatch = html.match(/<meta\s+name=["']extension-name["']\s+content=["']([^"']+)["']/i);
@@ -2523,8 +2599,13 @@ class TabManager {
 				const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
 				const file = await fileHandle.getFile();
 				if (file.size > this.fs.maxFileSize) { continue; }
-				const content = await file.text();
+				const content = (st.dirty && st.content != null) ? st.content : await file.text();
 				const newTab = await this.createNewTab(fileHandle, st.name, content, st.path, st.type || 'text');
+				if (newTab && st.dirty) {
+					newTab.dirty = true;
+					if (newTab.element) newTab.element.querySelector('.dirty-indicator').style.visibility = 'visible';
+				}
+				if (newTab && st.scrollTop) newTab.scrollTop = st.scrollTop;
 				if (st.extensionToggledOff && newTab) {
 					newTab._extensionToggledOff = true;
 					if (newTab.type === 'extension') {
@@ -2564,32 +2645,43 @@ class TabManager {
 	 * demoted to 'text'.
 	 */
 	reattachExtensions() {
+		let changed = false;
 		for (const tab of this.state.tabs) {
 			const ext = this.extensions.getForFile(tab.name);
 			if (ext) {
+				const wasExtension = tab.type === 'extension';
 				tab.extension = ext;
 				if (!tab._extensionToggledOff) {
-					tab.extensionMode = ext.mode || 'full';
-					tab.extensionBar = !!ext.bar;
-					if (tab.type !== 'extension') {
+					const newMode = ext.mode || 'full';
+					const newBar = !!ext.bar;
+					if (tab.extensionMode !== newMode || tab.extensionBar !== newBar || tab.type !== 'extension') {
+						tab.extensionMode = newMode;
+						tab.extensionBar = newBar;
 						tab.type = 'extension';
+						changed = true;
 					}
+				} else if (!wasExtension) {
+					changed = true;
 				}
 				this.#replaceExtToggle(tab);
-			} else if (tab.type === 'extension') {
-				// Extension no longer available — fall back to text
-				tab.extension = null;
-				tab.extensionMode = null;
-				tab.extensionBar = false;
-				tab.type = 'text';
-				if (tab.extFrame) { tab.extFrame.remove(); tab.extFrame = null; }
-				if (tab.extBarFrame) { tab.extBarFrame.remove(); tab.extBarFrame = null; }
-				this.#replaceExtToggle(tab);
+			} else if (tab.type === 'extension' && !tab._extensionToggledOff) {
+				// Only demote when no installed extension matches this file type
+				const stillMatches = this.extensions.some(e => e.types.some(t => tab.name.toLowerCase().endsWith(t)));
+				if (!stillMatches) {
+					tab.extension = null;
+					tab.extensionMode = null;
+					tab.extensionBar = false;
+					tab.type = 'text';
+					if (tab.extFrame) { tab.extFrame.remove(); tab.extFrame = null; }
+					if (tab.extBarFrame) { tab.extBarFrame.remove(); tab.extBarFrame = null; }
+					this.#replaceExtToggle(tab);
+					changed = true;
+				}
 			}
 		}
-		// Re-render the active tab so the correct mode is shown
 		const active = this.state.getActiveTab();
-		if (active) this.switchToTab(active.id);
+		if (changed && active) this.switchToTab(active.id);
+		return changed;
 	}
 }
 
@@ -2660,6 +2752,9 @@ class StateRestoreManager {
 	// user clicking the textarea in split mode) and only trigger a restore when
 	// the window is genuinely coming back from an unfocused state.
 	#windowHasFocus = document.hasFocus();
+	// Set after the initial cold-start restore completes; prevents a redundant
+	// pageshow-triggered restore milliseconds later on first load.
+	#coldRestoreDone = false;
 
 	/** @param {ReactiveState} state @param {FileSystemManager} fs @param {TabManager} tabs @param {TreeManager} tree @param {ExtensionManager} extensions */
 	constructor(state, fs, tabs, tree, extensions) {
@@ -2708,6 +2803,10 @@ class StateRestoreManager {
 		bus.emit('restore:started', reason);
 		this.#restoreInProgress = this.#doRestore(reason)
 			.finally(() => {
+				if (reason === 'cold') this.#coldRestoreDone = true;
+				this.extensions.showAuthToastIfNeeded(async () => {
+					this.tabs.reattachExtensions();
+				});
 				this.#restoreInProgress = null;
 				this.#transition('idle');
 				bus.emit('restore:completed', reason);
@@ -2718,23 +2817,27 @@ class StateRestoreManager {
 
 	/** Bind all lifecycle event listeners — called once from UIManager.bindEvents() */
 	bindLifecycle() {
-		window.addEventListener('pageshow', () => {
+		window.addEventListener('pageshow', (e) => {
+			if (this.#coldRestoreDone && !e.persisted && !document.wasDiscarded) {
+				logRestore('pageshow skipped — cold restore already completed');
+				return;
+			}
 			this.#scheduleWake('pageshow');
 		});
 		document.addEventListener('freeze', () => {
-			this.#snapshotState();
+			void this.#snapshotState(false);
 		});
 		document.addEventListener('resume', () => this.#scheduleWake('resume'));
 		document.addEventListener('visibilitychange', () => {
 			if (document.visibilityState === 'visible') {
 				this.#scheduleWake('visibility');
 			} else {
-				this.#snapshotState();
+				void this.#snapshotState(true);
 			}
 		});
 		window.addEventListener('blur', () => {
 			this.#windowHasFocus = false;
-			this.#snapshotState();
+			void this.#snapshotState(true);
 		});
 		window.addEventListener('focus', () => {
 			this.#windowHasFocus = true;
@@ -2753,7 +2856,7 @@ class StateRestoreManager {
 		}, true);
 		window.addEventListener('beforeunload', e => {
 			// Snapshot only — never start a restore from beforeunload
-			this.#snapshotState();
+			void this.#snapshotState(false);
 			if (this.state.tabs.some(t => t.dirty)) {
 				e.preventDefault();
 				return e.returnValue = 'Unsaved changes will be lost';
@@ -2868,13 +2971,13 @@ class StateRestoreManager {
 			return;
 		}
 
-		// Re-attach extensions for all open tabs
-		this.tabs.reattachExtensions();
+		// Re-attach extensions for all open tabs (skip switchToTab if nothing changed)
+		const reattached = this.tabs.reattachExtensions();
 
-		// Sync active tab content from disk (if clean)
+		// Sync active tab content from disk (if clean and tab wasn't just re-rendered)
 		const textarea = this.textarea;
 		const activeTab = this.state.getActiveTab();
-		if (activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty && textarea) {
+		if (!reattached && activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty && textarea) {
 			try {
 				const file = await activeTab.handle.getFile();
 				activeTab.content = await file.text();
@@ -2901,22 +3004,34 @@ class StateRestoreManager {
 	}
 
 	// ── Snapshot (pre-suspend) ─────────────────────────────
-	#snapshotState() {
+	#captureActiveTabState() {
+		const textarea = this.textarea;
+		const activeTab = this.state.getActiveTab();
+		if (!activeTab || !textarea) return;
+		const usesTextarea = activeTab.type !== 'extension'
+			|| activeTab.extensionMode === 'overlay'
+			|| activeTab.extensionMode === 'split';
+		if (usesTextarea) {
+			activeTab.content = textarea.value;
+			activeTab.scrollTop = textarea.scrollTop;
+		}
+	}
+	async #snapshotState(awaitFlush = true) {
 		// Never interrupt an ongoing restore
 		if (this.#state === 'restoring') return;
 		this.#transition('snapshotting');
 		bus.emit('restore:snapshot');
 		this.#lastSnapshotAt = Date.now();
-		const textarea = this.textarea;
-		const activeTab = this.state.getActiveTab();
-		if (activeTab && activeTab.type !== 'extension' && textarea) {
-			activeTab.content = textarea.value;
-			activeTab.scrollTop = textarea.scrollTop;
-		}
+		this.#captureActiveTabState();
 		if (this.state.currentDirHandle) {
-			this.fs.saveOpenTabs(this.state.currentTabId);
+			this.fs.saveOpenTabs(this.state.currentTabId, { includeDirtyBackup: true });
 		}
-		this.fs.flushSave().catch(e => logRestore('flush during snapshot failed', e));
+		try {
+			if (awaitFlush) await this.fs.flushSave();
+			else this.fs.flushSave().catch(e => logRestore('flush during snapshot failed', e));
+		} catch (e) {
+			logRestore('flush during snapshot failed', e);
+		}
 		this.#transition('idle');
 	}
 
