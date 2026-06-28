@@ -2688,7 +2688,6 @@ class StateRestoreManager {
 	#wakeTimer = null;
 	#wakeReason = null;
 	#folderToast = false;
-	#coldDone = false;
 	#windowFocused = document.hasFocus();
 
 	/** @param {ReactiveState} state @param {FileSystemManager} fs @param {TabManager} tabs @param {TreeManager} tree @param {ExtensionManager} extensions */
@@ -2706,7 +2705,6 @@ class StateRestoreManager {
 		logRestore('restore:', reason);
 		bus.emit('restore:started', reason);
 		this.#restorePromise = this.#restore().finally(() => {
-			if (reason === 'cold') this.#coldDone = true;
 			this.#restorePromise = null;
 			this.extensions.showAuthToastIfNeeded(() => this.tabs.reattachExtensions());
 			bus.emit('restore:completed', reason);
@@ -2719,10 +2717,8 @@ class StateRestoreManager {
 		const wake = r => this.#scheduleWake(r);
 		const hide = f => void this.#snapshot(f);
 
-		window.addEventListener('pageshow', e => {
-			if (this.#coldDone && !e.persisted && !document.wasDiscarded) return;
-			wake('pageshow');
-		});
+		// pageshow is the most reliable wake signal on Chrome OS (see b26990d)
+		window.addEventListener('pageshow', () => wake('pageshow'));
 		document.addEventListener('freeze', () => hide(false));
 		document.addEventListener('resume', () => wake('resume'));
 		document.addEventListener('visibilitychange', () => {
@@ -2772,16 +2768,7 @@ class StateRestoreManager {
 		await this.extensions.loadAll();
 
 		if (!this.state.currentDirHandle) {
-			const saved = await this.#loadSavedFolder();
-			if (saved.status === 'granted') {
-				this.state.currentDirHandle = saved.handle;
-				await this.#mountFolder(saved.handle);
-				this.state.notify('currentDirHandle');
-			} else if (saved.status === 'needs-auth') {
-				this.#askFolder(saved.handle, () => this.#mountFolder(saved.handle));
-				return;
-			}
-			if (!this.state.tabs.length) await this.#welcomeTab();
+			await this.#restoreFromPersistence();
 			return;
 		}
 
@@ -2790,7 +2777,55 @@ class StateRestoreManager {
 			return;
 		}
 
+		// After sleep Chrome OS may keep the handle object but FS access is dead
+		if (!await this.#handleLive(this.state.currentDirHandle)) {
+			logRestore('stale handle — remounting from IDB');
+			this.#clearTabs();
+			this.state.currentDirHandle = null;
+			await this.#restoreFromPersistence();
+			return;
+		}
+
 		await this.#syncLiveSession();
+	}
+
+	async #restoreFromPersistence() {
+		const saved = await this.#loadSavedFolder();
+		if (saved.status === 'granted') {
+			this.state.currentDirHandle = saved.handle;
+			await this.#mountFolder(saved.handle);
+			this.state.notify('currentDirHandle');
+		} else if (saved.status === 'needs-auth') {
+			this.#askFolder(saved.handle, () => this.#mountFolder(saved.handle));
+			return;
+		}
+		if (!this.state.tabs.length) await this.#welcomeTab();
+	}
+
+	async #handleLive(handle) {
+		try {
+			const it = handle.values();
+			await it.next();
+			return true;
+		} catch { return false; }
+	}
+
+	#needsTabRestore() {
+		return this.fs.loadOpenTabs().length > 0 && !this.state.tabs.some(t => t.path);
+	}
+
+	#clearTabs() {
+		for (const t of this.state.tabs) {
+			clearTimeout(t._saveTimer);
+			t.element?.remove();
+			t.extFrame?.remove();
+			t.extBarFrame?.remove();
+			t._splitHandle?.remove();
+			t._splitRight?.remove();
+		}
+		this.state.tabs = [];
+		this.state.currentTabId = null;
+		if (this.textarea) this.textarea.value = '';
 	}
 
 	async #loadSavedFolder() {
@@ -2817,22 +2852,38 @@ class StateRestoreManager {
 	async #syncLiveSession() {
 		await this.fs.mutateAndRebuild();
 		this.tree.highlightActive();
-		if (!this.state.tabs.length) {
+
+		if (!this.state.tabs.length || this.#needsTabRestore()) {
 			await this.#restoreTabs(this.state.currentDirHandle);
 			return;
 		}
-		const reattached = this.tabs.reattachExtensions();
+
+		this.tabs.reattachExtensions();
 		const tab = this.state.getActiveTab();
 		const ta = this.textarea;
-		if (!reattached && tab?.handle && tab.type !== 'extension' && !tab.dirty && ta) {
-			try {
-				tab.content = await (await tab.handle.getFile()).text();
-				if (this.state.currentTabId === tab.id) {
-					ta.value = tab.content;
-					bus.emit('editor:lines-changed', true);
-				}
-			} catch (e) { logRestore('tab refresh failed:', e); }
+		if (tab?.handle && !tab.dirty && ta && (tab.type !== 'extension' || tab.extensionMode === 'overlay' || tab.extensionMode === 'split')) {
+			try { tab.content = await (await tab.handle.getFile()).text(); } catch (e) { logRestore('tab refresh failed:', e); }
 		}
+		this.#repaintActiveTab();
+	}
+
+	#repaintActiveTab() {
+		const tab = this.state.getActiveTab();
+		const ta = this.textarea;
+		if (!tab || !ta) return;
+		if (tab.type === 'extension' && tab.extensionMode === 'full') {
+			this.extensions.renderTab(tab);
+		} else if (tab.type === 'extension') {
+			ta.value = tab.content || '';
+			if (tab.scrollTop) { ta.scrollTop = tab.scrollTop; this.tabs.gutter.scrollTop = tab.scrollTop; }
+			this.extensions.renderTab(tab);
+		} else {
+			ta.value = tab.content || '';
+			ta.readOnly = !TabManager.canTabBeDirty(tab.type);
+			if (tab.scrollTop) { ta.scrollTop = tab.scrollTop; this.tabs.gutter.scrollTop = tab.scrollTop; }
+		}
+		bus.emit('editor:lines-changed', true);
+		bus.emit('tab:status-update', tab);
 	}
 
 	async #restoreTabs(handle) {
