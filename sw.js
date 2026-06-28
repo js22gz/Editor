@@ -1,4 +1,4 @@
-const CACHE_NAME = 'Editor-v3';  
+const CACHE_NAME = 'Editor-v4';  
 
 const urlsToCache = [
 	'./',
@@ -38,18 +38,15 @@ self.addEventListener('sync', e => {
 
 self.addEventListener('fetch', e => {
 	if (e.request.mode === 'navigate') {
+		// Network-first so tab reloads after discard pick up the latest restore logic
 		e.respondWith(
-			caches.match(e.request).then(cached => {
-				if (cached) return cached;
-
-				return fetch(e.request).then(networkResponse => {
-					if (networkResponse && networkResponse.ok) {
-						const clone = networkResponse.clone();
-						caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
-					}
-					return networkResponse;
-				}).catch(() => caches.match('/index.html')); // true offline fallback
-			})
+			fetch(e.request).then(networkResponse => {
+				if (networkResponse && networkResponse.ok) {
+					const clone = networkResponse.clone();
+					caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+				}
+				return networkResponse;
+			}).catch(() => caches.match(e.request).then(cached => cached || caches.match('/index.html')))
 		);
 		return;
 	}

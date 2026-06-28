@@ -103,6 +103,7 @@
 		                  │     • hide → #snapshot()   wake → ensureRestored()
 		                  │     • Bus: restore:started / :completed / :snapshot / :permission-needed
 		                  │     • Wake signals debounce into one call (WAKE_DEBOUNCE_MS)
+		                  │     • rAF + timer watchdog fallback when lifecycle events are missed
 		                  │     • #askFolder() — single persistent toast for folder permission
 		                  │
 		                  ├── UIManager
@@ -784,6 +785,9 @@ const CONSTANTS = Object.freeze({
 	LONG_PRESS_MS:           600,
 	PAGE_DISCARD_DELAY_MS:   300,
 	WAKE_DEBOUNCE_MS:         75,
+	WATCHDOG_INTERVAL_MS:   1000,
+	WATCHDOG_GAP_MS:        3000,
+	HANDLE_LIVE_TIMEOUT_MS: 3000,
 	STORAGE_RETRY_ATTEMPTS:    3,
 	STORAGE_RETRY_DELAY_MS:  100,
 	URL_REVOKE_DELAY_MS:   60_000,
@@ -2707,6 +2711,12 @@ class StateRestoreManager {
 	#wakeReason = null;
 	#folderToast = false;
 	#windowFocused = document.hasFocus();
+	#lifecycleBound = false;
+	#watchdogArmed = false;
+	#watchdogTimer = null;
+	#rafId = null;
+	#lastWatchdogTick = performance.now();
+	#lastRafTick = performance.now();
 
 	/** @param {ReactiveState} state @param {FileSystemManager} fs @param {TabManager} tabs @param {TreeManager} tree @param {ExtensionManager} extensions */
 	constructor(state, fs, tabs, tree, extensions) {
@@ -2716,6 +2726,7 @@ class StateRestoreManager {
 		this.tree = tree;
 		this.extensions = extensions;
 		this.textarea = null;
+		this.bindLifecycle();
 	}
 
 	async ensureRestored(reason = 'wake') {
@@ -2735,6 +2746,8 @@ class StateRestoreManager {
 	}
 
 	bindLifecycle() {
+		if (this.#lifecycleBound) return;
+		this.#lifecycleBound = true;
 		const wake = r => this.#scheduleWake(r);
 		const hide = f => void this.#snapshot(f);
 
@@ -2752,6 +2765,11 @@ class StateRestoreManager {
 			this.#windowFocused = true;
 			wake('focus');
 		}, true);
+		// Chrome OS often skips lifecycle events after sleep — catch stale state on interaction
+		document.addEventListener('pointerdown', () => {
+			if (!this.#watchdogArmed) return;
+			if (this.#needsTabRestore()) wake('pointer');
+		}, { passive: true });
 		window.addEventListener('beforeunload', e => {
 			hide(false);
 			if (this.state.tabs.some(t => t.dirty)) {
@@ -2773,7 +2791,41 @@ class StateRestoreManager {
 		}
 	}
 
+	armWatchdog() {
+		if (this.#watchdogArmed) return;
+		this.#watchdogArmed = true;
+		const now = performance.now();
+		this.#lastWatchdogTick = now;
+		this.#lastRafTick = now;
+		this.#tickWatchdog();
+		this.#tickRaf();
+	}
+
+	#tickWatchdog() {
+		const now = performance.now();
+		const gap = now - this.#lastWatchdogTick;
+		this.#lastWatchdogTick = now;
+		// Timers stall while frozen/backgrounded — a large gap means we just woke
+		if (document.visibilityState === 'visible' && gap > CONSTANTS.WATCHDOG_GAP_MS) {
+			this.#scheduleWake('watchdog');
+		}
+		this.#watchdogTimer = setTimeout(() => this.#tickWatchdog(), CONSTANTS.WATCHDOG_INTERVAL_MS);
+	}
+
+	#tickRaf() {
+		this.#rafId = requestAnimationFrame(now => {
+			const gap = now - this.#lastRafTick;
+			this.#lastRafTick = now;
+			// rAF pauses when hidden and resumes on the next paint — catches wake faster than timers
+			if (document.visibilityState === 'visible' && gap > CONSTANTS.WATCHDOG_GAP_MS) {
+				this.#scheduleWake('raf');
+			}
+			this.#tickRaf();
+		});
+	}
+
 	#scheduleWake(reason) {
+		logRestore(`scheduleWake(${reason})`);
 		this.#wakeReason = reason;
 		clearTimeout(this.#wakeTimer);
 		this.#wakeTimer = setTimeout(() => {
@@ -2825,10 +2877,18 @@ class StateRestoreManager {
 
 	async #handleLive(handle) {
 		try {
-			for await (const _ of handle.entries()) break;
-			return true;
+			return await Promise.race([
+				(async () => {
+					for await (const _ of handle.entries()) break;
+					return true;
+				})(),
+				new Promise((_, reject) => setTimeout(
+					() => reject(new Error('timeout')),
+					CONSTANTS.HANDLE_LIVE_TIMEOUT_MS
+				))
+			]);
 		} catch (e) {
-			logRestore('handle not live:', e.name || e);
+			logRestore('handle not live:', e.name || e.message || e);
 			return false;
 		}
 	}
@@ -3093,6 +3153,7 @@ class UIManager {
 		}
 		await this.fs.initDB();
 		await this.restoreManager.ensureRestored('cold');
+		this.restoreManager.armWatchdog();
 	}
 	showToast(message, duration = CONSTANTS.TOAST_DEFAULT_MS) {
 		const t = document.createElement('div');
@@ -3757,7 +3818,6 @@ bindEvents() {
 	this.bindTreeEvents();
 	this.bindTabEvents();
 	this.bindSettings();
-	this.restoreManager.bindLifecycle();
 
 window.addEventListener('message', async e => {
 	if (e.origin !== 'null') return;
