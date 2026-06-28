@@ -884,7 +884,18 @@ const bus = (() => {
 // DEBUG flag — set localStorage.DEBUG_RESTORE = '1' to enable
 // ────────────────────────────────────────────────────────
 const DEBUG_RESTORE = localStorage.getItem('DEBUG_RESTORE') === '1';
-function logRestore(...args) { if (DEBUG_RESTORE) console.log('[restore]', ...args); }
+const _restoreT0 = performance.now();
+function _restoreStamp() {
+	const wall = new Date().toISOString().slice(11, 23);
+	const elapsed = Math.round(performance.now() - _restoreT0);
+	return `${wall} +${elapsed}ms`;
+}
+function logRestore(...args) {
+	if (DEBUG_RESTORE) console.log(`[restore] ${_restoreStamp()}`, ...args);
+}
+function warnRestore(...args) {
+	if (DEBUG_RESTORE) console.warn(`[restore] ${_restoreStamp()}`, ...args);
+}
 
 	
 // ────────────────────────────────────────────────────────
@@ -1055,6 +1066,7 @@ class FileSystemManager {
 			}
 		} catch (e) {
 			if (e.name === 'NotAllowedError') bus.emit('ui:toast', 'Folder access denied – re-open folder to grant access');
+			else if (e.name === 'InvalidStateError') throw e;
 		}
 		dirNode.childrenLoaded = true;
 	}
@@ -1525,7 +1537,16 @@ async renameItem(target) {
 	}
 	async isSameEntry(h1, h2) {
 		if (!h1 || !h2) return false;
-		return h1.isSameEntry(h2);
+		try { return await h1.isSameEntry(h2); } catch { return false; }
+	}
+	/** Walk a fresh path from root — never use handles cached from prior entries() iteration. */
+	async getFileHandleForPath(rootHandle, filePath) {
+		const parts = filePath.split('/').filter(Boolean);
+		let dir = rootHandle;
+		for (let i = 0; i < parts.length - 1; i++) {
+			dir = await dir.getDirectoryHandle(parts[i]);
+		}
+		return dir.getFileHandle(parts[parts.length - 1]);
 	}
 }
 // ────────────────────────────────────────────────────────
@@ -2420,7 +2441,7 @@ class TabManager {
 	async createNewTab(handle, name, content = '', path = null, type = 'text') {
 		// Serialize tab creation to prevent duplicate tabs from concurrent calls
 		return this.#tabCreateQueue = this.#tabCreateQueue
-			.catch(e => { if (DEBUG_RESTORE) console.warn('[restore] tab creation failed:', e); })
+			.catch(e => { warnRestore('tab creation failed:', e); })
 			.then(() => this.#createTab(handle, name, content, path, type));
 	}
 	async #createTab(handle, name, content, path, type) {
@@ -2579,16 +2600,12 @@ class TabManager {
 		this.switchToTab(this.state.tabs[Math.min(idx, this.state.tabs.length - 1)].id);
 	}
 	async #tryOpenSavedTabs(dirHandle, savedTabs) {
+		logRestore(`tryOpenSavedTabs — begin (${savedTabs.length} tab${savedTabs.length === 1 ? '' : 's'})`);
 		let restored = 0;
 		let activeTabPath = null;
 		for (const st of savedTabs) {
 			try {
-				const parts = st.path.split('/').filter(Boolean);
-				let handle = dirHandle;
-				for (let i = 0; i < parts.length - 1; i++) {
-					handle = await handle.getDirectoryHandle(parts[i]);
-				}
-				const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
+				const fileHandle = await this.fs.getFileHandleForPath(dirHandle, st.path);
 				const file = await fileHandle.getFile();
 				if (file.size > this.fs.maxFileSize) { continue; }
 				const content = (st.dirty && st.content != null) ? st.content : await file.text();
@@ -2609,9 +2626,10 @@ class TabManager {
 				if (st.active) activeTabPath = st.path;
 				restored++;
 			} catch (e) {
-				if (DEBUG_RESTORE) console.warn(`[restore] tab restore failed for "${st.path}":`, e.name || e);
+				warnRestore(`tab restore failed for "${st.path}":`, e.name || e);
 			}
 		}
+		logRestore(`tryOpenSavedTabs — done (restored ${restored}/${savedTabs.length})`);
 		return { restored, activeTabPath };
 	}
 	async restoreOpenTabs(dirHandle, savedTabs) {
@@ -2701,14 +2719,17 @@ class StateRestoreManager {
 	}
 
 	async ensureRestored(reason = 'wake') {
-		if (this.#restorePromise) return this.#restorePromise;
-		logRestore('restore:', reason);
+		if (this.#restorePromise) {
+			logRestore(`ensureRestored(${reason}) — coalesced (restore in flight)`);
+			return this.#restorePromise;
+		}
+		logRestore(`ensureRestored(${reason}) — begin`);
 		bus.emit('restore:started', reason);
 		this.#restorePromise = this.#restore().finally(() => {
 			this.#restorePromise = null;
 			this.extensions.showAuthToastIfNeeded(() => this.tabs.reattachExtensions());
 			bus.emit('restore:completed', reason);
-			logRestore('restore done:', reason);
+			logRestore(`ensureRestored(${reason}) — completed`);
 		});
 		return this.#restorePromise;
 	}
@@ -2804,14 +2825,19 @@ class StateRestoreManager {
 
 	async #handleLive(handle) {
 		try {
-			const it = handle.values();
-			await it.next();
+			for await (const _ of handle.entries()) break;
 			return true;
-		} catch { return false; }
+		} catch (e) {
+			logRestore('handle not live:', e.name || e);
+			return false;
+		}
 	}
 
 	#needsTabRestore() {
-		return this.fs.loadOpenTabs().length > 0 && !this.state.tabs.some(t => t.path);
+		const saved = this.fs.loadOpenTabs();
+		if (!saved.length) return false;
+		const open = new Set(this.state.tabs.filter(t => t.path).map(t => t.path));
+		return saved.some(st => !open.has(st.path));
 	}
 
 	#clearTabs() {
@@ -2838,6 +2864,12 @@ class StateRestoreManager {
 	}
 
 	async #mountFolder(handle) {
+		// Open saved tabs before any entries() iteration — Chrome OS invalidates
+		// directory handle state after iteration, causing InvalidStateError on
+		// subsequent getDirectoryHandle() used for tab path resolution.
+		logRestore('mountFolder — restoreTabs (before tree build)');
+		await this.#restoreTabs(handle);
+		logRestore('mountFolder — build tree');
 		await this.fs.build(handle);
 		this.fs.loadExpandedState();
 		for (const path of [...this.state.expandedFolders].sort((a, b) => a.split('/').length - b.split('/').length)) {
@@ -2846,17 +2878,21 @@ class StateRestoreManager {
 		}
 		this.tree.render();
 		this.tree.updateHeader();
-		await this.#restoreTabs(handle);
+		logRestore('mountFolder — done');
 	}
 
 	async #syncLiveSession() {
+		if (this.#needsTabRestore()) {
+			const pending = this.fs.loadOpenTabs().filter(st => !this.state.tabs.some(t => t.path === st.path));
+			logRestore(`syncLiveSession — restoreTabs first (${pending.length} pending)`);
+			await this.#restoreTabs(this.state.currentDirHandle);
+		}
+
+		logRestore('syncLiveSession — mutateAndRebuild');
 		await this.fs.mutateAndRebuild();
 		this.tree.highlightActive();
 
-		if (!this.state.tabs.length || this.#needsTabRestore()) {
-			await this.#restoreTabs(this.state.currentDirHandle);
-			return;
-		}
+		if (this.#needsTabRestore()) return;
 
 		this.tabs.reattachExtensions();
 		const tab = this.state.getActiveTab();
@@ -2899,7 +2935,11 @@ class StateRestoreManager {
 	}
 
 	async #snapshot(awaitFlush) {
-		if (this.#restorePromise) return;
+		if (this.#restorePromise) {
+			logRestore('snapshot — skipped (restore in flight)');
+			return;
+		}
+		logRestore(`snapshot — begin (awaitFlush=${awaitFlush})`);
 		bus.emit('restore:snapshot');
 		const tab = this.state.getActiveTab();
 		const ta = this.textarea;
@@ -2917,6 +2957,7 @@ class StateRestoreManager {
 			if (awaitFlush) await this.fs.flushSave();
 			else this.fs.flushSave().catch(e => logRestore('flush failed:', e));
 		} catch (e) { logRestore('flush failed:', e); }
+		logRestore('snapshot — done');
 	}
 
 	#askFolder(handle, onGranted) {
