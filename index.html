@@ -99,19 +99,11 @@
 		                  │     • Drag-to-reorder tabs
 		                  │     • updateTabPaths() after rename/move
 		                  │
-		                  ├── PermissionCoordinator (permission query / request / toast)
-		                  │     • hasPermission() — query current FS permission
-		                  │     • handleLostPermission(onGranted, onDone?) — persistent action-toast flow
-		                  │
-		                  ├── StateRestoreManager (wake / restore / snapshot)
-		                  │     • State machine: idle → snapshotting | restoring
+		                  ├── StateRestoreManager (suspend snapshot / wake restore)
+		                  │     • hide → #snapshot()   wake → ensureRestored()
 		                  │     • Bus: restore:started / :completed / :snapshot / :permission-needed
-		                  │     • ensureRestored(reason) — single public entry for all wake signals
-		                  │     • bindLifecycle() — event listeners: pageshow /
-		                  │       visibilitychange / freeze / resume / focus /
-		                  │       document focus (capture) / blur / beforeunload /
-		                  │       online (Background Sync registration + fallback)
-		                  │     • #snapshotState() — capture before suspend
+		                  │     • Wake signals debounce into one call (WAKE_DEBOUNCE_MS)
+		                  │     • #askFolder() — single persistent toast for folder permission
 		                  │
 		                  ├── UIManager
 		                  │     • DOM wiring, context menu, long-press (mobile)
@@ -2686,75 +2678,18 @@ class TabManager {
 }
 
 // ────────────────────────────────────────────────────────
-// PermissionCoordinator – single place for FS permission flow
-// ────────────────────────────────────────────────────────
-class PermissionCoordinator {
-	#fs; #state;
-	constructor(fs, state) { this.#fs = fs; this.#state = state; }
-
-	/** Returns true if the current dir handle has readwrite permission. */
-	async hasPermission() {
-		if (!this.#state.currentDirHandle) return false;
-		const perm = await this.#fs.queryPermission(this.#state.currentDirHandle);
-		return perm === 'granted';
-	}
-
-	/**
-	 * Emits the permission-needed event and shows a persistent action-toast.
-	 * When the user taps, calls onGranted() after a successful requestPermission.
-	 * onDone() is always called after the tap (regardless of the permission outcome)
-	 * so callers can reset any "toast showing" guard.
-	 * @param {() => Promise<void>} onGranted
-	 * @param {() => void} [onDone]
-	 */
-	handleLostPermission(onGranted, onDone = null) {
-		bus.emit('restore:permission-needed');
-		bus.emit('ui:action-toast', 'Tap to restore folder access', async () => {
-			try {
-				const result = await this.#state.currentDirHandle.requestPermission({ mode: 'readwrite' });
-				if (result === 'granted') {
-					await onGranted();
-					bus.emit('ui:toast', 'Folder access restored ✓');
-				} else {
-					bus.emit('ui:toast', 'Access was not granted');
-				}
-			} catch {
-				bus.emit('ui:toast', 'Failed to restore access');
-			}
-			if (onDone) onDone();
-		}, 0);  // 0 = persistent – toast stays until the user explicitly taps it
-	}
-}
-
-// ────────────────────────────────────────────────────────
-// StateRestoreManager – wake / restore / snapshot lifecycle
-//   State machine: idle → snapshotting (on hide/blur/freeze)
-//                  idle → restoring   (on any wake signal)
+// StateRestoreManager – suspend snapshot / wake restore
+//
+//   hide → #snapshot()        capture editor, persist tabs, flush
+//   wake → ensureRestored()   reload extensions, resync FS
 // ────────────────────────────────────────────────────────
 class StateRestoreManager {
-	// ── State machine ─────────────────────────────────────
-	#state = 'idle';           // 'idle' | 'snapshotting' | 'restoring'
-	#lastSnapshotAt = 0;
-	#restoreInProgress = null; // Promise | null — ensures re-entrant calls queue safely
-
-	// ── Wake debounce ──────────────────────────────────────
+	#restorePromise = null;
 	#wakeTimer = null;
-	#pendingWakeReason = null;
-
-	// ── Helpers ───────────────────────────────────────────
-	#permCoord;
-	// Guard that prevents stacking multiple "Tap to restore folder access" toasts.
-	// A persistent toast is already on screen while this is true; new wake-events
-	// that reach the permission-needed branch will simply skip showing another one.
-	#permToastShowing = false;
-	// Tracks whether the browser window currently has focus so the document-level
-	// focus-capture listener can skip intra-page element-focus events (e.g. the
-	// user clicking the textarea in split mode) and only trigger a restore when
-	// the window is genuinely coming back from an unfocused state.
-	#windowHasFocus = document.hasFocus();
-	// Set after the initial cold-start restore completes; prevents a redundant
-	// pageshow-triggered restore milliseconds later on first load.
-	#coldRestoreDone = false;
+	#wakeReason = null;
+	#folderToast = false;
+	#coldDone = false;
+	#windowFocused = document.hasFocus();
 
 	/** @param {ReactiveState} state @param {FileSystemManager} fs @param {TabManager} tabs @param {TreeManager} tree @param {ExtensionManager} extensions */
 	constructor(state, fs, tabs, tree, extensions) {
@@ -2763,306 +2698,195 @@ class StateRestoreManager {
 		this.tabs = tabs;
 		this.tree = tree;
 		this.extensions = extensions;
-		this.textarea = null; // set by UIManager.init()
-		this.#permCoord = new PermissionCoordinator(fs, state);
+		this.textarea = null;
 	}
 
-	// ── State machine ──────────────────────────────────────
-	#transition(to) {
-		logRestore(`${this.#state} → ${to}`);
-		this.#state = to;
-	}
-
-	// ── Wake debounce ──────────────────────────────────────
-	// Collapse rapid, overlapping browser wake signals (pageshow + visibilitychange
-	// + focus all fire within milliseconds of each other) into a single delayed
-	// restore call, and give IndexedDB a moment to fully re-initialize its connection.
-	#scheduleWake(reason) {
-		this.#pendingWakeReason = reason;
-		clearTimeout(this.#wakeTimer);
-		this.#wakeTimer = setTimeout(() => {
-			this.#wakeTimer = null;
-			this.ensureRestored(this.#pendingWakeReason);
-		}, CONSTANTS.WAKE_DEBOUNCE_MS);
-	}
-
-	// ── Public API (single entry point) ───────────────────
-	/**
-	 * Single public entry point for ALL wake and cold-start restore signals.
-	 * Calling this while a restore is already in progress returns the same
-	 * in-flight promise — making every caller re-entrant-safe.
-	 * @param {string} [reason]
-	 */
-	async ensureRestored(reason = 'unknown') {
-		if (this.#restoreInProgress) {
-			logRestore(`ensureRestored(${reason}) — queued behind in-progress restore`);
-			return this.#restoreInProgress;
-		}
-		logRestore(`ensureRestored(${reason}) — begin`);
-		this.#transition('restoring');
+	async ensureRestored(reason = 'wake') {
+		if (this.#restorePromise) return this.#restorePromise;
+		logRestore('restore:', reason);
 		bus.emit('restore:started', reason);
-		this.#restoreInProgress = this.#doRestore(reason)
-			.finally(() => {
-				if (reason === 'cold') this.#coldRestoreDone = true;
-				this.extensions.showAuthToastIfNeeded(async () => {
-					this.tabs.reattachExtensions();
-				});
-				this.#restoreInProgress = null;
-				this.#transition('idle');
-				bus.emit('restore:completed', reason);
-				logRestore(`ensureRestored(${reason}) — completed`);
-			});
-		return this.#restoreInProgress;
+		this.#restorePromise = this.#restore().finally(() => {
+			if (reason === 'cold') this.#coldDone = true;
+			this.#restorePromise = null;
+			this.extensions.showAuthToastIfNeeded(() => this.tabs.reattachExtensions());
+			bus.emit('restore:completed', reason);
+			logRestore('restore done:', reason);
+		});
+		return this.#restorePromise;
 	}
 
-	/** Bind all lifecycle event listeners — called once from UIManager.bindEvents() */
 	bindLifecycle() {
-		window.addEventListener('pageshow', (e) => {
-			if (this.#coldRestoreDone && !e.persisted && !document.wasDiscarded) {
-				logRestore('pageshow skipped — cold restore already completed');
-				return;
-			}
-			this.#scheduleWake('pageshow');
+		const wake = r => this.#scheduleWake(r);
+		const hide = f => void this.#snapshot(f);
+
+		window.addEventListener('pageshow', e => {
+			if (this.#coldDone && !e.persisted && !document.wasDiscarded) return;
+			wake('pageshow');
 		});
-		document.addEventListener('freeze', () => {
-			void this.#snapshotState(false);
-		});
-		document.addEventListener('resume', () => this.#scheduleWake('resume'));
+		document.addEventListener('freeze', () => hide(false));
+		document.addEventListener('resume', () => wake('resume'));
 		document.addEventListener('visibilitychange', () => {
-			if (document.visibilityState === 'visible') {
-				this.#scheduleWake('visibility');
-			} else {
-				void this.#snapshotState(true);
-			}
+			document.visibilityState === 'visible' ? wake('visibility') : hide(true);
 		});
-		window.addEventListener('blur', () => {
-			this.#windowHasFocus = false;
-			void this.#snapshotState(true);
-		});
-		window.addEventListener('focus', () => {
-			this.#windowHasFocus = true;
-			this.#scheduleWake('focus');
-		});
+		window.addEventListener('blur', () => { this.#windowFocused = false; hide(true); });
+		window.addEventListener('focus', () => { this.#windowFocused = true; wake('focus'); });
 		document.addEventListener('focus', () => {
-			// This capture-phase listener exists as a cross-platform fallback for
-			// browsers where window.focus does not fire reliably (e.g. iOS Safari).
-			// Guard against intra-page element-focus events (e.g. clicking the textarea
-			// while the window is already focused) which must NOT trigger a restore —
-			// that would call loadAll() + reattachExtensions() and could tear down the
-			// active split-mode extension.
-			if (this.#windowHasFocus) return;
-			this.#windowHasFocus = true;
-			this.#scheduleWake('focus');
+			if (this.#windowFocused) return; // skip intra-page focus (split-mode textarea clicks)
+			this.#windowFocused = true;
+			wake('focus');
 		}, true);
 		window.addEventListener('beforeunload', e => {
-			// Snapshot only — never start a restore from beforeunload
-			void this.#snapshotState(false);
+			hide(false);
 			if (this.state.tabs.some(t => t.dirty)) {
 				e.preventDefault();
-				return e.returnValue = 'Unsaved changes will be lost';
+				e.returnValue = 'Unsaved changes will be lost';
 			}
 		});
-		// Background Sync: when connectivity is restored the SW fires a 'sync'
-		// event and posts SW_SYNC_REFRESH to all clients.  For browsers that do
-		// not support the Background Sync API we fall back to a direct wake.
 		if ('serviceWorker' in navigator) {
 			navigator.serviceWorker.addEventListener('message', e => {
-				if (e.data?.type === 'SW_SYNC_REFRESH') {
-					this.#scheduleWake('background-sync');
-				}
+				if (e.data?.type === 'SW_SYNC_REFRESH') wake('sync');
 			});
 			window.addEventListener('online', async () => {
 				try {
 					const reg = await navigator.serviceWorker.ready;
-					if (reg.sync) {
-						await reg.sync.register('state-refresh');
-						return;
-					}
-				} catch (err) {
-					logRestore('Background Sync registration failed:', err);
-				}
-				// Fallback for browsers without Background Sync support
-				this.#scheduleWake('online');
+					if (reg.sync) { await reg.sync.register('state-refresh'); return; }
+				} catch (err) { logRestore('sync register failed:', err); }
+				wake('online');
 			});
 		}
 	}
 
-	// ── Core restore sequence ─────────────────────────────
-	async #doRestore(reason) {
-		// Small fixed delay only for page-discard: the FS API needs a moment
-		// to re-initialize handles after the browser discards the page.
-		if (document.wasDiscarded) await new Promise(r => setTimeout(r, CONSTANTS.PAGE_DISCARD_DELAY_MS));
+	#scheduleWake(reason) {
+		this.#wakeReason = reason;
+		clearTimeout(this.#wakeTimer);
+		this.#wakeTimer = setTimeout(() => {
+			this.#wakeTimer = null;
+			this.ensureRestored(this.#wakeReason);
+		}, CONSTANTS.WAKE_DEBOUNCE_MS);
+	}
 
-		// Step 1: Load extensions (always, regardless of folder state)
+	async #restore() {
+		if (document.wasDiscarded) {
+			await new Promise(r => setTimeout(r, CONSTANTS.PAGE_DISCARD_DELAY_MS));
+		}
 		await this.extensions.loadAll();
 
-		// No dir handle — attempt cold-start restore from the persisted folder
 		if (!this.state.currentDirHandle) {
-			let saved = await this.fs.loadSavedFolder();
-			// Retry a few times in case IndexedDB hasn't fully re-initialized yet
-			// (e.g. rapid tab resume can produce a transient false-empty DB read).
-			for (let attempt = 0; attempt < CONSTANTS.STORAGE_RETRY_ATTEMPTS && saved.status === 'none'; attempt++) {
-				logRestore(`loadSavedFolder returned none — retry ${attempt + 1}`);
-				await new Promise(r => setTimeout(r, CONSTANTS.STORAGE_RETRY_DELAY_MS * (attempt + 1)));
-				saved = await this.fs.loadSavedFolder();
-			}
+			const saved = await this.#loadSavedFolder();
 			if (saved.status === 'granted') {
 				this.state.currentDirHandle = saved.handle;
-				await this.#rebuildTree(saved.handle);
-				await this.#restoreTabs(saved.handle);
-				// Force a sync broadcast so reactive views that missed the initial
-				// proxy mutation during the wake sequence update immediately.
+				await this.#mountFolder(saved.handle);
 				this.state.notify('currentDirHandle');
 			} else if (saved.status === 'needs-auth') {
-				// Only show the toast when there isn't already a persistent one on screen.
-				// Wake events are debounced into a single restore pass, but guard here
-				// as a safety net in case ensureRestored() is called directly (e.g. via
-				// manual-permission-grant) while a toast is already on screen.
-				if (!this.#permToastShowing) {
-					this.#handlePendingAuth(saved.handle);
-				}
+				this.#askFolder(saved.handle, () => this.#mountFolder(saved.handle));
 				return;
 			}
-			if (!this.state.tabs.length) {
-				await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
-			}
+			if (!this.state.tabs.length) await this.#welcomeTab();
 			return;
 		}
 
-		// Dir handle exists — re-validate permission before doing any FS work
-		const permOk = await this.#permCoord.hasPermission();
-		if (!permOk) {
-			// Only show the toast when there isn't already one on screen.
-			// handleLostPermission() shows a persistent toast and returns synchronously.
-			// #doRestore() returns immediately after via the `return` below, then
-			// the finally block in ensureRestored() clears #restoreInProgress and
-			// transitions back to 'idle'. When the user taps the toast, calling
-			// ensureRestored() again is always safe — either it starts a fresh
-			// restore (if idle) or queues behind any concurrent restore in progress.
-			if (!this.#permToastShowing) {
-				this.#permToastShowing = true;
-				this.#permCoord.handleLostPermission(
-					() => this.ensureRestored('manual-permission-grant'),
-					() => { this.#permToastShowing = false; }
-				);
-			}
+		if (await this.fs.queryPermission(this.state.currentDirHandle) !== 'granted') {
+			this.#askFolder(null, () => this.ensureRestored('auth'));
 			return;
 		}
 
-		// Permission confirmed — rebuild tree and sync open tabs
-		await this.#rebuildAndSync();
+		await this.#syncLiveSession();
 	}
 
-	// ── Tree rebuild helpers ───────────────────────────────
-	async #rebuildTree(handle) {
+	async #loadSavedFolder() {
+		let saved = await this.fs.loadSavedFolder();
+		for (let i = 0; i < CONSTANTS.STORAGE_RETRY_ATTEMPTS && saved.status === 'none'; i++) {
+			await new Promise(r => setTimeout(r, CONSTANTS.STORAGE_RETRY_DELAY_MS * (i + 1)));
+			saved = await this.fs.loadSavedFolder();
+		}
+		return saved;
+	}
+
+	async #mountFolder(handle) {
 		await this.fs.build(handle);
-		this.fs.loadExpandedState(); // Must be called before expanding saved paths
-		await this.#expandSavedFolders();
+		this.fs.loadExpandedState();
+		for (const path of [...this.state.expandedFolders].sort((a, b) => a.split('/').length - b.split('/').length)) {
+			const node = this.tree.getNode(path);
+			if (node?.kind === 'directory') await this.fs.loadChildren(node);
+		}
 		this.tree.render();
 		this.tree.updateHeader();
+		await this.#restoreTabs(handle);
 	}
 
-	async #rebuildAndSync() {
+	async #syncLiveSession() {
 		await this.fs.mutateAndRebuild();
 		this.tree.highlightActive();
-
 		if (!this.state.tabs.length) {
 			await this.#restoreTabs(this.state.currentDirHandle);
 			return;
 		}
-
-		// Re-attach extensions for all open tabs (skip switchToTab if nothing changed)
 		const reattached = this.tabs.reattachExtensions();
-
-		// Sync active tab content from disk (if clean and tab wasn't just re-rendered)
-		const textarea = this.textarea;
-		const activeTab = this.state.getActiveTab();
-		if (!reattached && activeTab?.handle && activeTab.type !== 'extension' && !activeTab.dirty && textarea) {
+		const tab = this.state.getActiveTab();
+		const ta = this.textarea;
+		if (!reattached && tab?.handle && tab.type !== 'extension' && !tab.dirty && ta) {
 			try {
-				const file = await activeTab.handle.getFile();
-				activeTab.content = await file.text();
-				if (this.state.currentTabId === activeTab.id) {
-					textarea.value = activeTab.content;
+				tab.content = await (await tab.handle.getFile()).text();
+				if (this.state.currentTabId === tab.id) {
+					ta.value = tab.content;
 					bus.emit('editor:lines-changed', true);
 				}
-			} catch (e) { logRestore('wake tab refresh failed', e); }
+			} catch (e) { logRestore('tab refresh failed:', e); }
 		}
 	}
 
 	async #restoreTabs(handle) {
-		// Remove any placeholder welcome tab before restoring real files
-		const welcomeIdx = this.state.tabs.findIndex(t => t.type === 'welcome');
-		if (welcomeIdx !== -1) {
-			this.state.tabs[welcomeIdx].element.remove();
-			this.state.tabs.splice(welcomeIdx, 1);
-		}
-		const restored = await this.tabs.restoreOpenTabs(handle);
-		if (restored) bus.emit('ui:toast', `Restored ${restored} tab${restored > 1 ? 's' : ''}`);
-		if (!this.state.tabs.length) {
-			await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
-		}
+		const i = this.state.tabs.findIndex(t => t.type === 'welcome');
+		if (i !== -1) { this.state.tabs[i].element.remove(); this.state.tabs.splice(i, 1); }
+		const n = await this.tabs.restoreOpenTabs(handle);
+		if (n) bus.emit('ui:toast', `Restored ${n} tab${n > 1 ? 's' : ''}`);
+		if (!this.state.tabs.length) await this.#welcomeTab();
 	}
 
-	// ── Snapshot (pre-suspend) ─────────────────────────────
-	#captureActiveTabState() {
-		const textarea = this.textarea;
-		const activeTab = this.state.getActiveTab();
-		if (!activeTab || !textarea) return;
-		const usesTextarea = activeTab.type !== 'extension'
-			|| activeTab.extensionMode === 'overlay'
-			|| activeTab.extensionMode === 'split';
-		if (usesTextarea) {
-			activeTab.content = textarea.value;
-			activeTab.scrollTop = textarea.scrollTop;
-		}
+	async #welcomeTab() {
+		await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
 	}
-	async #snapshotState(awaitFlush = true) {
-		// Never interrupt an ongoing restore
-		if (this.#state === 'restoring') return;
-		this.#transition('snapshotting');
+
+	async #snapshot(awaitFlush) {
+		if (this.#restorePromise) return;
 		bus.emit('restore:snapshot');
-		this.#lastSnapshotAt = Date.now();
-		this.#captureActiveTabState();
+		const tab = this.state.getActiveTab();
+		const ta = this.textarea;
+		if (tab && ta) {
+			const editable = tab.type !== 'extension' || tab.extensionMode === 'overlay' || tab.extensionMode === 'split';
+			if (editable) {
+				tab.content = ta.value;
+				tab.scrollTop = ta.scrollTop;
+			}
+		}
 		if (this.state.currentDirHandle) {
 			this.fs.saveOpenTabs(this.state.currentTabId, { includeDirtyBackup: true });
 		}
 		try {
 			if (awaitFlush) await this.fs.flushSave();
-			else this.fs.flushSave().catch(e => logRestore('flush during snapshot failed', e));
-		} catch (e) {
-			logRestore('flush during snapshot failed', e);
-		}
-		this.#transition('idle');
+			else this.fs.flushSave().catch(e => logRestore('flush failed:', e));
+		} catch (e) { logRestore('flush failed:', e); }
 	}
 
-	// ── Pending auth handler (cold-start, folder not yet authorized) ──
-	#handlePendingAuth(handle) {
-		this.#permToastShowing = true;
+	#askFolder(handle, onGranted) {
+		if (this.#folderToast) return;
+		this.#folderToast = true;
+		bus.emit('restore:permission-needed');
 		bus.emit('ui:action-toast', 'Tap to restore folder access', async () => {
-			// Reset the guard immediately so that, regardless of what happens next,
-			// the next focus/wake event can show a fresh toast if needed.
-			this.#permToastShowing = false;
+			this.#folderToast = false;
 			try {
-				if (await handle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
+				const h = handle || this.state.currentDirHandle;
+				if (await h.requestPermission({ mode: 'readwrite' }) !== 'granted') {
 					bus.emit('ui:toast', 'Access was not granted');
 					return;
 				}
-				this.state.currentDirHandle = handle;
-				await this.#rebuildTree(handle);
-				await this.#restoreTabs(handle);
+				if (handle) this.state.currentDirHandle = handle;
+				await onGranted();
 				bus.emit('ui:toast', 'Folder access restored ✓');
 			} catch {
 				bus.emit('ui:toast', 'Failed to restore access');
 			}
-		}, 0);  // 0 = persistent – stays visible until the user taps it
-	}
-
-	// ── Expand previously saved folder paths ──────────────
-	async #expandSavedFolders() {
-		for (const path of [...this.state.expandedFolders].sort((a, b) => a.split('/').length - b.split('/').length)) {
-			const node = this.tree.getNode(path);
-			if (node?.kind === 'directory') await this.fs.loadChildren(node);
-		}
+		}, 0);
 	}
 }
 // ────────────────────────────────────────────────────────
