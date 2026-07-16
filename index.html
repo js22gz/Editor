@@ -969,9 +969,16 @@ class FileSystemManager {
 		return handle;
 	}
 	async #write(handle, content) {
+		// createWritable uses a temp swap file; the original is only replaced on
+		// successful close(). Abort on failure so a partial write is discarded.
 		const writable = await handle.createWritable();
-		await writable.write(content);
-		await writable.close();
+		try {
+			await writable.write(content);
+			await writable.close();
+		} catch (e) {
+			try { await writable.abort(); } catch {}
+			throw e;
+		}
 	}
 	#formatError(action, e) {
 		if (e.name === 'NotAllowedError') return `${action} failed: permission denied – re-open folder`;
@@ -1035,17 +1042,33 @@ class FileSystemManager {
 		});
 	}
 	async clearSavedFolder() {
+		const pathTabs = this.state.tabs.filter(t => t.path);
+		if (pathTabs.some(t => t.dirty)) {
+			const ok = await bus.emit('ui:confirm', {
+				confirmMessage: 'Unsaved changes in open files will be lost. Clear saved folder?',
+				danger: true
+			});
+			if (!ok) return;
+		}
+		// Force-close path-backed tabs so editor/tabs don't keep writing into a cleared workspace.
+		for (const tab of [...pathTabs]) {
+			await this.tabs.closeTab(tab.id, { force: true });
+		}
 		if (this.db) {
 			const tx = this.db.transaction('handles', 'readwrite');
 			tx.objectStore('handles').delete('main');
 		}
 		this.state.currentDirHandle = null;
 		this.state.activeDirectoryPath = null;
+		this.state.activeFilePath = null;
 		this.state.expandedFolders.clear();
 		localStorage.removeItem('expandedFolders');
 		localStorage.removeItem('openTabs');
 		this.tree.clear();
 		this.tree.updateHeader();
+		if (!this.state.tabs.length) {
+			await this.tabs.createNewTab(null, 'welcome.txt', window.WELCOME, null, 'welcome');
+		}
 	}
 	// ── Tree & lazy loading ────────────────────────────────
 	async loadChildren(dirNode) {
@@ -1151,10 +1174,12 @@ class FileSystemManager {
 					}
 					return entry;
 				});
-			// Only persist when there are real file-backed tabs to save.
-			// Clearing is handled explicitly by closeTab → localStorage.removeItem.
+			// Always write: empty path-tab set must clear stale restore data
+			// (e.g. last file closed while a welcome tab remains).
 			if (data.length) {
 				localStorage.setItem('openTabs', JSON.stringify(data));
+			} else {
+				localStorage.removeItem('openTabs');
 			}
 		} catch {}
 	}
@@ -1366,11 +1391,25 @@ async openFileFromNode(node) {
 			: await bus.emit('ui:confirm', { confirmMessage: `Delete folder "${target.name}"?`, danger: true });
 		if (!confirmed) { bus.emit('ui:close-context-menu'); return; }
 		try {
+			const prefix = target.path + '/';
+			const tabsUnder = this.state.tabs.filter(t =>
+				t.path && (t.path === target.path || t.path.startsWith(prefix))
+			);
+			for (const tab of [...tabsUnder]) {
+				await this.tabs.closeTab(tab.id, { force: true });
+			}
 			const { parent, name } = await this.#resolve(this.state.currentDirHandle, target.path);
 			await this.#guard(parent);
 			await parent.removeEntry(name, { recursive: true });
-			this.state.expandedFolders.delete(target.path);
+			// Drop expanded state for the folder and any nested paths
+			for (const p of [...this.state.expandedFolders]) {
+				if (p === target.path || p.startsWith(prefix)) this.state.expandedFolders.delete(p);
+			}
 			this.saveExpandedState();
+			if (this.state.activeDirectoryPath === target.path ||
+				(this.state.activeDirectoryPath && this.state.activeDirectoryPath.startsWith(prefix))) {
+				this.state.activeDirectoryPath = null;
+			}
 			await this.mutateAndRebuild();
 			bus.emit('ui:toast', 'Folder deleted');
 		} catch {
@@ -1395,6 +1434,12 @@ async renameItem(target) {
 		const { parent } = await this.#resolve(this.state.currentDirHandle, oldPath);
 		await this.#guard(parent);
 
+		if (trimmed !== target.name && await this.#entryExists(parent, trimmed)) {
+			bus.emit('ui:toast', `"${trimmed}" already exists`);
+			bus.emit('ui:close-context-menu');
+			return;
+		}
+
 		let updatedHandle = target.handle;
 		if (target.kind === 'directory') {
 			if (target.handle.move) {
@@ -1405,14 +1450,37 @@ async renameItem(target) {
 		} else {
 			// Prefer in-memory content for any open dirty tab so unsaved changes are not lost.
 			const openTab = this.state.tabs.find(t => t.handle && t.path === target.path);
-			const content = (openTab && openTab.dirty) ? openTab.content : await (await target.handle.getFile()).text();
-			updatedHandle = await parent.getFileHandle(trimmed, { create: true });
-			await this.#write(updatedHandle, content);
-			await parent.removeEntry(target.name);
+			if (target.handle.move) {
+				await target.handle.move(parent, trimmed);
+				updatedHandle = target.handle;
+				if (openTab?.dirty) await this.#write(updatedHandle, openTab.content);
+			} else {
+				const content = (openTab && openTab.dirty) ? openTab.content : await (await target.handle.getFile()).text();
+				updatedHandle = await parent.getFileHandle(trimmed, { create: true });
+				await this.#write(updatedHandle, content);
+				await parent.removeEntry(target.name);
+			}
 		}
 
 		const newPath = oldPath.replace(/[^/]+$/, trimmed);
 		this.tabs.updateTabPaths(oldPath, newPath, updatedHandle, trimmed);
+		// Directory rename: re-resolve child tab handles and keep expanded-folder keys current.
+		if (target.kind === 'directory') {
+			await this.#reresolveTabHandlesUnder(newPath);
+			const oldPrefix = oldPath + '/';
+			for (const p of [...this.state.expandedFolders]) {
+				if (p === oldPath || p.startsWith(oldPrefix)) {
+					this.state.expandedFolders.delete(p);
+					this.state.expandedFolders.add(p === oldPath ? newPath : newPath + p.substring(oldPath.length));
+				}
+			}
+			this.saveExpandedState();
+			if (this.state.activeDirectoryPath === oldPath) this.state.activeDirectoryPath = newPath;
+			else if (this.state.activeDirectoryPath && this.state.activeDirectoryPath.startsWith(oldPrefix)) {
+				this.state.activeDirectoryPath = newPath + this.state.activeDirectoryPath.substring(oldPath.length);
+			}
+		}
+		this.saveOpenTabs(this.state.currentTabId);
 		await this.mutateAndRebuild();
 		// Notify tab-related listeners of possible path changes
 		this.state.notify('tabs');
@@ -1446,6 +1514,7 @@ async renameItem(target) {
 				this.state.expandedFolders.add(destFolderPath);
 				this.saveExpandedState();
 			}
+			this.saveOpenTabs(this.state.currentTabId);
 			await this.mutateAndRebuild();
 			// Notify tab-related listeners of possible path changes
 			this.state.notify('tabs');
@@ -1456,20 +1525,26 @@ async renameItem(target) {
 		bus.emit('ui:close-context-menu');
 	}
 	async #moveFile(srcNode, srcParent, destHandle, destFolderPath) {
+		const openTab = this.state.tabs.find(t => t.handle && t.path === srcNode.path);
+		let handleForTabs = srcNode.handle;
 		if (srcNode.handle.move) {
 			await srcNode.handle.move(destHandle, srcNode.name);
+			// Native move updates the existing handle in place; flush dirty buffer if needed.
+			if (openTab?.dirty) await this.#write(srcNode.handle, openTab.content);
 		} else {
 			// Prefer in-memory content for any open dirty tab so unsaved changes are not lost.
-			const openTab = this.state.tabs.find(t => t.handle && t.path === srcNode.path);
 			const content = (openTab && openTab.dirty) ? openTab.content : await (await srcNode.handle.getFile()).text();
 			const newHandle = await destHandle.getFileHandle(srcNode.name, { create: true });
 			await this.#write(newHandle, content);
 			await srcParent.removeEntry(srcNode.name);
+			// Fallback creates a new entry; old handle points at a deleted file.
+			handleForTabs = newHandle;
 		}
 		const newPath = destFolderPath ? `${destFolderPath}/${srcNode.name}` : srcNode.name;
-		this.tabs.updateTabPaths(srcNode.path, newPath, srcNode.handle); // handle updated in place for move
+		this.tabs.updateTabPaths(srcNode.path, newPath, handleForTabs);
 	}
 	async #moveDirectory(srcNode, destHandle, destFolderPath) {
+		const oldPath = srcNode.path;
 		let moved = false;
 		if (srcNode.handle.move) {
 			try {
@@ -1479,7 +1554,43 @@ async renameItem(target) {
 		}
 		if (!moved) {
 			await this.#copyDirectory(srcNode.handle, destHandle, srcNode.name);
-			await (await this.#resolve(this.state.currentDirHandle, srcNode.path)).parent.removeEntry(srcNode.name, { recursive: true });
+			await (await this.#resolve(this.state.currentDirHandle, oldPath)).parent.removeEntry(srcNode.name, { recursive: true });
+		}
+		const newPath = destFolderPath ? `${destFolderPath}/${srcNode.name}` : srcNode.name;
+		// Update open-tab paths for every file under the moved directory.
+		this.tabs.updateTabPaths(oldPath, newPath, null);
+		// Re-resolve handles: copy+delete invalidates old handles; re-resolve is safest either way.
+		await this.#reresolveTabHandlesUnder(newPath);
+		// Keep expanded-folder keys in sync with the new location.
+		const oldPrefix = oldPath + '/';
+		const expanded = [...this.state.expandedFolders];
+		for (const p of expanded) {
+			if (p === oldPath || p.startsWith(oldPrefix)) {
+				this.state.expandedFolders.delete(p);
+				const updated = p === oldPath ? newPath : newPath + p.substring(oldPath.length);
+				this.state.expandedFolders.add(updated);
+			}
+		}
+		this.saveExpandedState();
+		if (this.state.activeDirectoryPath === oldPath) this.state.activeDirectoryPath = newPath;
+		else if (this.state.activeDirectoryPath && this.state.activeDirectoryPath.startsWith(oldPrefix)) {
+			this.state.activeDirectoryPath = newPath + this.state.activeDirectoryPath.substring(oldPath.length);
+		}
+	}
+	/** Re-resolve file handles for open tabs under `rootPath` (inclusive of nested files). */
+	async #reresolveTabHandlesUnder(rootPath) {
+		if (!this.state.currentDirHandle || !rootPath) return;
+		const prefix = rootPath + '/';
+		for (const tab of this.state.tabs) {
+			if (!tab.path) continue;
+			if (tab.path !== rootPath && !tab.path.startsWith(prefix)) continue;
+			// Tabs under a folder path are files; skip exact directory path if present.
+			if (tab.path === rootPath && tab.handle?.kind === 'directory') continue;
+			try {
+				tab.handle = await this.getFileHandleForPath(this.state.currentDirHandle, tab.path);
+			} catch {
+				tab.handle = null;
+			}
 		}
 	}
 	async #copyDirectory(srcDirHandle, destParent, name) {
@@ -2033,9 +2144,14 @@ class ExtensionManager {
 	}
 	getForFile(filename) {
 		const lower = filename.toLowerCase();
+		const dot = lower.lastIndexOf('.');
+		// Require a real extension segment so type "c" does not match "file.css".
+		const fileExt = dot >= 0 ? lower.slice(dot + 1) : '';
+		if (!fileExt) return null;
 		for (const ext of this.extensions) {
 			for (const type of ext.types) {
-				if (lower.endsWith(type)) return ext;
+				const t = type.startsWith('.') ? type.slice(1) : type;
+				if (t && fileExt === t) return ext;
 			}
 		}
 		return null;
@@ -2566,11 +2682,11 @@ class TabManager {
 		}
 		this.fs.saveOpenTabs(id);
 	}
-	async closeTab(id) {
+	async closeTab(id, { force = false } = {}) {
 		const idx = this.state.tabs.findIndex(t => t.id === id);
 		if (idx === -1) return;
 		const tab = this.state.tabs[idx];
-		if (tab.dirty && !await bus.emit('ui:confirm', {confirmMessage: `"${tab.name}" has unsaved changes. Close anyway?`})) return;
+		if (!force && tab.dirty && !await bus.emit('ui:confirm', {confirmMessage: `"${tab.name}" has unsaved changes. Close anyway?`})) return;
 		if (tab.extFrame) {
 			tab.extFrame.remove();
 			tab.extFrame = null;
@@ -2594,11 +2710,12 @@ class TabManager {
 		tab.element.remove();
 		if (this.state.tabs.length === 0) {
 			this.state.currentTabId = null;
+			this.state.activeFilePath = null;
 			this.textarea.value = '';
 			this.gutter.replaceChildren();
 			bus.emit('tab:status-update', null);
+			// saveOpenTabs clears localStorage when no path-backed tabs remain
 			this.fs.saveOpenTabs(null);
-			localStorage.removeItem('openTabs');
 			return;
 		}
 		this.switchToTab(this.state.tabs[Math.min(idx, this.state.tabs.length - 1)].id);
@@ -3824,6 +3941,14 @@ window.addEventListener('message', async e => {
 	if (!e.data || typeof e.data !== 'object') return;
 	const activeTab = this.state.getActiveTab();
 	if (!activeTab || activeTab.type !== 'extension') return;
+
+	// Bind updates to the active tab's own extension frames only.
+	// Other open tabs also use null-origin srcdoc sandboxes and must not
+	// rewrite the active buffer / trigger autosave.
+	const fromActiveFrame =
+		(activeTab.extFrame && e.source === activeTab.extFrame.contentWindow) ||
+		(activeTab.extBarFrame && e.source === activeTab.extBarFrame.contentWindow);
+	if (!fromActiveFrame) return;
 
 	if (e.data.type === 'extension:updated') {
 	const newContent = e.data.content ?? '';
